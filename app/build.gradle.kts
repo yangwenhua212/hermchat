@@ -21,8 +21,8 @@ android {
         applicationId = "com.eraherm.hermchat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.1.4"
+        versionCode = 6
+        versionName = "0.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -105,6 +105,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.github.k2-fsa:sherpa-onnx:v1.13.4")
     implementation("com.google.mediapipe:tasks-genai:0.10.27")
@@ -113,6 +114,9 @@ dependencies {
     implementation("androidx.room:room-runtime:$room")
     implementation("androidx.room:room-ktx:$room")
     ksp("androidx.room:room-compiler:$room")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

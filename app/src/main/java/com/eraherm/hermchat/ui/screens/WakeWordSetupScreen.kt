@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -47,6 +48,9 @@ import com.eraherm.hermchat.service.WakeWordService
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.Line
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun WakeWordSetupScreen(
@@ -62,6 +66,7 @@ fun WakeWordSetupScreen(
         )
     }
     var statusText by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -141,24 +146,24 @@ fun WakeWordSetupScreen(
                     Button(
                         onClick = {
                             statusText = "下载中"
-                            Thread {
-                                val kws = KwsModelInstaller(context).ensureInstalled()
+                            scope.launch {
+                                val kws = withContext(Dispatchers.IO) {
+                                    KwsModelInstaller(context).ensureInstalled()
+                                }
                                 if (kws.isFailure) {
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                        statusText = kws.exceptionOrNull()?.message ?: "下载失败"
-                                    }
-                                    return@Thread
+                                    statusText = kws.exceptionOrNull()?.message ?: "下载失败"
+                                    return@launch
                                 }
-                                val asr = AsrModelInstaller(context).ensureInstalled()
-                                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                    asr.onSuccess {
-                                        modelReady.value = true
-                                        statusText = "模型已就绪"
-                                    }.onFailure {
-                                        statusText = it.message ?: "下载失败"
-                                    }
+                                val asr = withContext(Dispatchers.IO) {
+                                    AsrModelInstaller(context).ensureInstalled()
                                 }
-                            }.start()
+                                asr.onSuccess {
+                                    modelReady.value = true
+                                    statusText = "模型已就绪"
+                                }.onFailure {
+                                    statusText = it.message ?: "下载失败"
+                                }
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),

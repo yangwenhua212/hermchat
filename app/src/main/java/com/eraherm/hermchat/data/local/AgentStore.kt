@@ -13,7 +13,12 @@ import java.util.UUID
 class AgentStore(
     context: Context,
 ) {
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val prefs = SecurePrefs.open(
+        context = context,
+        secureName = PREFS_SECURE,
+        plainName = PREFS_PLAIN,
+        migrateKeys = listOf(KEY_AGENTS, KEY_CURRENT_ID),
+    )
 
     private val _agents = MutableStateFlow(loadAgents())
     val agents: StateFlow<List<AgentProfile>> = _agents.asStateFlow()
@@ -123,7 +128,8 @@ class AgentStore(
     }
 
     companion object {
-        private const val PREFS = "hermchat_agents"
+        private const val PREFS_SECURE = "hermchat_agents_secure"
+        private const val PREFS_PLAIN = "hermchat_agents"
         private const val KEY_AGENTS = "agents_json"
         private const val KEY_CURRENT_ID = "current_agent_id"
     }

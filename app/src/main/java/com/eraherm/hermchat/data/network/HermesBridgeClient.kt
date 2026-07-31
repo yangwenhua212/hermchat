@@ -1,11 +1,18 @@
 package com.eraherm.hermchat.data.network
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -19,6 +26,7 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -51,10 +59,15 @@ class HermesBridgeClient(
     private val streamHandlers = ConcurrentHashMap<String, (BridgeStreamEvent) -> Unit>()
     private val rpcSeq = AtomicLong(1)
 
+    private val intentionalClose = AtomicBoolean(false)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var reconnectJob: Job? = null
+
     override suspend fun ensureConnected() {
+        intentionalClose.set(false)
         mutex.withLock {
             if (_connected.value && webSocket != null) return
-            openSocketLocked()
+            openSocketLocked(retries = 3)
         }
     }
 
@@ -95,6 +108,9 @@ class HermesBridgeClient(
     }
 
     override fun close() {
+        intentionalClose.set(true)
+        reconnectJob?.cancel()
+        reconnectJob = null
         webSocket?.close(1000, "client close")
         webSocket = null
         _connected.value = false
@@ -103,9 +119,25 @@ class HermesBridgeClient(
         streamHandlers.clear()
     }
 
-    private suspend fun openSocketLocked() {
+    private suspend fun openSocketLocked(retries: Int = 1) {
+        var lastError: Throwable? = null
+        repeat(retries.coerceAtLeast(1)) { attempt ->
+            if (attempt > 0) delay(500L * attempt)
+            try {
+                connectOnceLocked()
+                return
+            } catch (t: Throwable) {
+                lastError = t
+                _connected.value = false
+                webSocket = null
+            }
+        }
+        throw lastError ?: IllegalStateException("WebSocket 连接失败")
+    }
+
+    private suspend fun connectOnceLocked() {
         val request = Request.Builder().url(endpoint.trim()).build()
-        val opened = withTimeout(8_000) {
+        withTimeout(8_000) {
             suspendCancellableCoroutine { cont ->
                 val socket = client.newWebSocket(
                     request,
@@ -128,12 +160,19 @@ class HermesBridgeClient(
                             _connected.value = false
                             this@HermesBridgeClient.webSocket = null
                             failAll(t)
-                            if (cont.isActive) cont.resumeWithException(t)
+                            if (cont.isActive) {
+                                cont.resumeWithException(t)
+                            } else {
+                                scheduleReconnect()
+                            }
                         }
 
                         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                             _connected.value = false
                             this@HermesBridgeClient.webSocket = null
+                            if (!intentionalClose.get() && code != 1000) {
+                                scheduleReconnect()
+                            }
                         }
                     },
                 )
@@ -141,15 +180,32 @@ class HermesBridgeClient(
             }
         }
 
-        // After open, try JSON-RPC session bootstrap when preferred.
         if (protocol == WsProtocol.JSON_RPC) {
             runCatching { bootstrapSession() }.onFailure {
-                // Fall back to simple frames if gateway doesn't speak JSON-RPC.
                 protocol = WsProtocol.SIMPLE
             }
         }
-        @Suppress("UNUSED_EXPRESSION")
-        opened
+    }
+
+    private fun scheduleReconnect() {
+        if (intentionalClose.get()) return
+        if (reconnectJob?.isActive == true) return
+        reconnectJob = scope.launch {
+            var delayMs = 1_000L
+            repeat(6) {
+                if (intentionalClose.get() || !isActive) return@launch
+                if (_connected.value && webSocket != null) return@launch
+                delay(delayMs)
+                runCatching {
+                    mutex.withLock {
+                        if (_connected.value && webSocket != null) return@withLock
+                        openSocketLocked(retries = 1)
+                    }
+                }
+                if (_connected.value) return@launch
+                delayMs = (delayMs * 2).coerceAtMost(30_000L)
+            }
+        }
     }
 
     private suspend fun bootstrapSession() {
@@ -193,14 +249,12 @@ class HermesBridgeClient(
             .put("text", prompt)
             .put("content", prompt)
         if (!sid.isNullOrBlank()) params.put("session_id", sid)
-        // Tag stream correlation for gateways that echo ids.
         params.put("client_request_id", requestId)
         val payload = JSONObject()
             .put("jsonrpc", "2.0")
             .put("id", requestId)
             .put("method", "prompt.submit")
             .put("params", params)
-        // Also register as rpc waiter so errors surface.
         rpcWaiters[requestId] = { result ->
             result.onFailure { err ->
                 streamHandlers.remove(requestId)?.invoke(
@@ -231,7 +285,6 @@ class HermesBridgeClient(
     private fun handleIncoming(text: String) {
         val json = runCatching { JSONObject(text) }.getOrNull() ?: return
 
-        // JSON-RPC response
         if (json.has("id") && (json.has("result") || json.has("error")) && !json.has("method")) {
             val id = json.opt("id")?.toString() ?: return
             val waiter = rpcWaiters.remove(id)
@@ -283,7 +336,6 @@ class HermesBridgeClient(
             streamHandlers[id]?.invoke(BridgeStreamEvent.Delta(delta))
             return
         }
-        // No id: fan-out to the only active stream if exactly one.
         if (streamHandlers.size == 1) {
             streamHandlers.values.first().invoke(BridgeStreamEvent.Delta(delta))
         }
@@ -365,14 +417,14 @@ class HermesBridgeClient(
             val preferred = when {
                 endpoint.contains("/v1/ws") -> WsProtocol.AGENT_MESSAGE
                 endpoint.contains("/api/ws") -> WsProtocol.JSON_RPC
-                else -> WsProtocol.JSON_RPC // Hermes default: try RPC, fall back to SIMPLE
+                else -> WsProtocol.JSON_RPC
             }
             return HermesBridgeClient(endpoint, preferred)
         }
 
         private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS) // streaming
+            .readTimeout(0, TimeUnit.MILLISECONDS)
             .writeTimeout(8, TimeUnit.SECONDS)
             .pingInterval(30, TimeUnit.SECONDS)
             .build()
