@@ -28,8 +28,22 @@ data class ShortcutDef(
     val action: ShortcutAction,
 )
 
+enum class ChatThemeStyle(val label: String) {
+    FOREST("森林绿"),
+    INK("墨黑"),
+    SKY("晴空蓝"),
+}
+
+enum class BubbleStyle(val label: String) {
+    ROUND("圆润"),
+    SOFT("柔和"),
+    SQUARE("直角"),
+}
+
 data class ChatPrefs(
     val inputMode: InputMode = InputMode.MIXED,
+    val themeStyle: ChatThemeStyle = ChatThemeStyle.FOREST,
+    val bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
     val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
 ) {
     companion object {
@@ -58,6 +72,14 @@ class ChatPrefsStore(
 
     fun setInputMode(mode: InputMode) {
         update { it.copy(inputMode = mode) }
+    }
+
+    fun setThemeStyle(style: ChatThemeStyle) {
+        update { it.copy(themeStyle = style) }
+    }
+
+    fun setBubbleStyle(style: BubbleStyle) {
+        update { it.copy(bubbleStyle = style) }
     }
 
     fun moveShortcut(id: String, offset: Int) {
@@ -90,6 +112,8 @@ class ChatPrefsStore(
         }
         prefs.edit()
             .putString(KEY_INPUT_MODE, value.inputMode.name)
+            .putString(KEY_THEME, value.themeStyle.name)
+            .putString(KEY_BUBBLE, value.bubbleStyle.name)
             .putString(KEY_SHORTCUTS, array.toString())
             .apply()
     }
@@ -100,8 +124,23 @@ class ChatPrefsStore(
                 runCatching { InputMode.valueOf(raw) }.getOrDefault(InputMode.MIXED)
             }
             ?: InputMode.MIXED
+        val theme = prefs.getString(KEY_THEME, ChatThemeStyle.FOREST.name)
+            ?.let { raw ->
+                runCatching { ChatThemeStyle.valueOf(raw) }.getOrDefault(ChatThemeStyle.FOREST)
+            }
+            ?: ChatThemeStyle.FOREST
+        val bubble = prefs.getString(KEY_BUBBLE, BubbleStyle.ROUND.name)
+            ?.let { raw ->
+                runCatching { BubbleStyle.valueOf(raw) }.getOrDefault(BubbleStyle.ROUND)
+            }
+            ?: BubbleStyle.ROUND
         val shortcuts = loadShortcuts()
-        return ChatPrefs(inputMode = mode, shortcuts = shortcuts)
+        return ChatPrefs(
+            inputMode = mode,
+            themeStyle = theme,
+            bubbleStyle = bubble,
+            shortcuts = shortcuts,
+        )
     }
 
     private fun loadShortcuts(): List<ShortcutDef> {
@@ -130,6 +169,8 @@ class ChatPrefsStore(
     companion object {
         private const val PREFS = "hermchat_chat"
         private const val KEY_INPUT_MODE = "input_mode"
+        private const val KEY_THEME = "theme_style"
+        private const val KEY_BUBBLE = "bubble_style"
         private const val KEY_SHORTCUTS = "shortcuts"
     }
 }

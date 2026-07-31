@@ -21,6 +21,8 @@ data class SetupUiState(
     val kind: AgentKind = AgentKind.WEBSOCKET,
     val endpoint: String = AgentKind.WEBSOCKET.defaultEndpoint,
     val name: String = AgentKind.WEBSOCKET.defaultName,
+    val apiKey: String = "",
+    val model: String = "default",
     val testing: Boolean = false,
     val testPassed: Boolean = false,
     val testMessage: String? = null,
@@ -49,6 +51,8 @@ class SetupViewModel(
                 kind = initial.kind,
                 endpoint = initial.endpoint,
                 name = initial.name,
+                apiKey = initial.apiKey,
+                model = initial.model,
             )
         } else {
             SetupUiState()
@@ -90,6 +94,14 @@ class SetupViewModel(
         _uiState.update { it.copy(name = value, error = null) }
     }
 
+    fun updateApiKey(value: String) {
+        _uiState.update { it.copy(apiKey = value, error = null) }
+    }
+
+    fun updateModel(value: String) {
+        _uiState.update { it.copy(model = value, error = null) }
+    }
+
     fun applyImport(raw: String) {
         val parsed = AgentConfigImport.parse(raw)
         parsed.fold(
@@ -106,6 +118,8 @@ class SetupViewModel(
                             } else {
                                 it.name
                             },
+                        apiKey = cfg.apiKey ?: it.apiKey,
+                        model = cfg.model?.takeIf { m -> m.isNotBlank() } ?: it.model,
                         testPassed = false,
                         testMessage = null,
                         probeHits = emptyList(),
@@ -231,6 +245,8 @@ class SetupViewModel(
                 kind = state.kind,
                 name = name,
                 endpoint = state.endpoint.trim(),
+                apiKey = state.apiKey.trim(),
+                model = state.model.trim().ifBlank { "default" },
             )
             agentStore.saveAgent(profile, setCurrent = true)
             _uiState.update {

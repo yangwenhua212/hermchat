@@ -21,17 +21,37 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.eraherm.hermchat.data.local.BubbleStyle
+import com.eraherm.hermchat.data.local.ChatThemeStyle
 import com.eraherm.hermchat.data.model.Message
 import com.eraherm.hermchat.data.model.MessageRole
+import com.eraherm.hermchat.ui.theme.Forest
+import com.eraherm.hermchat.ui.theme.Ink
 import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
 
 @Composable
-fun MessageBubble(message: Message) {
+fun MessageBubble(
+    message: Message,
+    themeStyle: ChatThemeStyle = ChatThemeStyle.FOREST,
+    bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
+) {
     var visible by remember(message.id) { mutableStateOf(false) }
     LaunchedEffect(message.id) { visible = true }
+    val userColor = when (themeStyle) {
+        ChatThemeStyle.FOREST -> Forest
+        ChatThemeStyle.INK -> Ink
+        ChatThemeStyle.SKY -> Color(0xFF3A7CA5)
+    }
+    val radius = when (bubbleStyle) {
+        BubbleStyle.ROUND -> 18.dp
+        BubbleStyle.SOFT -> 22.dp
+        BubbleStyle.SQUARE -> 8.dp
+    }
 
     AnimatedVisibility(
         visible = visible,
@@ -62,19 +82,19 @@ fun MessageBubble(message: Message) {
                             .then(
                                 if (isUser) {
                                     Modifier.background(
-                                        color = MaterialTheme.colorScheme.primary,
-                                        shape = bubbleShape(isUser),
+                                        color = userColor,
+                                        shape = bubbleShape(isUser, radius),
                                     )
                                 } else {
                                     Modifier
                                         .background(
                                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                                            shape = bubbleShape(isUser),
+                                            shape = bubbleShape(isUser, radius),
                                         )
                                         .border(
                                             width = 1.dp,
                                             color = Line.copy(alpha = 0.85f),
-                                            shape = bubbleShape(isUser),
+                                            shape = bubbleShape(isUser, radius),
                                         )
                                 },
                             )
@@ -83,11 +103,7 @@ fun MessageBubble(message: Message) {
                         Text(
                             text = message.content,
                             style = MaterialTheme.typography.bodyLarge,
-                            color = if (isUser) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
+                            color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
@@ -96,9 +112,9 @@ fun MessageBubble(message: Message) {
     }
 }
 
-private fun bubbleShape(isUser: Boolean) = RoundedCornerShape(
-    topStart = 18.dp,
-    topEnd = 18.dp,
-    bottomStart = if (isUser) 18.dp else 5.dp,
-    bottomEnd = if (isUser) 5.dp else 18.dp,
+private fun bubbleShape(isUser: Boolean, radius: Dp) = RoundedCornerShape(
+    topStart = radius,
+    topEnd = radius,
+    bottomStart = if (isUser) radius else 5.dp,
+    bottomEnd = if (isUser) 5.dp else radius,
 )

@@ -17,6 +17,8 @@ data class ImportedAgentConfig(
     val kind: AgentKind?,
     val endpoint: String,
     val name: String?,
+    val apiKey: String? = null,
+    val model: String? = null,
 )
 
 object AgentConfigImport {
@@ -47,7 +49,16 @@ object AgentConfigImport {
             ?.let { AgentKind.fromStored(it) }
             ?: inferKind(endpoint)
         val name = obj.optString("name").takeIf { it.isNotBlank() }
-        return ImportedAgentConfig(kind = kind, endpoint = endpoint, name = name)
+        val apiKey = obj.optString("apiKey").takeIf { it.isNotBlank() }
+            ?: obj.optString("api_key").takeIf { it.isNotBlank() }
+        val model = obj.optString("model").takeIf { it.isNotBlank() }
+        return ImportedAgentConfig(
+            kind = kind,
+            endpoint = endpoint,
+            name = name,
+            apiKey = apiKey,
+            model = model,
+        )
     }
 
     private fun parseDeepLink(text: String): ImportedAgentConfig {
@@ -70,7 +81,16 @@ object AgentConfigImport {
             ?.let { AgentKind.fromStored(it) }
             ?: inferKind(endpoint)
         val name = params["name"]?.takeIf { it.isNotBlank() }
-        return ImportedAgentConfig(kind = kind, endpoint = endpoint, name = name)
+        val apiKey = params["apiKey"]?.takeIf { it.isNotBlank() }
+            ?: params["api_key"]?.takeIf { it.isNotBlank() }
+        val model = params["model"]?.takeIf { it.isNotBlank() }
+        return ImportedAgentConfig(
+            kind = kind,
+            endpoint = endpoint,
+            name = name,
+            apiKey = apiKey,
+            model = model,
+        )
     }
 
     private fun looksLikeEndpoint(value: String): Boolean {

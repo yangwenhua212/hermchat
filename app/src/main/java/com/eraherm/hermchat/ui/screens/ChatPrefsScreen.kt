@@ -33,6 +33,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eraherm.hermchat.HermChatApp
+import com.eraherm.hermchat.data.local.BubbleStyle
+import com.eraherm.hermchat.data.local.ChatThemeStyle
 import com.eraherm.hermchat.data.local.InputMode
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
@@ -87,6 +89,66 @@ fun ChatPrefsScreen(
                     ) {
                         Text(
                             text = mode.label,
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+
+                Text("聊天主题色", style = MaterialTheme.typography.titleMedium)
+                ChatThemeStyle.entries.forEach { style ->
+                    val selected = chatPrefs.themeStyle == style
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = selected,
+                                onClick = { app.chatPrefsStore.setThemeStyle(style) },
+                                role = Role.RadioButton,
+                            ),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (selected) MaterialTheme.colorScheme.primary else Line,
+                        ),
+                    ) {
+                        Text(
+                            text = style.label,
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+
+                Text("气泡样式", style = MaterialTheme.typography.titleMedium)
+                BubbleStyle.entries.forEach { style ->
+                    val selected = chatPrefs.bubbleStyle == style
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = selected,
+                                onClick = { app.chatPrefsStore.setBubbleStyle(style) },
+                                role = Role.RadioButton,
+                            ),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (selected) MaterialTheme.colorScheme.primary else Line,
+                        ),
+                    ) {
+                        Text(
+                            text = style.label,
                             modifier = Modifier.padding(16.dp),
                             style = MaterialTheme.typography.titleMedium,
                         )

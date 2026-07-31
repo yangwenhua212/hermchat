@@ -9,7 +9,11 @@ object AIClientFactory {
         return when {
             endpoint.startsWith("http://", ignoreCase = true) ||
                 endpoint.startsWith("https://", ignoreCase = true) -> {
-                OpenAiCompatClient(endpoint)
+                OpenAiCompatClient(
+                    baseUrl = endpoint,
+                    apiKey = agent.apiKey,
+                    model = agent.model.ifBlank { "default" },
+                )
             }
 
             agent.kind == AgentKind.WEBSOCKET -> HermesBridgeClient.forHermes(endpoint)

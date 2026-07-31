@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -43,6 +44,7 @@ fun AgentSwitcher(
     connected: Boolean,
     onSelect: (AgentProfile) -> Unit,
     onAdd: () -> Unit,
+    onEditCurrent: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -143,6 +145,31 @@ fun AgentSwitcher(
 
             if (agents.isNotEmpty()) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            }
+
+            if (current != null && onEditCurrent != null) {
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Edit,
+                                contentDescription = null,
+                                tint = SoftGray,
+                            )
+                            Text(
+                                text = "编辑当前 Agent",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onEditCurrent()
+                    },
+                )
             }
 
             DropdownMenuItem(

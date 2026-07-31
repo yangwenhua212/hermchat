@@ -34,7 +34,6 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -224,16 +223,10 @@ fun ChatScreen(
                     connected = uiState.connected,
                     onSelect = onSelectAgent,
                     onAdd = onAddAgent,
+                    onEditCurrent = onConfigureAgent,
                     modifier = Modifier.weight(1f),
                 )
                 ConnectionStatus(connected = uiState.connected)
-                IconButton(onClick = onOpenChatPrefs) {
-                    Icon(
-                        imageVector = Icons.Filled.Tune,
-                        contentDescription = "聊天偏好",
-                        tint = SoftGray,
-                    )
-                }
                 IconButton(onClick = onOpenWakeSetup) {
                     Icon(
                         imageVector = Icons.Filled.RecordVoiceOver,
@@ -245,10 +238,10 @@ fun ChatScreen(
                         },
                     )
                 }
-                IconButton(onClick = onConfigureAgent) {
+                IconButton(onClick = onOpenChatPrefs) {
                     Icon(
                         imageVector = Icons.Filled.Settings,
-                        contentDescription = "编辑当前 Agent",
+                        contentDescription = "聊天设置",
                         tint = SoftGray,
                     )
                 }
@@ -286,7 +279,11 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(uiState.messages, key = { it.id }) { message ->
-                    MessageBubble(message = message)
+                    MessageBubble(
+                        message = message,
+                        themeStyle = chatPrefs.themeStyle,
+                        bubbleStyle = chatPrefs.bubbleStyle,
+                    )
                 }
             }
 

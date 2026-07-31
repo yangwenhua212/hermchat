@@ -162,6 +162,8 @@ fun AgentSetupScreen(
                         2 -> StepEndpoint(
                             kind = uiState.kind,
                             endpoint = uiState.endpoint,
+                            apiKey = uiState.apiKey,
+                            model = uiState.model,
                             testing = uiState.testing,
                             testPassed = uiState.testPassed,
                             testMessage = uiState.testMessage,
@@ -169,6 +171,8 @@ fun AgentSetupScreen(
                             probeHits = uiState.probeHits,
                             probeMessage = uiState.probeMessage,
                             onEndpointChange = viewModel::updateEndpoint,
+                            onApiKeyChange = viewModel::updateApiKey,
+                            onModelChange = viewModel::updateModel,
                             onTest = viewModel::testConnection,
                             onUsePreset = { kind -> viewModel.selectKind(kind) },
                             onSkipTest = viewModel::skipTestAndContinue,
@@ -379,6 +383,8 @@ private fun StepSelectKind(
 private fun StepEndpoint(
     kind: AgentKind,
     endpoint: String,
+    apiKey: String,
+    model: String,
     testing: Boolean,
     testPassed: Boolean,
     testMessage: String?,
@@ -386,6 +392,8 @@ private fun StepEndpoint(
     probeHits: List<ProbeHit>,
     probeMessage: String?,
     onEndpointChange: (String) -> Unit,
+    onApiKeyChange: (String) -> Unit,
+    onModelChange: (String) -> Unit,
     onTest: () -> Unit,
     onUsePreset: (AgentKind) -> Unit,
     onSkipTest: () -> Unit,
@@ -394,6 +402,10 @@ private fun StepEndpoint(
     onScan: () -> Unit,
     onPaste: () -> Unit,
 ) {
+    val showHttpFields = kind == AgentKind.HTTP_COMPAT ||
+        endpoint.startsWith("http://", ignoreCase = true) ||
+        endpoint.startsWith("https://", ignoreCase = true)
+
     Text(
         text = "填地址",
         style = MaterialTheme.typography.bodyLarge,
@@ -407,6 +419,25 @@ private fun StepEndpoint(
         label = { Text("Agent 地址") },
         shape = RoundedCornerShape(16.dp),
     )
+    if (showHttpFields) {
+        OutlinedTextField(
+            value = apiKey,
+            onValueChange = onApiKeyChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("API Key（可选）") },
+            shape = RoundedCornerShape(16.dp),
+        )
+        OutlinedTextField(
+            value = model,
+            onValueChange = onModelChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("模型名") },
+            placeholder = { Text("如 deepseek-chat") },
+            shape = RoundedCornerShape(16.dp),
+        )
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -433,7 +464,6 @@ private fun StepEndpoint(
         Text("恢复预设地址")
     }
     if (probeHits.isEmpty() && !probeMessage.isNullOrBlank() && !probing) {
-        // keep silence on long probe hints; only show compact miss
         Text(
             text = "未发现端点",
             color = SoftGray,

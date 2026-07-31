@@ -90,6 +90,8 @@ class AgentStore(
                     .put("kind", agent.kind.name)
                     .put("name", agent.name)
                     .put("endpoint", agent.endpoint)
+                    .put("apiKey", agent.apiKey)
+                    .put("model", agent.model)
                     .put("createdAt", agent.createdAt),
             )
         }
@@ -110,6 +112,8 @@ class AgentStore(
                             kind = kind,
                             name = obj.getString("name"),
                             endpoint = obj.getString("endpoint"),
+                            apiKey = obj.optString("apiKey", ""),
+                            model = obj.optString("model", "default").ifBlank { "default" },
                             createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                         ),
                     )

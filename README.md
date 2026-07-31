@@ -44,7 +44,7 @@ python scripts/demo_bridge.py
 
 出二维码 / 粘贴导入：[docs/SETUP_QR.md](docs/SETUP_QR.md)。验收清单与踩坑：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
 
-接真实 Agent 时：换成你的 WebSocket 或 OpenAI 兼容 HTTP 地址即可，协议见 [docs/BRIDGE_PROTOCOL.md](docs/BRIDGE_PROTOCOL.md)。
+**接 Hermes / 大模型 API：** 见 [docs/CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md)。协议细节：[docs/BRIDGE_PROTOCOL.md](docs/BRIDGE_PROTOCOL.md)。
 
 ---
 

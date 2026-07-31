@@ -20,6 +20,8 @@ import java.util.concurrent.TimeUnit
  */
 class OpenAiCompatClient(
     baseUrl: String,
+    private val apiKey: String = "",
+    private val model: String = "default",
     private val client: OkHttpClient = defaultClient(),
 ) : StreamingChatClient {
 
@@ -38,7 +40,7 @@ class OpenAiCompatClient(
             "$root/v1/chat/completions"
         }
         val bodyJson = JSONObject()
-            .put("model", "default")
+            .put("model", model.ifBlank { "default" })
             .put("stream", true)
             .put(
                 "messages",
@@ -46,15 +48,19 @@ class OpenAiCompatClient(
                     JSONObject().put("role", "user").put("content", prompt),
                 ),
             )
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .post(bodyJson.toString().toRequestBody(JSON_MEDIA))
             .header("Accept", "text/event-stream")
-            .build()
+        if (apiKey.isNotBlank()) {
+            requestBuilder.header("Authorization", "Bearer ${apiKey.trim()}")
+        }
+        val request = requestBuilder.build()
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                error("HTTP ${response.code}: ${response.message}")
+                val errBody = response.body?.string().orEmpty().take(240)
+                error("HTTP ${response.code}: ${response.message}${if (errBody.isBlank()) "" else " · $errBody"}")
             }
             _connected.value = true
             val source = response.body?.source() ?: error("空响应")

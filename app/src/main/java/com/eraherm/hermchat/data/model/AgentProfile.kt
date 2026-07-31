@@ -37,5 +37,7 @@ data class AgentProfile(
     val kind: AgentKind,
     val name: String,
     val endpoint: String,
+    val apiKey: String = "",
+    val model: String = "default",
     val createdAt: Long = System.currentTimeMillis(),
 )
