@@ -52,6 +52,7 @@ class ChatViewModel(
     private var client: StreamingChatClient? = null
     private var sendJob: Job? = null
     private var agentJob: Job? = null
+    private var currentAgentId: String? = null
 
     val uiState: StateFlow<ChatUiState> = combine(
         combine(
@@ -287,6 +288,12 @@ class ChatViewModel(
     }
 
     private suspend fun reconnect(agent: AgentProfile?) {
+        // 切换 agent 时：清空本地消息，避免聊天页还挂着上一个 agent 的历史，
+        // 且新 agent 的服务端 session 是全新的（无旧上下文），旧消息留着会造成错位。
+        if (agent?.id != currentAgentId) {
+            currentAgentId = agent?.id
+            messageRepository.clear()
+        }
         client?.close()
         client = null
         bridgeConnected.value = false
