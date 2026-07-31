@@ -56,7 +56,10 @@ object ToolCallParser {
                     depth--
                     if (depth == 0 && start >= 0) {
                         val slice = text.substring(start, i + 1)
-                        if (slice.contains("tool_call") || slice.contains("calendar.create")) {
+                        if (slice.contains("tool_call") ||
+                            slice.contains("calendar.create") ||
+                            slice.contains("alarm.create")
+                        ) {
                             return slice
                         }
                         start = -1
@@ -69,6 +72,7 @@ object ToolCallParser {
 
     private fun humanTitle(name: String): String = when (name) {
         CalendarTool.NAME -> "创建日历事件"
+        AlarmTool.NAME -> "设置提醒"
         else -> "执行工具：$name"
     }
 
@@ -81,6 +85,15 @@ object ToolCallParser {
                     "将创建「$title」\n时间：${formatTime(begin)}"
                 } else {
                     "将创建「$title」"
+                }
+            }
+            AlarmTool.NAME -> {
+                val message = args["message"] ?: "提醒"
+                val trigger = args["triggerMs"]?.toLongOrNull()
+                if (trigger != null) {
+                    "将设置「$message」\n时间：${formatTime(trigger)}"
+                } else {
+                    "将设置「$message」"
                 }
             }
             else -> args.entries.joinToString("\n") { "${it.key}=${it.value}" }

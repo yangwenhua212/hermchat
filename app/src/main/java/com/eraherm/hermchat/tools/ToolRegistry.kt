@@ -9,6 +9,7 @@ class ToolRegistry(
 ) {
     private val tools: Map<String, PhoneTool> = listOf(
         CalendarTool(context.applicationContext),
+        AlarmTool(context.applicationContext),
     ).associateBy { it.name }
 
     fun get(name: String): PhoneTool? = tools[name]

@@ -15,7 +15,7 @@
 | 8 | 地址自动探测 + 扫码/粘贴导入 | ✅ 探测可达端点；QR/JSON/深链填入配置 |
 | 9 | 验收清单 + Release + 电脑出码 | ✅ 文档与脚本就绪；可 `assembleRelease` |
 | 10 | 上手收口（README / 踩坑 / 0.1.1） | ✅ 五分钟真机路径；ACCEPTANCE 补坑；版本 0.1.1 |
-| 11 | 第二本机工具（闹钟/提醒） | ⬜ 确认卡 + AlarmManager / 系统闹钟 Intent |
+| 11 | 第二本机工具（闹钟/提醒） | ✅ `alarm.create` + 本地话术；确认后调系统闹钟 |
 | 12 | 离线唤醒 sherpa-onnx | ⬜ 替换系统 SpeechRecognizer；无网可唤醒 |
 
 产品原则见 [PRODUCT.md](PRODUCT.md)。实现说明见 [NEXT_IMPL.md](NEXT_IMPL.md)（含「哪些已做好、哪些还没做」）。

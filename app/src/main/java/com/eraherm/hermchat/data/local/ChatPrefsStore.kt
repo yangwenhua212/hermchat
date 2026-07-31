@@ -50,6 +50,7 @@ data class ChatPrefs(
         val DEFAULT_SHORTCUTS = listOf(
             ShortcutDef("today", "今天日程", "今天有什么日程？", ShortcutAction.SEND),
             ShortcutDef("remind", "提醒我…", "提醒我", ShortcutAction.INSERT),
+            ShortcutDef("timer", "半小时后", "半小时后提醒我", ShortcutAction.INSERT),
             ShortcutDef("meeting", "明天开会", "明天下午3点提醒我开会", ShortcutAction.INSERT),
             ShortcutDef("book", "预约…", "帮我预约", ShortcutAction.INSERT),
         )

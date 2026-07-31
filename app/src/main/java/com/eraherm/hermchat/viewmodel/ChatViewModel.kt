@@ -12,7 +12,7 @@ import com.eraherm.hermchat.data.model.ToolCall
 import com.eraherm.hermchat.data.network.AIClientFactory
 import com.eraherm.hermchat.data.network.paceForDisplay
 import com.eraherm.hermchat.data.network.StreamingChatClient
-import com.eraherm.hermchat.tools.LocalCalendarPlanner
+import com.eraherm.hermchat.tools.LocalToolPlanner
 import com.eraherm.hermchat.tools.ToolCallParser
 import com.eraherm.hermchat.tools.ToolRegistry
 import kotlinx.coroutines.Job
@@ -100,7 +100,7 @@ class ChatViewModel(
         if (busy.value.isSending || busy.value.isStreaming || busy.value.toolExecuting) return
 
         val agent = activeAgent.value
-        val localPlan = if (enableLocalTools) LocalCalendarPlanner.plan(content) else null
+        val localPlan = if (enableLocalTools) LocalToolPlanner.plan(content) else null
 
         sendJob?.cancel()
         sendJob = viewModelScope.launch {
