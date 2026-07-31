@@ -1,6 +1,6 @@
 # 怎么接入 Agent / 大模型（Phase A）
 
-HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent 与直连 API；**当前不内置**手机本地大模型运行时（Phase B 见 [LOCAL_MODEL.md](LOCAL_MODEL.md)）。
+HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent、直连 API，以及 **本地运行时**（见 [LOCAL_MODEL.md](LOCAL_MODEL.md)）。
 
 产品总览：[PRODUCT.md](PRODUCT.md)。
 
@@ -10,6 +10,7 @@ HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent 与
 |------|----------|--------|
 | 远程 Agent（电脑/云） | **WebSocket** | `ws://主机:端口/路径` |
 | 直连 API | **HTTP 兼容** | Base URL + API Key（可选）+ 模型名 |
+| 本地运行时 | **本地** | 下载令牌 → 下载模型 → 测试 |
 | 演示回声 | WebSocket | `python scripts/demo_bridge.py` 打印的地址 |
 
 真机用电脑局域网 IP，**不要用** `10.0.2.2`（模拟器专用）。

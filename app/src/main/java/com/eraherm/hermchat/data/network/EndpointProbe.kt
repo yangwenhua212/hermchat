@@ -72,6 +72,8 @@ class EndpointProbe(
             AgentKind.CUSTOM -> (
                 candidates(AgentKind.WEBSOCKET) + candidates(AgentKind.HTTP_COMPAT)
                 ).distinct()
+
+            AgentKind.LOCAL -> emptyList()
         }
     }
 

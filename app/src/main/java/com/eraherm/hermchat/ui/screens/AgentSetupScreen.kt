@@ -72,6 +72,7 @@ fun AgentSetupScreen(
         factory = SetupViewModel.factory(
             agentStore = app.agentStore,
             endpointProbe = EndpointProbe(app),
+            localModelStore = app.localModelStore,
             initial = editing,
         ),
     )
@@ -170,10 +171,14 @@ fun AgentSetupScreen(
                             probing = uiState.probing,
                             probeHits = uiState.probeHits,
                             probeMessage = uiState.probeMessage,
+                            downloadingModel = uiState.downloadingModel,
+                            downloadProgress = uiState.downloadProgress,
+                            modelReady = uiState.modelReady,
                             onEndpointChange = viewModel::updateEndpoint,
                             onApiKeyChange = viewModel::updateApiKey,
                             onModelChange = viewModel::updateModel,
                             onTest = viewModel::testConnection,
+                            onDownloadModel = viewModel::downloadLocalModel,
                             onUsePreset = { kind -> viewModel.selectKind(kind) },
                             onSkipTest = viewModel::skipTestAndContinue,
                             onProbe = viewModel::probeEndpoints,
@@ -391,10 +396,14 @@ private fun StepEndpoint(
     probing: Boolean,
     probeHits: List<ProbeHit>,
     probeMessage: String?,
+    downloadingModel: Boolean,
+    downloadProgress: Float,
+    modelReady: Boolean,
     onEndpointChange: (String) -> Unit,
     onApiKeyChange: (String) -> Unit,
     onModelChange: (String) -> Unit,
     onTest: () -> Unit,
+    onDownloadModel: () -> Unit,
     onUsePreset: (AgentKind) -> Unit,
     onSkipTest: () -> Unit,
     onProbe: () -> Unit,
@@ -402,6 +411,61 @@ private fun StepEndpoint(
     onScan: () -> Unit,
     onPaste: () -> Unit,
 ) {
+    if (kind == AgentKind.LOCAL) {
+        Text("本地模型", style = MaterialTheme.typography.bodyLarge)
+        OutlinedTextField(
+            value = apiKey,
+            onValueChange = onApiKeyChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("下载令牌") },
+            shape = RoundedCornerShape(16.dp),
+        )
+        Button(
+            onClick = onDownloadModel,
+            enabled = !downloadingModel,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Text(
+                when {
+                    downloadingModel -> "下载中 ${(downloadProgress * 100).toInt()}%"
+                    modelReady -> "重新下载"
+                    else -> "下载模型"
+                },
+            )
+        }
+        Button(
+            onClick = onTest,
+            enabled = !testing && !downloadingModel,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Text(if (testing) "测试中…" else "测试")
+        }
+        when {
+            testPassed && modelReady -> Text(
+                text = "模型已就绪",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            testPassed -> Text(
+                text = "编排已就绪",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            !testMessage.isNullOrBlank() -> Text(
+                text = "测连失败",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (!testPassed) {
+            TextButton(onClick = onSkipTest) { Text("跳过测连") }
+        }
+        return
+    }
+
     val showHttpFields = kind == AgentKind.HTTP_COMPAT ||
         endpoint.startsWith("http://", ignoreCase = true) ||
         endpoint.startsWith("https://", ignoreCase = true)
@@ -425,7 +489,7 @@ private fun StepEndpoint(
             onValueChange = onApiKeyChange,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            label = { Text("API Key（可选）") },
+            label = { Text("API Key") },
             shape = RoundedCornerShape(16.dp),
         )
         OutlinedTextField(

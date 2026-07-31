@@ -40,6 +40,7 @@ class ChatViewModel(
     private val messageRepository: MessageRepository,
     private val agentStore: AgentStore,
     private val toolRegistry: ToolRegistry,
+    private val appContext: android.content.Context,
 ) : ViewModel() {
 
     private val busy = MutableStateFlow(BusyFlags())
@@ -123,7 +124,7 @@ class ChatViewModel(
                 }
 
                 val chatClient = client ?: run {
-                    val created = agent?.let { AIClientFactory.create(it) }
+                    val created = agent?.let { AIClientFactory.create(it, appContext) }
                         ?: error("请先配置 Agent")
                     client = created
                     created
@@ -262,7 +263,7 @@ class ChatViewModel(
         bridgeConnected.value = false
         if (agent == null) return
         runCatching {
-            val created = AIClientFactory.create(agent)
+            val created = AIClientFactory.create(agent, appContext)
             created.ensureConnected()
             client = created
             bridgeConnected.value = created.connected.value
@@ -309,13 +310,18 @@ class ChatViewModel(
             repository: MessageRepository,
             agentStore: AgentStore,
             toolRegistry: ToolRegistry,
+            appContext: android.content.Context,
         ): ViewModelProvider.Factory =
-            // toolRegistry required for calendar / phone tools
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
-                        return ChatViewModel(repository, agentStore, toolRegistry) as T
+                        return ChatViewModel(
+                            repository,
+                            agentStore,
+                            toolRegistry,
+                            appContext.applicationContext,
+                        ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
                 }

@@ -92,6 +92,7 @@ fun ChatScreen(
             app.messageRepository,
             app.agentStore,
             app.toolRegistry,
+            app,
         ),
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()

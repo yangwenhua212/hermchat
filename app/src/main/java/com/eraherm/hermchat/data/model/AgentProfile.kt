@@ -15,6 +15,11 @@ enum class AgentKind(
         defaultEndpoint = "http://10.0.2.2:5000",
         defaultName = "我的助手",
     ),
+    LOCAL(
+        label = "本地",
+        defaultEndpoint = "local://runtime",
+        defaultName = "本地助手",
+    ),
     CUSTOM(
         label = "自定义",
         defaultEndpoint = "ws://",
@@ -26,6 +31,7 @@ enum class AgentKind(
         fun fromStored(raw: String): AgentKind = when (raw.trim().uppercase()) {
             "HERMES", "WEBSOCKET", "WS" -> WEBSOCKET
             "OPENCLAW", "HTTP_COMPAT", "HTTP", "OPENAI" -> HTTP_COMPAT
+            "LOCAL", "ONDEVICE", "ON_DEVICE" -> LOCAL
             "CUSTOM" -> CUSTOM
             else -> runCatching { valueOf(raw.trim().uppercase()) }.getOrDefault(CUSTOM)
         }

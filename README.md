@@ -11,7 +11,7 @@
 | 仓库 / 工程 | `hermchat` |
 | App 显示名 | **HxSync** |
 | 应用 ID | `com.eraherm.hermchat` |
-| 当前版本 | **0.1.2** |
+| 当前版本 | **0.1.3** |
 
 ## 三种模式（分阶段）
 
@@ -19,7 +19,7 @@
 |------|------|------|
 | 远程 Agent（WebSocket） | Phase A ✅ | 连电脑/云端已运行的 Agent |
 | 直连 API（HTTP 兼容） | Phase A ✅ | DeepSeek / OpenAI / Ollama 等 |
-| 本地运行时 | Phase B 🚧 | 手机内推理 / 本地编排，见 [docs/LOCAL_MODEL.md](docs/LOCAL_MODEL.md) |
+| 本地运行时 | Phase B ✅ | 手机内编排 + 可选 Gemma 本机推理，见 [docs/LOCAL_MODEL.md](docs/LOCAL_MODEL.md) |
 
 产品全文：[docs/PRODUCT.md](docs/PRODUCT.md)。接入：[docs/CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md)。
 

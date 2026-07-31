@@ -11,7 +11,7 @@
 | 系统语音唤醒 / ASR | ⚠️ 依赖机型 | 唤醒设置 → 引擎「系统」 |
 | 离线唤醒 sherpa-onnx KWS | ✅ Step 12 | 唤醒设置 → 引擎「离线」→ 下载模型 → 开启监听 |
 | 离线短指令 ASR | ❌ 未做 | 唤醒后请键盘输入；后续可接 sherpa ASR |
-| 本地运行时 Phase B | ❌ | [LOCAL_MODEL.md](LOCAL_MODEL.md) |
+| 本地运行时 Phase B | ✅ Step 13 | 添加 Agent →「本地」；可选下载 Gemma；工具确认流可用 |
 
 ---
 

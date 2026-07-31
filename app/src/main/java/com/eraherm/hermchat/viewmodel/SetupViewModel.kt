@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.eraherm.hermchat.data.local.AgentStore
+import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.data.network.AgentConfigImport
@@ -31,6 +32,9 @@ data class SetupUiState(
     val probeMessage: String? = null,
     val importHint: String? = null,
     val saving: Boolean = false,
+    val downloadingModel: Boolean = false,
+    val downloadProgress: Float = 0f,
+    val modelReady: Boolean = false,
     val error: String? = null,
     val completedProfile: AgentProfile? = null,
 )
@@ -38,6 +42,7 @@ data class SetupUiState(
 class SetupViewModel(
     private val agentStore: AgentStore,
     private val endpointProbe: EndpointProbe,
+    private val localModelStore: LocalModelStore,
     private val connectionTester: ConnectionTester = ConnectionTester(),
     initial: AgentProfile? = null,
 ) : ViewModel() {
@@ -53,9 +58,15 @@ class SetupViewModel(
                 name = initial.name,
                 apiKey = initial.apiKey,
                 model = initial.model,
+                modelReady = localModelStore.isReady(
+                    initial.model.takeIf { it.isNotBlank() && it != "default" }
+                        ?: LocalModelStore.DEFAULT_MODEL_ID,
+                ),
             )
         } else {
-            SetupUiState()
+            SetupUiState(
+                modelReady = localModelStore.isReady(),
+            )
         },
     )
     val uiState: StateFlow<SetupUiState> = _uiState.asStateFlow()
@@ -65,6 +76,13 @@ class SetupViewModel(
             it.copy(
                 kind = kind,
                 endpoint = kind.defaultEndpoint,
+                model = if (kind == AgentKind.LOCAL) {
+                    LocalModelStore.DEFAULT_MODEL_ID
+                } else if (it.model == LocalModelStore.DEFAULT_MODEL_ID) {
+                    "default"
+                } else {
+                    it.model
+                },
                 name = if (it.name == it.kind.defaultName || it.name.isBlank()) {
                     kind.defaultName
                 } else {
@@ -74,6 +92,7 @@ class SetupViewModel(
                 testMessage = null,
                 probeHits = emptyList(),
                 probeMessage = null,
+                modelReady = if (kind == AgentKind.LOCAL) localModelStore.isReady() else it.modelReady,
                 error = null,
             )
         }
@@ -198,12 +217,26 @@ class SetupViewModel(
     }
 
     fun testConnection() {
-        val endpoint = _uiState.value.endpoint
+        val state = _uiState.value
         viewModelScope.launch {
             _uiState.update {
                 it.copy(testing = true, testMessage = null, testPassed = false, error = null)
             }
-            val result = connectionTester.test(endpoint)
+            if (state.kind == AgentKind.LOCAL) {
+                val ready = localModelStore.isReady(
+                    state.model.ifBlank { LocalModelStore.DEFAULT_MODEL_ID },
+                )
+                _uiState.update {
+                    it.copy(
+                        testing = false,
+                        testPassed = true,
+                        testMessage = if (ready) "本地模型已就绪" else "本地编排已就绪",
+                        modelReady = ready,
+                    )
+                }
+                return@launch
+            }
+            val result = connectionTester.test(state.endpoint)
             _uiState.update {
                 result.fold(
                     onSuccess = { msg ->
@@ -226,6 +259,44 @@ class SetupViewModel(
         }
     }
 
+    fun downloadLocalModel() {
+        val state = _uiState.value
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(downloadingModel = true, downloadProgress = 0f, error = null)
+            }
+            val modelId = state.model.ifBlank { LocalModelStore.DEFAULT_MODEL_ID }
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                localModelStore.ensureInstalled(
+                    modelId = modelId,
+                    hfToken = state.apiKey,
+                ) { progress ->
+                    _uiState.update { it.copy(downloadProgress = progress) }
+                }
+            }
+            _uiState.update { ui ->
+                result.fold(
+                    onSuccess = {
+                        ui.copy(
+                            downloadingModel = false,
+                            downloadProgress = 1f,
+                            modelReady = true,
+                            testPassed = true,
+                            testMessage = "本地模型已就绪",
+                        )
+                    },
+                    onFailure = { err ->
+                        ui.copy(
+                            downloadingModel = false,
+                            modelReady = false,
+                            error = err.message ?: "下载失败",
+                        )
+                    },
+                )
+            }
+        }
+    }
+
     fun skipTestAndContinue() {
         goToNameStep(requireTest = false)
     }
@@ -233,7 +304,12 @@ class SetupViewModel(
     fun finish() {
         val state = _uiState.value
         val name = state.name.trim().ifEmpty { state.kind.defaultName }
-        if (state.endpoint.isBlank()) {
+        val endpoint = if (state.kind == AgentKind.LOCAL) {
+            AgentKind.LOCAL.defaultEndpoint
+        } else {
+            state.endpoint.trim()
+        }
+        if (endpoint.isBlank()) {
             _uiState.update { it.copy(error = "地址不能为空") }
             return
         }
@@ -244,9 +320,11 @@ class SetupViewModel(
                 id = editingId ?: java.util.UUID.randomUUID().toString(),
                 kind = state.kind,
                 name = name,
-                endpoint = state.endpoint.trim(),
+                endpoint = endpoint,
                 apiKey = state.apiKey.trim(),
-                model = state.model.trim().ifBlank { "default" },
+                model = state.model.trim().ifBlank {
+                    if (state.kind == AgentKind.LOCAL) LocalModelStore.DEFAULT_MODEL_ID else "default"
+                },
             )
             agentStore.saveAgent(profile, setCurrent = true)
             _uiState.update {
@@ -257,7 +335,7 @@ class SetupViewModel(
 
     private fun goToNameStep(requireTest: Boolean) {
         val state = _uiState.value
-        if (state.endpoint.isBlank()) {
+        if (state.kind != AgentKind.LOCAL && state.endpoint.isBlank()) {
             _uiState.update { it.copy(error = "请先填写地址") }
             return
         }
@@ -272,6 +350,7 @@ class SetupViewModel(
         fun factory(
             agentStore: AgentStore,
             endpointProbe: EndpointProbe,
+            localModelStore: LocalModelStore,
             initial: AgentProfile? = null,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
@@ -281,6 +360,7 @@ class SetupViewModel(
                         return SetupViewModel(
                             agentStore = agentStore,
                             endpointProbe = endpointProbe,
+                            localModelStore = localModelStore,
                             initial = initial,
                         ) as T
                     }

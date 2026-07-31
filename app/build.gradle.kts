@@ -21,8 +21,8 @@ android {
         applicationId = "com.eraherm.hermchat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -79,8 +79,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
         jniLibs {
-            // Avoid duplicate native lib merge issues from onnxruntime / sherpa.
-            pickFirsts += listOf("**/libc++_shared.so", "**/libonnxruntime.so")
+            // Avoid duplicate native lib merge issues from onnxruntime / sherpa / mediapipe.
+            pickFirsts += listOf(
+                "**/libc++_shared.so",
+                "**/libonnxruntime.so",
+                "**/*.so",
+            )
         }
     }
 }
@@ -103,6 +107,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.github.k2-fsa:sherpa-onnx:v1.13.4")
+    implementation("com.google.mediapipe:tasks-genai:0.10.27")
 
     val room = "2.6.1"
     implementation("androidx.room:room-runtime:$room")
