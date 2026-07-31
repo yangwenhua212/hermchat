@@ -16,7 +16,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * OpenAI-compatible chat completions (SSE) for OpenClaw / HTTP Agents.
+ * OpenAI-compatible chat completions (SSE) for HTTP Agents.
  */
 class OpenAiCompatClient(
     baseUrl: String,

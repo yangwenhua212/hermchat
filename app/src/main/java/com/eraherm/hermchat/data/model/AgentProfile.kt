@@ -5,22 +5,31 @@ enum class AgentKind(
     val defaultEndpoint: String,
     val defaultName: String,
 ) {
-    HERMES(
-        label = "Hermes",
-        // 简易 Bridge 用 /ws；官方 dashboard 网关多为 /api/ws
+    WEBSOCKET(
+        label = "WebSocket",
         defaultEndpoint = "ws://10.0.2.2:8765/ws",
-        defaultName = "我的 Hermes",
+        defaultName = "我的助手",
     ),
-    OPENCLAW(
-        label = "OpenClaw",
+    HTTP_COMPAT(
+        label = "HTTP 兼容",
         defaultEndpoint = "http://10.0.2.2:5000",
-        defaultName = "我的 OpenClaw",
+        defaultName = "我的助手",
     ),
     CUSTOM(
         label = "自定义",
         defaultEndpoint = "ws://",
         defaultName = "我的 Agent",
     ),
+    ;
+
+    companion object {
+        fun fromStored(raw: String): AgentKind = when (raw) {
+            "HERMES", "WEBSOCKET" -> WEBSOCKET
+            "OPENCLAW", "HTTP_COMPAT" -> HTTP_COMPAT
+            "CUSTOM" -> CUSTOM
+            else -> runCatching { valueOf(raw) }.getOrDefault(CUSTOM)
+        }
+    }
 }
 
 data class AgentProfile(

@@ -12,7 +12,7 @@ object AIClientFactory {
                 OpenAiCompatClient(endpoint)
             }
 
-            agent.kind == AgentKind.HERMES -> HermesBridgeClient.forHermes(endpoint)
+            agent.kind == AgentKind.WEBSOCKET -> HermesBridgeClient.forHermes(endpoint)
 
             else -> HermesBridgeClient(endpoint)
         }

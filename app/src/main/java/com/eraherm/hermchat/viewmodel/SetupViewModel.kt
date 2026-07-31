@@ -15,9 +15,9 @@ import kotlinx.coroutines.launch
 
 data class SetupUiState(
     val step: Int = 1,
-    val kind: AgentKind = AgentKind.HERMES,
-    val endpoint: String = AgentKind.HERMES.defaultEndpoint,
-    val name: String = AgentKind.HERMES.defaultName,
+    val kind: AgentKind = AgentKind.WEBSOCKET,
+    val endpoint: String = AgentKind.WEBSOCKET.defaultEndpoint,
+    val name: String = AgentKind.WEBSOCKET.defaultName,
     val testing: Boolean = false,
     val testPassed: Boolean = false,
     val testMessage: String? = null,

@@ -12,7 +12,16 @@
 | App 显示名 | **HxSync** |
 | 应用 ID | `com.eraherm.hermchat` |
 
-与 [eraherm-memory](https://github.com/yangwenhua212/eraherm-memory) 同属 EraHerm 生态：记忆内核管「记得住」，本仓库管「连得上、喊得醒、办得成」。
+## EraHerm 生态分工
+
+多数 Agent 自己就会记事、调工具。EraHerm 不重复造「脑子里的通用能力」，而是补两块个人侧体验：
+
+| 仓库 | 角色 | 一句话 |
+|------|------|--------|
+| [eraherm-memory](https://github.com/yangwenhua212/eraherm-memory) | **记忆增强** | 可嵌入的记忆内核：记得更准、纠正能进化 |
+| **hermchat（本仓库）** | **口袋里的家** | 手机客户端：连得上、喊得醒、确认后动手（日历等） |
+
+一句话：**memory 增强「记得」；hermchat 提供「住在手机里、用得顺手」。** 兼容常见 WebSocket / OpenAI 兼容 HTTP 端点，不绑死某一家 Agent。
 
 产品定位全文见 [docs/PRODUCT.md](docs/PRODUCT.md)。
 
@@ -22,9 +31,9 @@
 
 ## 要解决什么
 
-飞书一类工具为企业 IT 设计：机器人藏在工作台 / 应用管理 / 开发者后台，还要配白名单、事件订阅、回调地址。个人用户只想「连上我的 Hermes / OpenClaw，在自己手机里用」——却要买下一栋楼。
+飞书一类工具为企业 IT 设计：机器人藏在工作台 / 应用管理 / 开发者后台，还要配白名单、事件订阅、回调地址。个人用户只想「把自己的 Agent 装进手机用」——却要买下一栋楼。
 
-**HermChat 只做一件事：** 用最简单的方式，把**你自己的** AI Agent 装进手机。
+**HermChat 只做一件事：** 用最简单的方式，把**你自己的** AI Agent 装进手机，并在你确认后调用本机能力。
 
 | 原则 | 做法 |
 |------|------|
@@ -40,15 +49,15 @@
 ## 配置体验（目标形态）
 
 ```
-Step 1  选类型：Hermes │ OpenClaw │ 自定义
-Step 2  填地址：ws://…  [测试]
-Step 3  起名字：我的小龙虾（可选）
+Step 1  选类型：WebSocket │ HTTP 兼容 │ 自定义
+Step 2  填地址：ws://… 或 http://…  [测试]
+Step 3  起名字：我的助手（可选）
         → 连接成功，开始聊天
 ```
 
-进阶（非 Day-1）：本机预设自动探测、云端扫码、终端二维码一扫即配。
+进阶（非 Day-1）：本机预设自动探测、扫码导入配置。
 
-多 Agent：顶栏下拉切换「家里 Hermes / 工作 OpenClaw」，点一下就换，不用重配。
+多 Agent：顶栏下拉切换「家里的 / 工作的」，点一下就换，不用重配。
 
 ---
 
@@ -65,7 +74,7 @@ Step 3  起名字：我的小龙虾（可选）
 | 模块 | 方案 |
 |------|------|
 | UI | Jetpack Compose |
-| 网络 | OkHttp WebSocket → Agent Bridge |
+| 网络 | OkHttp WebSocket / OpenAI 兼容 HTTP SSE |
 | 存储 | Room + EncryptedSharedPreferences |
 | 唤醒 / ASR | 开源栈（如 sherpa-onnx / Vosk） |
 | 许可 | AGPL-3.0 + 商业双轨 |

@@ -239,9 +239,9 @@ private fun StepSelectKind(
                 )
                 Text(
                     text = when (kind) {
-                        AgentKind.HERMES -> "WebSocket Bridge（推荐本地模拟器用 10.0.2.2）"
-                        AgentKind.OPENCLAW -> "HTTP 服务地址"
-                        AgentKind.CUSTOM -> "任意 ws / http 端点"
+                        AgentKind.WEBSOCKET -> "WebSocket 端点（模拟器访问本机用 10.0.2.2）"
+                        AgentKind.HTTP_COMPAT -> "OpenAI 兼容 HTTP（如 /v1/chat/completions）"
+                        AgentKind.CUSTOM -> "任意 ws:// 或 http(s):// 地址"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = SoftGray,
@@ -332,11 +332,11 @@ private fun StepName(
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
         label = { Text("显示名称") },
-        placeholder = { Text("我的小龙虾") },
+        placeholder = { Text("我的助手") },
         shape = RoundedCornerShape(16.dp),
     )
     Text(
-        text = "之后可在顶栏切换多个 Agent（Step 4）。",
+        text = "之后可在顶栏切换多个 Agent。",
         style = MaterialTheme.typography.bodyMedium,
         color = SoftGray,
     )

@@ -1,13 +1,13 @@
-# Bridge 协议（Step 3）
+# Bridge 协议
 
-HxSync 按 Agent 类型 / URL 自动选择传输：
+HxSync 按连接类型 / URL 自动选择传输（不绑定某一家 Agent 品牌）：
 
 | 条件 | 传输 | 说明 |
 |------|------|------|
-| `ws(s)://…` 且路径含 `/api/ws`，或类型 Hermes | JSON-RPC WebSocket | `session.create` → `prompt.submit`；收 `message.delta` / `message.complete` |
-| `ws(s)://…` 且路径含 `/v1/ws` | Hermes API 帧 | 发 `agent.message.send`；收 `agent.message.delta` / `done` / `error` |
+| `ws(s)://…` 且路径含 `/api/ws` | JSON-RPC WebSocket | `session.create` → `prompt.submit`；收 `message.delta` / `message.complete` |
+| `ws(s)://…` 且路径含 `/v1/ws` | 消息帧 WebSocket | 发 `agent.message.send`；收 `agent.message.delta` / `done` / `error` |
 | 其它 `ws(s)://…` | 简易帧 | 发 `{"type":"chat","content":"…"}`；收 `token`/`delta`/`done` |
-| `http(s)://…`（OpenClaw / 自定义） | OpenAI 兼容 SSE | `POST {base}/v1/chat/completions`，`stream: true` |
+| `http(s)://…` | OpenAI 兼容 SSE | `POST {base}/v1/chat/completions`，`stream: true` |
 
 ## 简易 WebSocket 帧（自建 Bridge 最省事）
 
@@ -27,7 +27,7 @@ HxSync 按 Agent 类型 / URL 自动选择传输：
 
 错误：`{"type":"error","message":"…"}`。
 
-## 工具调用（Step 6）
+## 工具调用
 
 Agent 可在回复中夹带（或单独发送）JSON：
 

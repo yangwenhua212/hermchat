@@ -103,9 +103,7 @@ class AgentStore(
             buildList {
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
-                    val kind = runCatching {
-                        AgentKind.valueOf(obj.getString("kind"))
-                    }.getOrDefault(AgentKind.CUSTOM)
+                    val kind = AgentKind.fromStored(obj.optString("kind", "CUSTOM"))
                     add(
                         AgentProfile(
                             id = obj.getString("id"),

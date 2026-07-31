@@ -12,7 +12,7 @@ data class WakeSettings(
 ) {
     companion object {
         const val DEFAULT_PHRASE = "小助手"
-        val PRESETS = listOf("小助手", "小黑", "小龙虾", "HxSync")
+        val PRESETS = listOf("小助手", "小黑", "嘿助手", "HxSync")
     }
 }
 
