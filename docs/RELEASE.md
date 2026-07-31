@@ -1,8 +1,8 @@
-# Release 构建
+# Release 构建与开源分发
 
-当前内测版本：`versionName` **0.1.1** / `versionCode` **2**（见 `app/build.gradle.kts`）。
+当前公开发布版本：`versionName` **0.1.5** / `versionCode` **6**（见 `app/build.gradle.kts`）。
 
-产出可安装的 APK，供真机验收与分发。完整上手见仓库 [README.md](../README.md#五分钟上手真机--演示-bridge)。
+**给用户下载**：GitHub [Releases](https://github.com/yangwenhua212/hermchat/releases/latest) 上的 `HxSync-*.apk`（无需应用商店）。
 
 ## 快速构建（内测）
 
@@ -18,18 +18,28 @@ APK：
 app/build/outputs/apk/release/app-release.apk
 ```
 
+建议复制为带版本名的文件再上传 Release：
+
+```
+dist/HxSync-0.1.5.apk
+```
+
 安装：
 
 ```bash
 # Windows 示例
-& "D:\Android\Sdk\platform-tools\adb.exe" install -r app\build\outputs\apk\release\app-release.apk
+& "D:\Android\Sdk\platform-tools\adb.exe" install -r dist\HxSync-0.1.5.apk
 ```
 
 无 adb 时：把 APK 拷到手机直接安装（允许未知来源）。
 
-Debug：`./gradlew :app:assembleDebug`。
+## 发布到 GitHub Release
 
-## 正式签名（可选）
+```bash
+gh release create v0.1.5 dist/HxSync-0.1.5.apk --title "HxSync 0.1.5" --notes-file docs/RELEASE_NOTES.md
+```
+
+## 正式签名（可选，以后有钱/有主体再配）
 
 1. 生成密钥库（私钥勿提交）：
 
@@ -52,4 +62,5 @@ keyPassword=你的密码
 
 - [ ] `versionCode` 已递增
 - [ ] 对照 [ACCEPTANCE.md](ACCEPTANCE.md) 跑通主路径
-- [ ] README「五分钟上手」与当前端口/脚本一致
+- [ ] README「下载安装」指向最新 Release
+- [ ] APK 已挂到 GitHub Release

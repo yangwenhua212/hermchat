@@ -64,6 +64,10 @@ keystore.properties
 # Generated config QR (local)
 config-qr.png
 
+# Local release artifacts (uploaded via gh release; keep out of git)
+dist/
+*.apk
+
 # Local tooling
 .tools/
 .gradle-home/

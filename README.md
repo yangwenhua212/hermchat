@@ -1,10 +1,11 @@
 # hermchat
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Latest Release](https://img.shields.io/github/v/release/yangwenhua212/hermchat)](https://github.com/yangwenhua212/hermchat/releases/latest)
 
 **HxSync** — 把你自己的 AI Agent 装进口袋。
 
-> 通用个人 Agent **口袋客户端**：远程连接、直连 API，以及（规划中）手机本地运行时——同一 App 里对话，界面听你的。协议兼容常见实现，**不绑死单一品牌**。
+> 通用个人 Agent **口袋客户端**：远程连接、直连 API、手机本地运行时——同一 App 里对话，界面听你的。协议兼容常见实现，**不绑死单一品牌**。
 
 | | 名称 |
 |--|------|
@@ -13,7 +14,19 @@
 | 应用 ID | `com.eraherm.hermchat` |
 | 当前版本 | **0.1.5** |
 
-## 三种模式（分阶段）
+## 下载安装（开源分发）
+
+不走应用商店。直接从 GitHub Release 下 APK：
+
+**[→ 下载最新版 HxSync](https://github.com/yangwenhua212/hermchat/releases/latest)**
+
+1. 手机浏览器打开上面的链接，下载 `HxSync-*.apk`  
+2. 允许「未知来源 / 安装未知应用」后安装  
+3. 签名：当前公开发布为 **debug 签名内测包**（无需开发者账号）；以后有正式密钥再换  
+
+源码：本仓库。许可：[AGPL-3.0](LICENSE)。
+
+## 三种模式
 
 | 模式 | 阶段 | 说明 |
 |------|------|------|
@@ -27,11 +40,13 @@
 
 ### 1. 装 APK
 
+优先从 [Release](https://github.com/yangwenhua212/hermchat/releases/latest) 下载；或自行构建：
+
 ```bash
 ./gradlew :app:assembleRelease
 ```
 
-APK：`app/build/outputs/apk/release/app-release.apk`。见 [docs/RELEASE.md](docs/RELEASE.md)。
+产物：`app/build/outputs/apk/release/app-release.apk`。见 [docs/RELEASE.md](docs/RELEASE.md)。
 
 ### 2. 电脑起演示 Bridge
 
@@ -55,19 +70,20 @@ python scripts/demo_bridge.py
 | 仓库 | 角色 |
 |------|------|
 | [eraherm-memory](https://github.com/yangwenhua212/eraherm-memory) | 记忆增强 |
-| **hermchat（本仓库）** | 口袋客户端：远程 / 直连 API；Phase B 可选本地运行时；唤醒与本机工具 |
+| **hermchat（本仓库）** | 口袋客户端：远程 / 直连 API；本地运行时；唤醒与本机工具 |
 
 **许可**： [AGPL-3.0](LICENSE)；商用见 [COMMERCIAL.md](COMMERCIAL.md)。
 
 ## 当前状态
 
-Phase A 主干已可用；Step 12 离线唤醒（sherpa KWS）已接入。进度：[docs/ROADMAP.md](docs/ROADMAP.md)。UI 规范：[docs/UI.md](docs/UI.md)。
+MVP 功能面已齐（Step 0–15）：对话、多模式、离线唤醒+指令、本机工具、加密存储等。进度：[docs/ROADMAP.md](docs/ROADMAP.md)。安全：[docs/SECURITY.md](docs/SECURITY.md)。UI：[docs/UI.md](docs/UI.md)。
 
 ## 本地开发
 
 ```bash
 ./gradlew :app:assembleDebug
 ./gradlew :app:assembleRelease
+./gradlew :app:testDebugUnitTest
 ```
 
 需 Android SDK（`local.properties`）。Android Studio 打开仓库根目录，运行 `app`。
