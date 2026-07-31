@@ -135,10 +135,7 @@ fun AgentSetupScreen(
                 .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 16.dp),
         ) {
-            BrandMark(
-                subtitle = "三步配好你的 Agent · 全程在 App 内",
-                compact = true,
-            )
+            BrandMark(compact = true)
             Spacer(modifier = Modifier.height(18.dp))
             StepHeader(current = uiState.step)
             Spacer(modifier = Modifier.height(18.dp))
@@ -169,7 +166,6 @@ fun AgentSetupScreen(
                             probing = uiState.probing,
                             probeHits = uiState.probeHits,
                             probeMessage = uiState.probeMessage,
-                            importHint = uiState.importHint,
                             onEndpointChange = viewModel::updateEndpoint,
                             onTest = viewModel::testConnection,
                             onUsePreset = { kind -> viewModel.selectKind(kind) },
@@ -241,21 +237,14 @@ fun AgentSetupScreen(
             onDismissRequest = { showPasteDialog = false },
             title = { Text("粘贴配置") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "支持 JSON、hxsync:// 链接，或直接粘贴 ws/http 地址。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = SoftGray,
-                    )
-                    OutlinedTextField(
-                        value = pasteDraft,
-                        onValueChange = { pasteDraft = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        label = { Text("配置内容") },
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                }
+                OutlinedTextField(
+                    value = pasteDraft,
+                    onValueChange = { pasteDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    label = { Text("配置内容") },
+                    shape = RoundedCornerShape(12.dp),
+                )
             },
             confirmButton = {
                 TextButton(
@@ -345,15 +334,10 @@ private fun StepSelectKind(
     onPaste: () -> Unit,
 ) {
     Text(
-        text = "Step 1：选择你的 Agent 类型",
+        text = "选择类型",
         style = MaterialTheme.typography.bodyLarge,
     )
     ImportActions(onScan = onScan, onPaste = onPaste)
-    Text(
-        text = "电脑终端出二维码时，可直接扫码跳过手填。",
-        style = MaterialTheme.typography.bodyMedium,
-        color = SoftGray,
-    )
     AgentKind.entries.forEach { kind ->
         val selectedKind = kind == selected
         Surface(
@@ -379,23 +363,12 @@ private fun StepSelectKind(
                 },
             ),
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = kind.label,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Text(
-                    text = when (kind) {
-                        AgentKind.WEBSOCKET -> "WebSocket 端点（模拟器访问本机用 10.0.2.2）"
-                        AgentKind.HTTP_COMPAT -> "OpenAI 兼容 HTTP（如 /v1/chat/completions）"
-                        AgentKind.CUSTOM -> "任意 ws:// 或 http(s):// 地址"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = SoftGray,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
+            Text(
+                text = kind.label,
+                modifier = Modifier.padding(16.dp),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
         }
     }
 }
@@ -410,7 +383,6 @@ private fun StepEndpoint(
     probing: Boolean,
     probeHits: List<ProbeHit>,
     probeMessage: String?,
-    importHint: String?,
     onEndpointChange: (String) -> Unit,
     onTest: () -> Unit,
     onUsePreset: (AgentKind) -> Unit,
@@ -421,22 +393,10 @@ private fun StepEndpoint(
     onPaste: () -> Unit,
 ) {
     Text(
-        text = "Step 2：填地址（就这一行）",
+        text = "填地址",
         style = MaterialTheme.typography.bodyLarge,
     )
-    Text(
-        text = "可自动探测局域网常见端口；真机请与电脑同一 Wi‑Fi。",
-        style = MaterialTheme.typography.bodyMedium,
-        color = SoftGray,
-    )
     ImportActions(onScan = onScan, onPaste = onPaste)
-    importHint?.let { hint ->
-        Text(
-            text = hint,
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
     OutlinedTextField(
         value = endpoint,
         onValueChange = onEndpointChange,
@@ -470,9 +430,10 @@ private fun StepEndpoint(
     ) {
         Text("恢复预设地址")
     }
-    probeMessage?.let { message ->
+    if (probeHits.isEmpty() && !probeMessage.isNullOrBlank() && !probing) {
+        // keep silence on long probe hints; only show compact miss
         Text(
-            text = message,
+            text = "未发现端点",
             color = SoftGray,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -498,31 +459,28 @@ private fun StepEndpoint(
                 if (selected) MaterialTheme.colorScheme.primary else Line,
             ),
         ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Text(hit.endpoint, style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    text = hit.detail,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = SoftGray,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
+            Text(
+                text = hit.endpoint,
+                modifier = Modifier.padding(14.dp),
+                style = MaterialTheme.typography.bodyLarge,
+            )
         }
     }
-    testMessage?.let { message ->
-        Text(
-            text = if (testPassed) "测连成功 · $message" else "测连失败 · $message",
-            color = if (testPassed) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.error
-            },
+    when {
+        testPassed -> Text(
+            text = "测连成功",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        !testMessage.isNullOrBlank() -> Text(
+            text = "测连失败",
+            color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
         )
     }
     if (!testPassed) {
         TextButton(onClick = onSkipTest) {
-            Text("Agent 暂未开机？跳过测连")
+            Text("跳过测连")
         }
     }
 }
@@ -533,7 +491,7 @@ private fun StepName(
     onNameChange: (String) -> Unit,
 ) {
     Text(
-        text = "Step 3：起个名字（可选）",
+        text = "起名字",
         style = MaterialTheme.typography.bodyLarge,
     )
     OutlinedTextField(
@@ -544,10 +502,5 @@ private fun StepName(
         label = { Text("显示名称") },
         placeholder = { Text("我的助手") },
         shape = RoundedCornerShape(16.dp),
-    )
-    Text(
-        text = "之后可在顶栏切换多个 Agent。",
-        style = MaterialTheme.typography.bodyMedium,
-        color = SoftGray,
     )
 }

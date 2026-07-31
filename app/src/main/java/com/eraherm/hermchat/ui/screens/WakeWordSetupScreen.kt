@@ -43,7 +43,6 @@ import com.eraherm.hermchat.service.WakeWordService
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.Line
-import com.eraherm.hermchat.ui.theme.SoftGray
 
 @Composable
 fun WakeWordSetupScreen(
@@ -89,16 +88,8 @@ fun WakeWordSetupScreen(
             .navigationBarsPadding()
             .padding(20.dp),
     ) {
-        BrandMark(
-            subtitle = "选一个预设名字，后台听你喊它",
-            compact = true,
-        )
-        Text(
-            text = "当前用系统语音识别；接口已预留，后续可换 sherpa-onnx / Vosk。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = SoftGray,
-            modifier = Modifier.padding(top = 10.dp, bottom = 16.dp),
-        )
+        BrandMark(compact = true)
+        Spacer(modifier = Modifier.height(16.dp))
 
         Column(
             modifier = Modifier
@@ -144,7 +135,6 @@ fun WakeWordSetupScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("识别后自动发送", style = MaterialTheme.typography.bodyLarge)
-                    Text("关掉则只填进输入框", style = MaterialTheme.typography.bodyMedium, color = SoftGray)
                 }
                 Switch(
                     checked = settings.autoSend,
@@ -161,11 +151,6 @@ fun WakeWordSetupScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("后台持续监听", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        if (settings.enabled) "已开启 · 通知栏可停止" else "关闭时仍可用麦克风按钮",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = SoftGray,
-                    )
                 }
                 Switch(
                     checked = settings.enabled,
@@ -183,12 +168,6 @@ fun WakeWordSetupScreen(
             permissionHint?.let {
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
-
-            Text(
-                text = "国产 ROM 若杀后台，请把 HxSync 加入省电白名单。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = SoftGray,
-            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))

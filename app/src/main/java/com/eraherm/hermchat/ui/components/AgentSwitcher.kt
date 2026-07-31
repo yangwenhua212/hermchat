@@ -81,13 +81,6 @@ fun AgentSwitcher(
                     modifier = Modifier.rotate(arrowRotation),
                 )
             }
-            Text(
-                text = current?.kind?.label ?: "未配置",
-                style = MaterialTheme.typography.bodyMedium,
-                color = SoftGray,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
 
         DropdownMenu(
@@ -130,11 +123,6 @@ fun AgentSwitcher(
                                     },
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = agent.kind.label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = SoftGray,
                                 )
                             }
                             if (selected) {

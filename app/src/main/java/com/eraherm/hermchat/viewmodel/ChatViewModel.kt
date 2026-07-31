@@ -227,7 +227,7 @@ class ChatViewModel(
                 Message(
                     id = UUID.randomUUID().toString(),
                     role = MessageRole.SYSTEM,
-                    content = "已取消：${call.title}",
+                    content = "已取消",
                     providerLabel = "tool",
                     createdAt = System.currentTimeMillis(),
                 ),
@@ -287,7 +287,7 @@ class ChatViewModel(
             Message(
                 id = WELCOME_ID,
                 role = MessageRole.ASSISTANT,
-                content = "HxSync 已就绪。可以说「明天下午3点提醒我开会」，确认后会写入系统日历。",
+                content = "HxSync 已就绪。",
                 providerLabel = "local",
                 createdAt = System.currentTimeMillis(),
             ),

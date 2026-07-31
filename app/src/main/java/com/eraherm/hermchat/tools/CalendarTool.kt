@@ -1,7 +1,6 @@
 package com.eraherm.hermchat.tools
 
 import android.Manifest
-import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.provider.CalendarContract
@@ -50,19 +49,18 @@ class CalendarTool(
                 put(CalendarContract.Events.CALENDAR_ID, calendarId)
                 put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
             }
-            val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+            context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
                 ?: return@withContext ToolResult(
                     toolCallId = call.id,
                     name = name,
                     success = false,
                     message = "写入日历失败",
                 )
-            val eventId = ContentUris.parseId(uri)
             ToolResult(
                 toolCallId = call.id,
                 name = name,
                 success = true,
-                message = "已创建日程「$title」（eventId=$eventId）",
+                message = "已创建日程「$title」",
             )
         } catch (e: SecurityException) {
             ToolResult(

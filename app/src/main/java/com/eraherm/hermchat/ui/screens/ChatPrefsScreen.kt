@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.local.InputMode
-import com.eraherm.hermchat.data.local.ShortcutAction
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.Line
@@ -55,16 +54,8 @@ fun ChatPrefsScreen(
                 .navigationBarsPadding()
                 .padding(20.dp),
         ) {
-            BrandMark(
-                subtitle = "快捷指令与输入方式 · 界面听你的",
-                compact = true,
-            )
-            Text(
-                text = "点指令可插入或发送自然语言；排序会立刻反映在聊天页。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = SoftGray,
-                modifier = Modifier.padding(top = 10.dp, bottom = 16.dp),
-            )
+            BrandMark(compact = true)
+            Spacer(modifier = Modifier.height(20.dp))
 
             Column(
                 modifier = Modifier
@@ -94,15 +85,11 @@ fun ChatPrefsScreen(
                             if (selected) MaterialTheme.colorScheme.primary else Line,
                         ),
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(mode.label, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                text = mode.hint,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = SoftGray,
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
-                        }
+                        Text(
+                            text = mode.label,
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
                     }
                 }
 
@@ -112,7 +99,7 @@ fun ChatPrefsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("快捷指令顺序", style = MaterialTheme.typography.titleMedium)
+                    Text("快捷指令", style = MaterialTheme.typography.titleMedium)
                     TextButton(onClick = { app.chatPrefsStore.resetShortcuts() }) {
                         Text("恢复默认")
                     }
@@ -126,20 +113,16 @@ fun ChatPrefsScreen(
                         border = BorderStroke(1.dp, Line),
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                                Text(shortcut.label, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    text = when (shortcut.action) {
-                                        ShortcutAction.INSERT -> "插入 · ${shortcut.text}"
-                                        ShortcutAction.SEND -> "发送 · ${shortcut.text}"
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = SoftGray,
-                                )
-                            }
+                            Text(
+                                text = shortcut.label,
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 8.dp),
+                            )
                             IconButton(
                                 onClick = { app.chatPrefsStore.moveShortcut(shortcut.id, -1) },
                                 enabled = index > 0,

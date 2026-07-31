@@ -29,7 +29,7 @@ class SpeechWakeEngine(
     fun startListeningLoop() {
         mainHandler.post {
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-                bus.emit(VoiceEvent.Error("本机没有可用的语音识别引擎"))
+                bus.emit(VoiceEvent.Error("本机暂无语音识别，请用键盘输入"))
                 return@post
             }
             running = true
@@ -55,7 +55,7 @@ class SpeechWakeEngine(
     fun startPushToTalk() {
         mainHandler.post {
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-                bus.emit(VoiceEvent.Error("本机没有可用的语音识别引擎"))
+                bus.emit(VoiceEvent.Error("本机暂无语音识别，请用键盘输入"))
                 return@post
             }
             pushToTalk = true
