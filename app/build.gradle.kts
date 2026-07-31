@@ -21,8 +21,8 @@ android {
         applicationId = "com.eraherm.hermchat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.1.5"
+        versionCode = 7
+        versionName = "0.1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -33,15 +33,16 @@ android {
     }
 
     signingConfigs {
-        if (keystorePropertiesFile.exists()) {
-            create("release") {
-                val storePath = keystoreProperties.getProperty("storeFile")
-                    ?: error("keystore.properties missing storeFile")
-                storeFile = rootProject.file(storePath)
-                storePassword = keystoreProperties.getProperty("storePassword")
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
+        create("release") {
+            check(keystorePropertiesFile.exists()) {
+                "缺少 keystore.properties 与 hermchat-release.jks。见 docs/RELEASE.md"
             }
+            val storePath = keystoreProperties.getProperty("storeFile")
+                ?: error("keystore.properties missing storeFile")
+            storeFile = rootProject.file(storePath)
+            storePassword = keystoreProperties.getProperty("storePassword")
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
         }
     }
 
@@ -52,12 +53,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                // 内测：无正式密钥时用 debug 签名，便于 assembleRelease 装机
-                signingConfigs.getByName("debug")
-            }
+            // Public/dev builds must use the long-lived release keystore.
+            // Never ship debug-signed APKs — debug certs expire and block upgrades.
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -72,6 +70,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -117,6 +116,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

@@ -150,7 +150,7 @@ class ChatViewModel(
                 val raw = buffer.toString()
                 val (displayText, agentTool) = ToolCallParser.extract(raw)
                 if (agentTool != null) {
-                    pendingToolCall.value = agentTool
+                    pendingToolCall.value = agentTool.copy(needConfirm = true)
                 }
 
                 val finalText = displayText.ifBlank {

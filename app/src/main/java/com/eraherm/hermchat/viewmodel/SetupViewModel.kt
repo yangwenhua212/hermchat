@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.eraherm.hermchat.data.local.AgentStore
+import com.eraherm.hermchat.data.local.DeviceCapability
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
@@ -43,6 +44,7 @@ class SetupViewModel(
     private val agentStore: AgentStore,
     private val endpointProbe: EndpointProbe,
     private val localModelStore: LocalModelStore,
+    private val appContext: android.content.Context,
     private val connectionTester: ConnectionTester = ConnectionTester(),
     initial: AgentProfile? = null,
 ) : ViewModel() {
@@ -261,6 +263,12 @@ class SetupViewModel(
 
     fun downloadLocalModel() {
         val state = _uiState.value
+        if (!DeviceCapability.canRunLocalLlm(appContext)) {
+            _uiState.update {
+                it.copy(error = "该设备内存不足，不支持本地大模型")
+            }
+            return
+        }
         viewModelScope.launch {
             _uiState.update {
                 it.copy(downloadingModel = true, downloadProgress = 0f, error = null)
@@ -271,7 +279,7 @@ class SetupViewModel(
                     modelId = modelId,
                     hfToken = state.apiKey,
                 ) { progress ->
-                    _uiState.update { it.copy(downloadProgress = progress) }
+                    _uiState.update { ui -> ui.copy(downloadProgress = progress) }
                 }
             }
             _uiState.update { ui ->
@@ -351,6 +359,7 @@ class SetupViewModel(
             agentStore: AgentStore,
             endpointProbe: EndpointProbe,
             localModelStore: LocalModelStore,
+            appContext: android.content.Context,
             initial: AgentProfile? = null,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
@@ -361,6 +370,7 @@ class SetupViewModel(
                             agentStore = agentStore,
                             endpointProbe = endpointProbe,
                             localModelStore = localModelStore,
+                            appContext = appContext.applicationContext,
                             initial = initial,
                         ) as T
                     }

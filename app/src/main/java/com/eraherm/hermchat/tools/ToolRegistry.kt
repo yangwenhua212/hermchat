@@ -18,6 +18,15 @@ class ToolRegistry(
         tools[name]?.requiredPermissions ?: emptyArray()
 
     suspend fun execute(call: ToolCall): ToolResult {
+        // Defense in depth: phone tools must never run silently from remote payloads.
+        if (!call.needConfirm) {
+            return ToolResult(
+                toolCallId = call.id,
+                name = call.name,
+                success = false,
+                message = "需要确认后才能执行",
+            )
+        }
         val tool = tools[call.name]
             ?: return ToolResult(
                 toolCallId = call.id,

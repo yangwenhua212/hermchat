@@ -20,6 +20,7 @@
 | 13 | 本地运行时 Phase B | ✅ 类型「本地」+ MediaPipe/编排；模型按需下载；见 [LOCAL_MODEL.md](LOCAL_MODEL.md) |
 | 14 | 离线短指令 ASR | ✅ 并入 Step 12：喊一声 → 说指令 → Transcript 自动发送 |
 | 15 | 安全与稳定性收口 | ✅ 加密 Agent 存储、WS 重连、关键单测；见 [SECURITY.md](SECURITY.md) |
+| 16 | 发版隐患收口 | ✅ release 长期签名、本地 LLM 内存门槛、关于页 AGPL、工具强制确认 |
 
 产品原则见 [PRODUCT.md](PRODUCT.md)（三种模式 + 分阶段；品牌表述 B）。实现备忘见 [NEXT_IMPL.md](NEXT_IMPL.md)。UI 文案见 [UI.md](UI.md)。安全见 [SECURITY.md](SECURITY.md)。
 

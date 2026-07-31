@@ -1,53 +1,38 @@
-# Release 构建与开源分发
+# Release 构建与签名
 
-当前公开发布版本：`versionName` **0.1.5** / `versionCode` **6**（见 `app/build.gradle.kts`）。
+当前版本：`versionName` **0.1.6** / `versionCode` **7**。
 
-**给用户下载**：GitHub [Releases](https://github.com/yangwenhua212/hermchat/releases/latest) 上的 `HxSync-*.apk`（无需应用商店）。
+> **阶段**：开发预览。给自己试用 / 协作者测；**不是** 1.0 正式对外分发。
 
-## 快速构建（内测）
+## 签名（强制）
 
-未配置正式签名时，Release 会**回退到 debug 签名**：
+Release **必须**使用长期有效的 `hermchat-release.jks`（约 10000 天），**禁止**再用 debug 签名发版。
+
+1. 仓库根目录应有（均已 gitignore，**切勿提交**）：
+   - `hermchat-release.jks`
+   - `keystore.properties`
+
+2. **立刻备份**上述两个文件到加密盘 / 密码管理器。丢失密钥 = 无法覆盖升级已装用户。
+
+3. 构建：
 
 ```bash
 ./gradlew :app:assembleRelease
 ```
 
-APK：
+产物：`app/build/outputs/apk/release/app-release.apk`
 
-```
-app/build/outputs/apk/release/app-release.apk
-```
+从旧 debug 包升级：**必须先卸载**再装 release 签名包。
 
-建议复制为带版本名的文件再上传 Release：
-
-```
-dist/HxSync-0.1.5.apk
-```
-
-安装：
+## 若需重新生成密钥
 
 ```bash
-# Windows 示例
-& "D:\Android\Sdk\platform-tools\adb.exe" install -r dist\HxSync-0.1.5.apk
+keytool -genkeypair -v -storetype PKCS12 -keystore hermchat-release.jks \
+  -alias hermchat -keyalg RSA -keysize 2048 -validity 10000 \
+  -dname "CN=HxSync, OU=OpenSource, O=HermChat Authors, L=Internet, ST=NA, C=CN"
 ```
 
-无 adb 时：把 APK 拷到手机直接安装（允许未知来源）。
-
-## 发布到 GitHub Release
-
-```bash
-gh release create v0.1.5 dist/HxSync-0.1.5.apk --title "HxSync 0.1.5" --notes-file docs/RELEASE_NOTES.md
-```
-
-## 正式签名（可选，以后有钱/有主体再配）
-
-1. 生成密钥库（私钥勿提交）：
-
-```bash
-keytool -genkey -v -keystore hermchat-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias hermchat
-```
-
-2. 仓库根目录 `keystore.properties`（已 gitignore）：
+再写 `keystore.properties`：
 
 ```properties
 storeFile=hermchat-release.jks
@@ -56,11 +41,10 @@ keyAlias=hermchat
 keyPassword=你的密码
 ```
 
-3. 再 `./gradlew :app:assembleRelease`。
+## 模型体积
 
-## 发版检查
+Gemma 等本地权重**不打包进 APK**，首次在「本地」模式按需下载。APK 主要含运行时原生库。
 
-- [ ] `versionCode` 已递增
-- [ ] 对照 [ACCEPTANCE.md](ACCEPTANCE.md) 跑通主路径
-- [ ] README「下载安装」指向最新 Release
-- [ ] APK 已挂到 GitHub Release
+## 安全提醒
+
+局域网演示可用 `ws://`；**公网请用 `wss://` / `https://`，勿明文传密钥。** 详见 [SECURITY.md](SECURITY.md)。

@@ -44,6 +44,7 @@ import com.eraherm.hermchat.ui.theme.SoftGray
 @Composable
 fun ChatPrefsScreen(
     onBack: () -> Unit,
+    onOpenAbout: () -> Unit = {},
 ) {
     val app = LocalContext.current.applicationContext as HermChatApp
     val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
@@ -219,7 +220,13 @@ fun ChatPrefsScreen(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            TextButton(onClick = onBack) { Text("返回") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TextButton(onClick = onBack) { Text("返回") }
+                TextButton(onClick = onOpenAbout) { Text("关于") }
+            }
         }
     }
 }

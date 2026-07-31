@@ -1,82 +1,55 @@
 # hermchat
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/yangwenhua212/hermchat)](https://github.com/yangwenhua212/hermchat/releases/latest)
 
 **HxSync** — 把你自己的 AI Agent 装进口袋。
 
-> 通用个人 Agent **口袋客户端**：远程连接、直连 API、手机本地运行时——同一 App 里对话，界面听你的。协议兼容常见实现，**不绑死单一品牌**。
+> **开发预览（pre-1.0）**：当前包供作者与协作者**自行试用 / 开发测试**。未宣称 1.0 稳定对外服务；商店上架以后再说。
 
 | | 名称 |
 |--|------|
 | 仓库 / 工程 | `hermchat` |
 | App 显示名 | **HxSync** |
 | 应用 ID | `com.eraherm.hermchat` |
-| 当前版本 | **0.1.5** |
+| 当前版本 | **0.1.6** |
+| 许可 | **AGPL-3.0**（App 内「关于」页含源代码链接） |
 
-## 下载安装（开源分发）
-
-不走应用商店。直接从 GitHub Release 下 APK：
-
-**[→ 下载最新版 HxSync](https://github.com/yangwenhua212/hermchat/releases/latest)**
-
-1. 手机浏览器打开上面的链接，下载 `HxSync-*.apk`  
-2. 允许「未知来源 / 安装未知应用」后安装  
-3. 签名：当前公开发布为 **debug 签名内测包**（无需开发者账号）；以后有正式密钥再换  
-
-源码：本仓库。许可：[AGPL-3.0](LICENSE)。
-
-## 三种模式
-
-| 模式 | 阶段 | 说明 |
-|------|------|------|
-| 远程 Agent（WebSocket） | Phase A ✅ | 连电脑/云端已运行的 Agent |
-| 直连 API（HTTP 兼容） | Phase A ✅ | DeepSeek / OpenAI / Ollama 等 |
-| 本地运行时 | Phase B ✅ | 手机内编排 + 可选 Gemma 本机推理，见 [docs/LOCAL_MODEL.md](docs/LOCAL_MODEL.md) |
-
-产品全文：[docs/PRODUCT.md](docs/PRODUCT.md)。接入：[docs/CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md)。
-
-## 五分钟上手（真机 + 演示 Bridge）
-
-### 1. 装 APK
-
-优先从 [Release](https://github.com/yangwenhua212/hermchat/releases/latest) 下载；或自行构建：
+## 自己构建试用（推荐）
 
 ```bash
+# 需本机已有 hermchat-release.jks + keystore.properties（勿提交）
 ./gradlew :app:assembleRelease
 ```
 
-产物：`app/build/outputs/apk/release/app-release.apk`。见 [docs/RELEASE.md](docs/RELEASE.md)。
+APK：`app/build/outputs/apk/release/app-release.apk`（**正式 release 签名**，有效期很长）。  
+签名与备份说明：[docs/RELEASE.md](docs/RELEASE.md)。
 
-### 2. 电脑起演示 Bridge
+安装时允许「未知来源」。**若你以前装过 debug 签名包，必须先卸载再装**（签名已更换，无法覆盖）。
 
-同一 Wi‑Fi；`ipconfig` 查局域网 IP。
+## 三种模式
 
-```bash
-pip install websockets
-python scripts/demo_bridge.py
-```
+| 模式 | 说明 |
+|------|------|
+| 远程 Agent（WebSocket） | 连电脑/云端 Agent |
+| 直连 API（HTTP 兼容） | DeepSeek / OpenAI / Ollama 等 |
+| 本地运行时 | 编排在手机内；Gemma **按需下载**（不打进 APK）；内存不足会拒绝加载 |
 
-### 3. 手机配置
+## 安全提醒（必读）
 
-选 **WebSocket** → 填终端打印的 `ws://…:8765/ws`（真机不用 `10.0.2.2`）→ 测试 → 聊天。
+- **`ws://` / `http://` 仅限同一 Wi‑Fi 局域网演示。** 公网或传输密钥时请使用 **`wss://` / `https://`**，勿用明文通道传敏感信息。  
+- 本机工具（日历/闹钟）**必须用户点确认**后才执行。  
+- API Key 使用 EncryptedSharedPreferences 存储。  
 
-扫码：[docs/SETUP_QR.md](docs/SETUP_QR.md)。验收：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
-
----
+上手演示：[docs/CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md) · 验收：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) · 安全：[docs/SECURITY.md](docs/SECURITY.md)
 
 ## EraHerm 分工
 
 | 仓库 | 角色 |
 |------|------|
 | [eraherm-memory](https://github.com/yangwenhua212/eraherm-memory) | 记忆增强 |
-| **hermchat（本仓库）** | 口袋客户端：远程 / 直连 API；本地运行时；唤醒与本机工具 |
+| **hermchat（本仓库）** | 口袋客户端 |
 
-**许可**： [AGPL-3.0](LICENSE)；商用见 [COMMERCIAL.md](COMMERCIAL.md)。
-
-## 当前状态
-
-MVP 功能面已齐（Step 0–15）：对话、多模式、离线唤醒+指令、本机工具、加密存储等。进度：[docs/ROADMAP.md](docs/ROADMAP.md)。安全：[docs/SECURITY.md](docs/SECURITY.md)。UI：[docs/UI.md](docs/UI.md)。
+商用闭源见 [COMMERCIAL.md](COMMERCIAL.md)。进度：[docs/ROADMAP.md](docs/ROADMAP.md)。
 
 ## 本地开发
 
@@ -86,8 +59,6 @@ MVP 功能面已齐（Step 0–15）：对话、多模式、离线唤醒+指令�
 ./gradlew :app:testDebugUnitTest
 ```
 
-需 Android SDK（`local.properties`）。Android Studio 打开仓库根目录，运行 `app`。
-
 ## 许可
 
-默认 **[AGPL-3.0](LICENSE)** © HermChat Authors。闭源商用见 **[COMMERCIAL.md](COMMERCIAL.md)**。
+**[AGPL-3.0](LICENSE)** © HermChat Authors。分发 APK 时须提供对应源代码获取方式（App「关于」页已包含仓库链接）。

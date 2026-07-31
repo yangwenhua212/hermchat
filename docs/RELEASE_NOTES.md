@@ -1,35 +1,22 @@
-# HxSync 0.1.5
+# HxSync 0.1.6（开发预览）
 
-开源内测包：把你自己的 AI Agent 装进口袋。
+**用途**：作者/协作者自行构建安装试用。未到 1.0，非商店上架包。
 
-## 下载
+## 本版修复重点
 
-安装包：`HxSync-0.1.5.apk`（debug 签名，可直接安装；需允许未知来源）。
+- **正式 release 签名**（长期证书；勿用 debug 签名发版）
+- 本地大模型：按需下载 + **内存不足拒绝加载**
+- App 内「关于」：AGPL-3.0 与源代码链接
+- 本机工具强制确认；文档强调 `ws://` 仅限局域网
 
-## 本版包含
-
-- 三种模式：远程 WebSocket / 直连 API / 本地运行时
-- 多 Agent 切换、扫码与粘贴配置
-- 日历、闹钟（确认后执行）
-- 离线唤醒 + 说指令自动发送
-- Agent 配置加密存储、WebSocket 断线重连
-
-## 五分钟上手
-
-1. 安装本 APK  
-2. 电脑与手机同一 Wi‑Fi，运行：
+## 安装
 
 ```bash
-pip install websockets
-python scripts/demo_bridge.py
+./gradlew :app:assembleRelease
 ```
 
-3. App 里选 WebSocket，填终端打印的 `ws://局域网IP:8765/ws` → 测试 → 聊天  
-
-更多：[README](https://github.com/yangwenhua212/hermchat#readme) · [CONNECT_AGENTS](https://github.com/yangwenhua212/hermchat/blob/main/docs/CONNECT_AGENTS.md)
+若设备上仍是旧 debug 包：**先卸载再安装**。
 
 ## 许可
 
-AGPL-3.0。商用见仓库 `COMMERCIAL.md`。
-
-不上架应用商店；仅 GitHub 开源分发。
+AGPL-3.0 · 源代码：https://github.com/yangwenhua212/hermchat

@@ -37,7 +37,7 @@ object ToolCallParser {
             id = obj.optString("id").ifBlank { UUID.randomUUID().toString() },
             name = name,
             arguments = args,
-            needConfirm = obj.optBoolean("need_confirm", true),
+            needConfirm = true, // Phone tools always require explicit user confirmation.
             title = obj.optString("title").ifBlank { humanTitle(name) },
             summary = obj.optString("summary").ifBlank { summarize(name, args) },
         )

@@ -1,22 +1,24 @@
 package com.eraherm.hermchat.data.network
 
 import android.content.Context
+import com.eraherm.hermchat.data.local.DeviceCapability
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.tools.LocalToolPlanner
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.Dispatchers
 
 /**
- * Phase B local runtime: on-device MediaPipe LLM when model is ready;
+ * Phase B local runtime: on-device MediaPipe LLM when model is ready and device RAM allows;
  * otherwise a lightweight local orchestrator (tools still work via ChatViewModel).
+ * Model weights are downloaded on demand — never bundled in the APK.
  */
 class LocalRuntimeClient(
-    context: Context,
+    private val context: Context,
     private val modelStore: LocalModelStore = LocalModelStore(context),
     private val modelId: String = LocalModelStore.DEFAULT_MODEL_ID,
     private val hfToken: String = "",
@@ -27,45 +29,47 @@ class LocalRuntimeClient(
     override val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
     override suspend fun ensureConnected() {
-        if (modelStore.isReady(modelId)) {
-            runCatching {
-                engine.ensureLoaded(modelStore.modelFile(modelId).absolutePath)
-                _connected.value = true
-            }.onFailure {
-                // Model file present but engine failed (e.g. emulator) — still "connected" for orchestrator.
-                _connected.value = true
-            }
-        } else {
-            _connected.value = true
+        _connected.value = true
+        if (!modelStore.isReady(modelId)) return
+        if (!DeviceCapability.canRunLocalLlm(context)) return
+        runCatching {
+            engine.ensureLoaded(modelStore.modelFile(modelId).absolutePath)
         }
     }
 
     override fun streamChat(prompt: String): Flow<String> = flow {
         val tool = LocalToolPlanner.plan(prompt)
         if (tool != null) {
-            emit(orchestratorToolAck(prompt))
+            emit(orchestratorToolAck())
             return@flow
         }
 
-        if (modelStore.isReady(modelId) && engine.isLoaded) {
-            val text = runCatching {
-                engine.generate(buildPrompt(prompt))
-            }.getOrElse { err ->
-                orchestratorFallback(prompt, err.message)
-            }
-            emit(text)
+        if (!modelStore.isReady(modelId)) {
+            emit(orchestratorFallback(prompt, missingModel = true))
             return@flow
         }
 
-        if (modelStore.isReady(modelId) && !engine.isLoaded) {
-            runCatching {
+        if (!DeviceCapability.canRunLocalLlm(context)) {
+            emit("该设备内存不足，不支持本地大模型。日程和闹钟仍可用。")
+            return@flow
+        }
+
+        if (!engine.isLoaded) {
+            val loaded = runCatching {
                 engine.ensureLoaded(modelStore.modelFile(modelId).absolutePath)
-                emit(engine.generate(buildPrompt(prompt)))
+            }
+            if (loaded.isFailure) {
+                emit(orchestratorFallback(prompt, error = loaded.exceptionOrNull()?.message))
                 return@flow
             }
         }
 
-        emit(orchestratorFallback(prompt, missingModel = !modelStore.isReady(modelId)))
+        val text = runCatching {
+            engine.generate(buildPrompt(prompt))
+        }.getOrElse { err ->
+            orchestratorFallback(prompt, err.message)
+        }
+        emit(text)
     }.flowOn(Dispatchers.Default)
 
     override fun close() {
@@ -79,7 +83,7 @@ class LocalRuntimeClient(
         append("助手：")
     }
 
-    private fun orchestratorToolAck(prompt: String): String =
+    private fun orchestratorToolAck(): String =
         "好的，已识别到需要操作手机。请在确认卡上允许后继续。"
 
     private fun orchestratorFallback(

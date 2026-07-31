@@ -73,6 +73,7 @@ fun AgentSetupScreen(
             agentStore = app.agentStore,
             endpointProbe = EndpointProbe(app),
             localModelStore = app.localModelStore,
+            appContext = app,
             initial = editing,
         ),
     )
