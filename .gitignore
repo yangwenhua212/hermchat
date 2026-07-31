@@ -64,3 +64,4 @@ config-qr.png
 
 # Local tooling
 .tools/
+.gradle-home/

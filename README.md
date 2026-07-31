@@ -11,6 +11,42 @@
 | 仓库 / 工程 | `hermchat` |
 | App 显示名 | **HxSync** |
 | 应用 ID | `com.eraherm.hermchat` |
+| 当前版本 | **0.1.1** |
+
+## 五分钟上手（真机 + 演示 Bridge）
+
+适合：先验证 App，不必接真实 Agent。
+
+### 1. 装 APK
+
+```bash
+./gradlew :app:assembleRelease
+```
+
+把 `app/build/outputs/apk/release/app-release.apk` 拷到手机安装（或 `adb install -r …`）。详见 [docs/RELEASE.md](docs/RELEASE.md)。
+
+### 2. 电脑起演示 Bridge
+
+手机与电脑同一 Wi‑Fi。查电脑局域网 IP（Windows：`ipconfig`）。
+
+```bash
+pip install websockets
+python scripts/demo_bridge.py
+```
+
+终端会打印类似：`ws://192.168.x.x:8765/ws`。
+
+### 3. 手机里配置
+
+1. 打开 **HxSync** → 选 **WebSocket**
+2. 地址填终端打印的 `ws://…:8765/ws`（**真机不要用** `10.0.2.2`，那是模拟器专用）
+3. 点 **测试** → 成功后起名 → 开始聊天，发「你好」
+
+出二维码 / 粘贴导入：[docs/SETUP_QR.md](docs/SETUP_QR.md)。验收清单与踩坑：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
+
+接真实 Agent 时：换成你的 WebSocket 或 OpenAI 兼容 HTTP 地址即可，协议见 [docs/BRIDGE_PROTOCOL.md](docs/BRIDGE_PROTOCOL.md)。
+
+---
 
 ## EraHerm 生态分工
 
@@ -23,7 +59,7 @@
 
 一句话：**memory 增强「记得」；hermchat 提供「住在手机里、用得顺手」。** 兼容常见 WebSocket / OpenAI 兼容 HTTP 端点，不绑死某一家 Agent。
 
-产品定位全文见 [docs/PRODUCT.md](docs/PRODUCT.md)。
+产品定位：[docs/PRODUCT.md](docs/PRODUCT.md)。进度：[docs/ROADMAP.md](docs/ROADMAP.md)。
 
 **许可**：默认 [AGPL-3.0](LICENSE)；闭源商用见 [COMMERCIAL.md](COMMERCIAL.md)。
 
@@ -39,35 +75,24 @@
 |------|------|
 | 配置在 App 内 | 不跳转网页；不问 IP 白名单、回调地址 |
 | 三步五分钟 | 选类型 → 填地址（可测连）→ 起名字 |
-| 界面归用户 | 快捷指令、气泡主题、输入偏好、头像可定制 |
+| 界面归用户 | 快捷指令、输入偏好可定制 |
 | Agent 是主角 | 多 Agent 顶栏切换；IM 只是交互壳 |
 
-闭环（MVP）：`唤醒 / 打字 → Agent 处理 → 手机工具（确认后执行）`。
+闭环：`唤醒 / 打字 → Agent 处理 → 手机工具（确认后执行）`。
 
----
-
-## 配置体验（目标形态）
+## 配置形态
 
 ```
 Step 1  选类型：WebSocket │ HTTP 兼容 │ 自定义
-Step 2  填地址：ws://… 或 http://…  [测试]
+Step 2  填地址：ws://… 或 http://…  [测试] / 自动探测 / 扫码
 Step 3  起名字：我的助手（可选）
-        → 连接成功，开始聊天
 ```
-
-进阶：本机预设自动探测、扫码 / 粘贴导入配置。
-
-多 Agent：顶栏下拉切换「家里的 / 工作的」，点一下就换，不用重配。
-
----
 
 ## 当前状态
 
-分步进度见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+✅ **Step 0–10**：主功能 + 真机上手文档 + `0.1.1` 内测包路径就绪。
 
-✅ **主路径 Step 0–9 已完成**：配置（含探测/扫码）→ 对话 → 多 Agent → 唤醒/ASR → 日历确认 → 快捷指令 → 验收/Release/出码文档。
-
-下一步建议：按 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) 真机跑通；需要时再开本机工具扩展或离线唤醒。
+下一步可选：接真实 Agent、第二个本机工具、或离线唤醒（sherpa/Vosk）。
 
 ## 技术栈
 
@@ -84,12 +109,8 @@ Step 3  起名字：我的助手（可选）
 ```bash
 # 需本机 Android SDK（local.properties 里 sdk.dir）
 ./gradlew :app:assembleDebug
-
-# 内测 Release APK（无正式签名时用 debug 签名）
 ./gradlew :app:assembleRelease
 ```
-
-电脑生成配置二维码：见 [docs/SETUP_QR.md](docs/SETUP_QR.md)。打包装机见 [docs/RELEASE.md](docs/RELEASE.md)。
 
 用 Android Studio 打开本仓库根目录，运行 `app`。桌面显示名：**HxSync**。
 

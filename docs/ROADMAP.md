@@ -14,12 +14,15 @@
 | 7 | 快捷指令栏 + 输入偏好 | ✅ 点选插入/发送；排序可持久化；语音/文字/混合 |
 | 8 | 地址自动探测 + 扫码/粘贴导入 | ✅ 探测可达端点；QR/JSON/深链填入配置 |
 | 9 | 验收清单 + Release + 电脑出码 | ✅ 文档与脚本就绪；可 `assembleRelease` |
+| 10 | 上手收口（README / 踩坑 / 0.1.1） | ✅ 五分钟真机路径；ACCEPTANCE 补坑；版本 0.1.1 |
 
 产品原则见 [PRODUCT.md](PRODUCT.md)。
 
+- 最短上手：仓库 [README.md](../README.md#五分钟上手真机--演示-bridge)
 - 真机清单：[ACCEPTANCE.md](ACCEPTANCE.md)
 - 打包装机：[RELEASE.md](RELEASE.md)
 - 电脑出码：[SETUP_QR.md](SETUP_QR.md)
+- 演示 Bridge：`scripts/demo_bridge.py`
 
 唤醒说明：Step 5 使用系统 `SpeechRecognizer`（优先离线包）；接口经 `VoiceEventBus`，后续可换 sherpa-onnx / Vosk。
 
