@@ -18,5 +18,7 @@ class MessageRepository(
         dao.clear()
     }
 
+    suspend fun count(): Int = dao.count()
+
     suspend fun isEmpty(): Boolean = dao.count() == 0
 }

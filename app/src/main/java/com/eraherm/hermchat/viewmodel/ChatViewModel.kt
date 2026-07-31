@@ -105,6 +105,14 @@ class ChatViewModel(
 
         sendJob?.cancel()
         sendJob = viewModelScope.launch {
+            // ── 长对话自动开新会话 ──
+            // Hermes bridge 的 session 常驻服务端，上下文只增不减会越聊越慢。
+            // 超过阈值后强制换新 session：清空本地历史 + 断开重建连接，
+            // 下次发送会 session.create 一个新会话，上下文立刻归零。
+            if (messageRepository.count() >= AUTO_NEW_CHAT_THRESHOLD) {
+                startNewChatInternal()
+            }
+
             busy.update { it.copy(isSending = true, error = null) }
             val assistantId = UUID.randomUUID().toString()
             try {
@@ -244,6 +252,27 @@ class ChatViewModel(
         busy.update { it.copy(error = null) }
     }
 
+    /**
+     * 新建对话：清空本地消息 + 强制换服务端会话。
+     * 调用后下一次发送消息会走全新的 session（上下文归零，秒回）。
+     * UI 入口暂未绑定，先作为公共接口暴露。
+     */
+    fun startNewChat() {
+        if (busy.value.isSending || busy.value.isStreaming) return
+        viewModelScope.launch {
+            startNewChatInternal()
+        }
+    }
+
+    private suspend fun startNewChatInternal() {
+        messageRepository.clear()
+        // 断开并丢弃当前 client：HermesBridgeClient.close() 会清掉 sessionId，
+        // 置 null 后下次 sendMessage 重新 create → 新的 WebSocket + session.create。
+        client?.close()
+        client = null
+        bridgeConnected.value = false
+    }
+
     fun permissionsForPendingTool(): Array<String> {
         val name = pendingToolCall.value?.name ?: return emptyArray()
         return toolRegistry.requiredPermissions(name)
@@ -305,6 +334,12 @@ class ChatViewModel(
 
     companion object {
         private const val WELCOME_ID = "welcome-local"
+
+        /**
+         * 超过该条数的本地消息后，下一次发送会自动开新会话
+         * （清历史 + 换服务端 session，避免上下文无限膨胀越聊越慢）。
+         */
+        private const val AUTO_NEW_CHAT_THRESHOLD = 20
 
         fun factory(
             repository: MessageRepository,
