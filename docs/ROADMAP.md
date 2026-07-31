@@ -6,15 +6,20 @@
 |------|------|------|
 | 0 | Compose 空壳可编译 | ✅ |
 | 1 | Room + ViewModel + 聊天真接线 | ✅ 发消息入库，杀进程重进还在 |
-| 2 | App 内三步配置 Agent | ✅ 选类型 → 地址测连 → 命名 |
+| 2 | App 内三步配置 Agent | ✅ 选类型 → 填地址测连 → 命名 |
 | 3 | Agent 流式对话 | ✅ WebSocket / HTTP SSE + 连接状态 |
 | 4 | 多 Agent 切换 | ✅ 顶栏下拉切换 / 添加 |
 | 5 | 唤醒 + ASR（预设词） | ✅ 预设词监听 + 麦克风 ASR |
 | 6 | 日历工具 + 确认卡 | ✅ 确认后写入系统日历 |
 | 7 | 快捷指令栏 + 输入偏好 | ✅ 点选插入/发送；排序可持久化；语音/文字/混合 |
 | 8 | 地址自动探测 + 扫码/粘贴导入 | ✅ 探测可达端点；QR/JSON/深链填入配置 |
+| 9 | 验收清单 + Release + 电脑出码 | ✅ 文档与脚本就绪；可 `assembleRelease` |
 
 产品原则见 [PRODUCT.md](PRODUCT.md)。
+
+- 真机清单：[ACCEPTANCE.md](ACCEPTANCE.md)
+- 打包装机：[RELEASE.md](RELEASE.md)
+- 电脑出码：[SETUP_QR.md](SETUP_QR.md)
 
 唤醒说明：Step 5 使用系统 `SpeechRecognizer`（优先离线包）；接口经 `VoiceEventBus`，后续可换 sherpa-onnx / Vosk。
 

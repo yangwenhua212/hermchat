@@ -57,6 +57,10 @@ captures/
 .env
 .env.*
 **/secrets.*
+keystore.properties
+
+# Generated config QR (local)
+config-qr.png
 
 # Local tooling
 .tools/

@@ -65,9 +65,9 @@ Step 3  起名字：我的助手（可选）
 
 分步进度见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
-✅ **主路径 Step 0–8 已完成**：配置 Agent（含探测/扫码）→ 流式对话 → 多 Agent → 唤醒/ASR → 日历确认执行 → 快捷指令 / 输入偏好。
+✅ **主路径 Step 0–9 已完成**：配置（含探测/扫码）→ 对话 → 多 Agent → 唤醒/ASR → 日历确认 → 快捷指令 → 验收/Release/出码文档。
 
-完整主题商店等后置项：设计不偏离「简单 + 听用户的」。
+下一步建议：按 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) 真机跑通；需要时再开本机工具扩展或离线唤醒。
 
 ## 技术栈
 
@@ -75,8 +75,8 @@ Step 3  起名字：我的助手（可选）
 |------|------|
 | UI | Jetpack Compose |
 | 网络 | OkHttp WebSocket / OpenAI 兼容 HTTP SSE |
-| 存储 | Room + EncryptedSharedPreferences |
-| 唤醒 / ASR | 开源栈（如 sherpa-onnx / Vosk） |
+| 存储 | Room + SharedPreferences |
+| 唤醒 / ASR | 系统 SpeechRecognizer（可换 sherpa-onnx / Vosk） |
 | 许可 | AGPL-3.0 + 商业双轨 |
 
 ## 本地开发
@@ -84,7 +84,12 @@ Step 3  起名字：我的助手（可选）
 ```bash
 # 需本机 Android SDK（local.properties 里 sdk.dir）
 ./gradlew :app:assembleDebug
+
+# 内测 Release APK（无正式签名时用 debug 签名）
+./gradlew :app:assembleRelease
 ```
+
+电脑生成配置二维码：见 [docs/SETUP_QR.md](docs/SETUP_QR.md)。打包装机见 [docs/RELEASE.md](docs/RELEASE.md)。
 
 用 Android Studio 打开本仓库根目录，运行 `app`。桌面显示名：**HxSync**。
 
