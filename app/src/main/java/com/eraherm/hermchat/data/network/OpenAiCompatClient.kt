@@ -53,7 +53,7 @@ class OpenAiCompatClient(
             .post(bodyJson.toString().toRequestBody(JSON_MEDIA))
             .header("Accept", "text/event-stream")
         if (apiKey.isNotBlank()) {
-            requestBuilder.header("Authorization", "Bearer ${apiKey.trim()}")
+            requestBuilder.header("Authorization", "Bearer ${ConnectionTester.sanitizeKey(apiKey)}")
         }
         val request = requestBuilder.build()
 

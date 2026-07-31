@@ -456,7 +456,7 @@ private fun StepEndpoint(
                 style = MaterialTheme.typography.bodyMedium,
             )
             !testMessage.isNullOrBlank() -> Text(
-                text = "测连失败",
+                text = testMessage,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -570,7 +570,7 @@ private fun StepEndpoint(
             style = MaterialTheme.typography.bodyMedium,
         )
         !testMessage.isNullOrBlank() -> Text(
-            text = "测连失败",
+            text = testMessage,
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
         )

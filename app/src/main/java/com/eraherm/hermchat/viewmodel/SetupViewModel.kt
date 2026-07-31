@@ -238,7 +238,11 @@ class SetupViewModel(
                 }
                 return@launch
             }
-            val result = connectionTester.test(state.endpoint)
+            val result = connectionTester.test(
+                endpoint = state.endpoint,
+                apiKey = state.apiKey,
+                model = state.model,
+            )
             _uiState.update {
                 result.fold(
                     onSuccess = { msg ->
@@ -249,11 +253,12 @@ class SetupViewModel(
                         )
                     },
                     onFailure = { err ->
+                        val msg = friendlyConnectError(err)
                         it.copy(
                             testing = false,
                             testPassed = false,
-                            testMessage = err.message ?: "连接失败",
-                            error = "测连失败：${err.message ?: "未知错误"}",
+                            testMessage = msg,
+                            error = msg,
                         )
                     },
                 )
@@ -329,7 +334,7 @@ class SetupViewModel(
                 kind = state.kind,
                 name = name,
                 endpoint = endpoint,
-                apiKey = state.apiKey.trim(),
+                apiKey = state.apiKey.let { ConnectionTester.sanitizeKey(it) },
                 model = state.model.trim().ifBlank {
                     if (state.kind == AgentKind.LOCAL) LocalModelStore.DEFAULT_MODEL_ID else "default"
                 },
@@ -377,5 +382,32 @@ class SetupViewModel(
                     throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
                 }
             }
+
+        private fun friendlyConnectError(err: Throwable): String {
+            val msg = err.message.orEmpty()
+            return when {
+                msg.contains("服务可达") ||
+                    msg.contains("路径不存在") ||
+                    msg.contains("请求被拒绝") ||
+                    msg.contains("模型名") ||
+                    msg.startsWith("HTTP ") -> msg
+
+                err is java.net.SocketTimeoutException ||
+                    msg.contains("timeout", ignoreCase = true) ||
+                    msg.contains("timed out", ignoreCase = true) ->
+                    "连接超时，请检查地址与端口"
+
+                err is java.net.ConnectException ||
+                    msg.contains("Failed to connect", ignoreCase = true) ||
+                    msg.contains("Connection refused", ignoreCase = true) ->
+                    "无法连接，请检查地址与网络"
+
+                msg.contains("CLEARTEXT", ignoreCase = true) ->
+                    "明文 HTTP 被系统拦截"
+
+                msg.isBlank() -> "连接失败"
+                else -> msg.take(120)
+            }
+        }
     }
 }

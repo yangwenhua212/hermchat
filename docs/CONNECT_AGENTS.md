@@ -35,11 +35,14 @@ HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent、�
 
 ## B. 直连 API（OpenAI 兼容）
 
-OpenAI、DeepSeek、Ollama 兼容端口等——**不经完整远程 Agent**，App 直调 HTTP。
+OpenAI、DeepSeek、Ollama 兼容端口、**仅暴露 HTTP 的 Hermes** 等——**不经 WebSocket**，App 直调 HTTP。
 
 1. 添加 Agent → **HTTP 兼容**  
-2. 地址示例：`https://api.deepseek.com`、`https://api.openai.com`、`http://192.168.x.x:11434`  
-3. API Key、模型名 → 测试 → 聊天  
+2. 地址填 **Base URL**（不要漏端口；若服务在 80 端口可写 `http://主机`）  
+   示例：`https://api.deepseek.com`、`http://192.168.x.x:11434`、`http://公网IP`  
+3. API Key、**API 用的模型 id**（不是界面显示名）→ 点「测试」→ 聊天  
+
+「测试」会请求 `{base}/v1/chat/completions`（失败时再试 `/v1/models`），并显示具体原因（超时 / Key 无效 / 模型名等）。
 
 请求：`POST {base}/v1/chat/completions`（若已写全路径则不拼接）。
 
