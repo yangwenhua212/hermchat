@@ -15,19 +15,22 @@
 | 8 | 地址自动探测 + 扫码/粘贴导入 | ✅ 探测可达端点；QR/JSON/深链填入配置 |
 | 9 | 验收清单 + Release + 电脑出码 | ✅ 文档与脚本就绪；可 `assembleRelease` |
 | 10 | 上手收口（README / 踩坑 / 0.1.1） | ✅ 五分钟真机路径；ACCEPTANCE 补坑；版本 0.1.1 |
+| 11 | 第二本机工具（闹钟/提醒） | ⬜ 确认卡 + AlarmManager / 系统闹钟 Intent |
+| 12 | 离线唤醒 sherpa-onnx | ⬜ 替换系统 SpeechRecognizer；无网可唤醒 |
 
-产品原则见 [PRODUCT.md](PRODUCT.md)。
+产品原则见 [PRODUCT.md](PRODUCT.md)。实现说明见 [NEXT_IMPL.md](NEXT_IMPL.md)（含「哪些已做好、哪些还没做」）。
 
 - 最短上手：仓库 [README.md](../README.md#五分钟上手真机--演示-bridge)
+- 接 Agent / API：[CONNECT_AGENTS.md](CONNECT_AGENTS.md)
 - 真机清单：[ACCEPTANCE.md](ACCEPTANCE.md)
 - 打包装机：[RELEASE.md](RELEASE.md)
 - 电脑出码：[SETUP_QR.md](SETUP_QR.md)
 - 演示 Bridge：`scripts/demo_bridge.py`
 
-唤醒说明：Step 5 使用系统 `SpeechRecognizer`（优先离线包）；接口经 `VoiceEventBus`，后续可换 sherpa-onnx / Vosk。
+唤醒说明：Step 5 使用系统 `SpeechRecognizer`；接口经 `VoiceEventBus`，Step 12 换 sherpa-onnx / Vosk。
 
-工具说明：`PhoneTool` + `ToolRegistry`；新工具实现接口即可注册。协议见 [BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)。
+工具说明：`PhoneTool` + `ToolRegistry`；日历已接入，Step 11 扩展闹钟。协议见 [BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)。
 
-聊天定制说明：`ChatPrefsStore` 持久化输入模式与快捷指令顺序；顶栏「调音」图标进入设置；聊天页长按指令可微调顺序。
+聊天定制说明：齿轮进入设置（主题色 / 气泡 / 输入 / 快捷指令）；Agent 管理在顶栏下拉。
 
-配置进阶说明：`EndpointProbe` 探测 `10.0.2.2` 与 Wi‑Fi 网关常见端口；`AgentConfigImport` 解析二维码/粘贴内容。
+配置进阶说明：`EndpointProbe` + 竖屏扫码 + 粘贴导入。
