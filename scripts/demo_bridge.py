@@ -54,7 +54,7 @@ async def handle(websocket: Any) -> None:
             await websocket.send(
                 json.dumps({"type": "token", "id": msg_id, "content": ch}, ensure_ascii=False),
             )
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(0.032)
         await websocket.send(json.dumps({"type": "done", "id": msg_id}))
 
 

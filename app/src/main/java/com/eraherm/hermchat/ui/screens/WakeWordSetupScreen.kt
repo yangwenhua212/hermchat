@@ -2,6 +2,7 @@ package com.eraherm.hermchat.ui.screens
 
 import android.Manifest
 import android.os.Build
+import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -73,6 +74,11 @@ fun WakeWordSetupScreen(
     }
 
     fun requestStart() {
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            permissionHint = "本机暂无语音识别，请用键盘聊天"
+            app.wakeSettingsStore.update { it.copy(enabled = false) }
+            return
+        }
         val permissions = buildList {
             add(Manifest.permission.RECORD_AUDIO)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)

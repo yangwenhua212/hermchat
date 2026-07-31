@@ -10,6 +10,7 @@ import com.eraherm.hermchat.data.model.Message
 import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.data.model.ToolCall
 import com.eraherm.hermchat.data.network.AIClientFactory
+import com.eraherm.hermchat.data.network.paceForDisplay
 import com.eraherm.hermchat.data.network.StreamingChatClient
 import com.eraherm.hermchat.tools.LocalCalendarPlanner
 import com.eraherm.hermchat.tools.ToolCallParser
@@ -140,7 +141,7 @@ class ChatViewModel(
                 )
 
                 val buffer = StringBuilder()
-                chatClient.streamChat(content).collect { token ->
+                chatClient.streamChat(content).paceForDisplay(charDelayMs = 28L).collect { token ->
                     buffer.append(token)
                     streamingMessage.value = streamingMessage.value?.copy(content = buffer.toString())
                 }

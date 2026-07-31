@@ -50,6 +50,7 @@ import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.data.network.EndpointProbe
 import com.eraherm.hermchat.data.network.ProbeHit
+import com.eraherm.hermchat.ui.PortraitCaptureActivity
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.Line
@@ -94,9 +95,10 @@ fun AgentSetupScreen(
             scanLauncher.launch(
                 ScanOptions().apply {
                     setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                    setPrompt("扫描电脑上的配置二维码")
+                    setPrompt("将二维码放入框内")
                     setBeepEnabled(false)
-                    setOrientationLocked(true)
+                    setOrientationLocked(false)
+                    setCaptureActivity(PortraitCaptureActivity::class.java)
                 },
             )
         } else {

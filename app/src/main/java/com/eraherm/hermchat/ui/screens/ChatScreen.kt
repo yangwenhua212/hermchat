@@ -2,6 +2,7 @@ package com.eraherm.hermchat.ui.screens
 
 import android.Manifest
 import android.os.Build
+import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -9,13 +10,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
@@ -35,8 +39,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,8 +50,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -66,9 +71,9 @@ import com.eraherm.hermchat.ui.components.ConfirmCard
 import com.eraherm.hermchat.ui.components.ConnectionStatus
 import com.eraherm.hermchat.ui.components.MessageBubble
 import com.eraherm.hermchat.ui.components.ShortcutBar
-import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
 import com.eraherm.hermchat.viewmodel.ChatViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun ChatScreen(
@@ -99,26 +104,25 @@ fun ChatScreen(
     val busy = uiState.isSending || uiState.isStreaming
     val canSend = draft.isNotBlank() && agent != null && !busy
     val shortcutsEnabled = agent != null && !busy
+    val speechAvailable = remember {
+        SpeechRecognizer.isRecognitionAvailable(context)
+    }
     val sendScale by animateFloatAsState(
         targetValue = if (canSend) 1f else 0.92f,
         label = "sendScale",
-    )
-    val micScale by animateFloatAsState(
-        targetValue = when (chatPrefs.inputMode) {
-            InputMode.VOICE_FIRST -> 1.12f
-            InputMode.TEXT_FIRST -> 0.92f
-            InputMode.MIXED -> 1f
-        },
-        label = "micScale",
     )
 
     val pttPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         if (result[Manifest.permission.RECORD_AUDIO] == true) {
-            WakeWordService.pushToTalk(context)
+            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+                voiceStatus = "本机暂无语音识别，请用键盘输入"
+            } else {
+                WakeWordService.pushToTalk(context)
+            }
         } else {
-            voiceStatus = "没有麦克风权限就无法语音输入"
+            voiceStatus = "没有麦克风权限"
         }
     }
 
@@ -135,6 +139,10 @@ fun ChatScreen(
     }
 
     fun requestPushToTalk() {
+        if (!speechAvailable) {
+            voiceStatus = "本机暂无语音识别，请用键盘输入"
+            return
+        }
         val permissions = buildList {
             add(Manifest.permission.RECORD_AUDIO)
             if (Build.VERSION.SDK_INT >= 33) {
@@ -159,7 +167,7 @@ fun ChatScreen(
         app.voiceEventBus.events.collect { event ->
             when (event) {
                 is VoiceEvent.WakeDetected -> {
-                    voiceStatus = "在呢 · 听到「${event.phrase}」"
+                    voiceStatus = "在呢"
                     draft = ""
                 }
                 is VoiceEvent.Transcript -> {
@@ -177,7 +185,15 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(uiState.messages.size) {
+    LaunchedEffect(voiceStatus) {
+        val status = voiceStatus ?: return@LaunchedEffect
+        if (status.contains("语音识别") || status.contains("没有麦克风")) {
+            delay(2800)
+            if (voiceStatus == status) voiceStatus = null
+        }
+    }
+
+    LaunchedEffect(uiState.messages.size, uiState.messages.lastOrNull()?.content, uiState.isStreaming) {
         if (uiState.messages.isNotEmpty()) {
             listState.animateScrollToItem(uiState.messages.lastIndex)
         }
@@ -194,7 +210,7 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .navigationBarsPadding(),
+                .imePadding(),
         ) {
             Row(
                 modifier = Modifier
@@ -274,34 +290,38 @@ fun ChatScreen(
                 }
             }
 
-            ShortcutBar(
-                shortcuts = chatPrefs.shortcuts,
-                enabled = shortcutsEnabled,
-                onClick = ::applyShortcut,
-                onMoveLeft = { app.chatPrefsStore.moveShortcut(it.id, -1) },
-                onMoveRight = { app.chatPrefsStore.moveShortcut(it.id, 1) },
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            ComposerRow(
-                draft = draft,
-                onDraftChange = { draft = it },
-                inputMode = chatPrefs.inputMode,
-                wakeEnabled = wakeSettings.enabled,
-                wakePhrase = wakeSettings.phrase,
-                agentName = agent?.name,
-                busy = busy,
-                canSend = canSend,
-                sendScale = sendScale,
-                micScale = micScale,
-                textFocus = textFocus,
-                onMic = ::requestPushToTalk,
-                onSend = {
-                    val text = draft
-                    draft = ""
-                    viewModel.sendMessage(text)
-                },
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(bottom = 8.dp),
+            ) {
+                ShortcutBar(
+                    shortcuts = chatPrefs.shortcuts,
+                    enabled = shortcutsEnabled,
+                    onClick = ::applyShortcut,
+                    onMoveLeft = { app.chatPrefsStore.moveShortcut(it.id, -1) },
+                    onMoveRight = { app.chatPrefsStore.moveShortcut(it.id, 1) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                DoubaoComposer(
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    inputMode = chatPrefs.inputMode,
+                    agentName = agent?.name,
+                    busy = busy,
+                    canSend = canSend,
+                    sendScale = sendScale,
+                    showMic = speechAvailable && chatPrefs.inputMode != InputMode.TEXT_FIRST,
+                    textFocus = textFocus,
+                    onMic = ::requestPushToTalk,
+                    onSend = {
+                        val text = draft
+                        draft = ""
+                        viewModel.sendMessage(text)
+                    },
+                )
+            }
         }
     }
 
@@ -322,134 +342,127 @@ fun ChatScreen(
     }
 }
 
+/** Doubao-like bottom capsule: mic · draft · send, lifted by IME. */
 @Composable
-private fun ComposerRow(
+private fun DoubaoComposer(
     draft: String,
     onDraftChange: (String) -> Unit,
     inputMode: InputMode,
-    wakeEnabled: Boolean,
-    wakePhrase: String,
     agentName: String?,
     busy: Boolean,
     canSend: Boolean,
     sendScale: Float,
-    micScale: Float,
+    showMic: Boolean,
     textFocus: FocusRequester,
     onMic: () -> Unit,
     onSend: () -> Unit,
 ) {
-    val micTint = when (inputMode) {
-        InputMode.VOICE_FIRST -> MaterialTheme.colorScheme.primary
-        InputMode.TEXT_FIRST -> SoftGray
-        InputMode.MIXED -> MaterialTheme.colorScheme.primary
-    }
-
-    Row(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-            .background(
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-                shape = RoundedCornerShape(24.dp),
-            )
-            .border(1.dp, Line.copy(alpha = 0.9f), RoundedCornerShape(24.dp))
-            .padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (inputMode != InputMode.TEXT_FIRST) {
-            MicButton(onClick = onMic, tint = micTint, scale = micScale)
-        }
-
-        OutlinedTextField(
-            value = draft,
-            onValueChange = onDraftChange,
-            modifier = Modifier
-                .weight(1f)
-                .then(
-                    if (inputMode == InputMode.TEXT_FIRST) {
-                        Modifier.focusRequester(textFocus)
-                    } else {
-                        Modifier
-                    },
-                ),
-            placeholder = {
-                Text(
-                    when {
-                        wakeEnabled -> "说「$wakePhrase」或点麦克风…"
-                        agentName != null -> "对 $agentName 说…"
-                        else -> "输入消息…"
-                    },
-                    color = SoftGray,
-                )
-            },
-            shape = RoundedCornerShape(18.dp),
-            maxLines = 4,
-            enabled = !busy,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                disabledBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .shadow(
+                elevation = 10.dp,
+                shape = RoundedCornerShape(28.dp),
+                clip = false,
             ),
-        )
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (showMic) {
+                IconButton(
+                    onClick = onMic,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Mic,
+                        contentDescription = "语音输入",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
 
-        if (inputMode == InputMode.TEXT_FIRST) {
-            MicButton(onClick = onMic, tint = micTint, scale = micScale)
-        }
-
-        if (busy) {
-            CircularProgressIndicator(
+            Box(
                 modifier = Modifier
-                    .padding(12.dp)
-                    .size(22.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        } else {
-            IconButton(
-                onClick = onSend,
-                enabled = canSend,
-                modifier = Modifier
-                    .scale(sendScale)
-                    .padding(end = 2.dp)
-                    .background(
-                        color = if (canSend) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                        shape = CircleShape,
-                    ),
+                    .weight(1f)
+                    .heightIn(min = 44.dp)
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                contentAlignment = Alignment.CenterStart,
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "发送",
-                    tint = if (canSend) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        SoftGray
-                    },
+                if (draft.isEmpty()) {
+                    Text(
+                        text = when {
+                            agentName != null -> "发消息给 $agentName"
+                            else -> "发消息…"
+                        },
+                        color = SoftGray,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+                BasicTextField(
+                    value = draft,
+                    onValueChange = onDraftChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (inputMode == InputMode.TEXT_FIRST) {
+                                Modifier.focusRequester(textFocus)
+                            } else {
+                                Modifier
+                            },
+                        ),
+                    enabled = !busy,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    maxLines = 5,
                 )
             }
-        }
-    }
-}
 
-@Composable
-private fun MicButton(
-    onClick: () -> Unit,
-    tint: androidx.compose.ui.graphics.Color,
-    scale: Float,
-) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier.scale(scale),
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Mic,
-            contentDescription = "语音输入",
-            tint = tint,
-        )
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(10.dp)
+                        .size(22.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                IconButton(
+                    onClick = onSend,
+                    enabled = canSend,
+                    modifier = Modifier
+                        .scale(sendScale)
+                        .size(44.dp)
+                        .background(
+                            color = if (canSend) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            shape = CircleShape,
+                        ),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "发送",
+                        tint = if (canSend) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            SoftGray
+                        },
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
     }
 }

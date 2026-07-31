@@ -13,6 +13,7 @@ import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.speech.SpeechRecognizer
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.eraherm.hermchat.HermChatApp
@@ -44,6 +45,13 @@ class WakeWordService : Service() {
         }
 
         val app = application as HermChatApp
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            app.voiceEventBus.emit(VoiceEvent.Error("本机暂无语音识别，请用键盘输入"))
+            app.wakeSettingsStore.update { it.copy(enabled = false) }
+            stopSelfSafe()
+            return START_NOT_STICKY
+        }
+
         val phrase = app.wakeSettingsStore.settings.value.phrase
         promoteForeground("正在听「$phrase」")
         app.wakeSettingsStore.update { it.copy(enabled = true) }
