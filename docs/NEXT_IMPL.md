@@ -10,7 +10,7 @@
 | 多 Agent / 扫码 / 快捷指令 / 主题 | ✅ | 顶栏 / 配置页 / 齿轮 |
 | 系统语音唤醒 / ASR | ⚠️ 依赖机型 | 唤醒设置 → 引擎「系统」 |
 | 离线唤醒 sherpa-onnx KWS | ✅ Step 12 | 唤醒设置 → 引擎「离线」→ 下载模型 → 开启监听 |
-| 离线短指令 ASR | ❌ 未做 | 唤醒后请键盘输入；后续可接 sherpa ASR |
+| 离线短指令 ASR | ✅ Step 14 | 唤醒后说指令；点按麦克风；自动发送进聊天 |
 | 本地运行时 Phase B | ✅ Step 13 | 添加 Agent →「本地」；可选下载 Gemma；工具确认流可用 |
 
 ---
@@ -30,13 +30,20 @@ WakeWordService
 
 - 设置可切换「系统 / 离线」；无系统引擎时默认倾向离线  
 - 首次离线需下载 WenetSpeech KWS 模型（约数十 MB，写入 `filesDir`）  
-- 命中唤醒词 → 震动 +「在呢」；点按麦克风在离线模式下同样进入可输入状态（暂无离线 ASR）
+- 命中唤醒词 → 震动 + 切入短指令 ASR → `Transcript(autoSend)` → 聊天执行  
+- 点按麦克风同样走离线 ASR（无需系统语音引擎）
+
+### 模型
+
+| 用途 | 包 |
+|------|----|
+| 唤醒 KWS | WenetSpeech 3.3M（`KwsModelInstaller`） |
+| 指令 ASR | zipformer zh-14M int8（`AsrModelInstaller`） |
 
 ### 后续可选
 
 | 项 | 说明 |
 |----|------|
-| W3 | 唤醒后短指令离线 ASR |
 | W4 | 多机型耗电 / 误唤醒调参 |
 
 ---

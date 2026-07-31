@@ -16,8 +16,9 @@
 | 9 | 验收清单 + Release + 电脑出码 | ✅ 文档与脚本就绪；可 `assembleRelease` |
 | 10 | 上手收口（README / 踩坑 / 0.1.1） | ✅ 五分钟真机路径；ACCEPTANCE 补坑；版本 0.1.1 |
 | 11 | 第二本机工具（闹钟/提醒） | ✅ `alarm.create` + 本地话术；确认后调系统闹钟 |
-| 12 | 离线唤醒 sherpa-onnx | ✅ KWS 离线唤醒；引擎可切换；模型按需下载；短指令 ASR 后置 |
+| 12 | 离线唤醒 sherpa-onnx | ✅ KWS + 唤醒后短指令 ASR；点按麦克风离线识别；模型按需下载 |
 | 13 | 本地运行时 Phase B | ✅ 类型「本地」+ MediaPipe/编排；模型按需下载；见 [LOCAL_MODEL.md](LOCAL_MODEL.md) |
+| 14 | 离线短指令 ASR | ✅ 并入 Step 12：喊一声 → 说指令 → Transcript 自动发送 |
 
 产品原则见 [PRODUCT.md](PRODUCT.md)（三种模式 + 分阶段；品牌表述 B）。实现备忘见 [NEXT_IMPL.md](NEXT_IMPL.md)。UI 文案见 [UI.md](UI.md)。
 

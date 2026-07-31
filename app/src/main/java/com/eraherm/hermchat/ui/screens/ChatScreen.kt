@@ -165,7 +165,7 @@ fun ChatScreen(
         app.voiceEventBus.events.collect { event ->
             when (event) {
                 is VoiceEvent.WakeDetected -> {
-                    voiceStatus = "在呢"
+                    voiceStatus = "请说指令"
                     draft = ""
                 }
                 is VoiceEvent.Transcript -> {

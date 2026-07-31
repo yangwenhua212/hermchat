@@ -74,11 +74,8 @@ class WakeWordService : Service() {
                 app.wakeSettingsStore.update { it.copy(enabled = true) }
                 observeEventsOnce(app)
                 when (intent?.action) {
-                    ACTION_PTT -> {
-                        // Offline KWS has no ASR; wake UI for typing.
-                        app.voiceEventBus.emit(VoiceEvent.WakeDetected(phrase))
-                    }
-                    else -> startOfflineListening(app)
+                    ACTION_PTT -> startOfflineSession(app, pushToTalk = true)
+                    else -> startOfflineSession(app, pushToTalk = false)
                 }
             }
         }
@@ -93,30 +90,51 @@ class WakeWordService : Service() {
         super.onDestroy()
     }
 
-    private fun startOfflineListening(app: HermChatApp) {
+    private fun startOfflineSession(app: HermChatApp, pushToTalk: Boolean) {
+        val existing = engine as? SherpaWakeEngine
+        if (existing != null) {
+            if (pushToTalk) existing.startPushToTalk() else existing.startListeningLoop()
+            return
+        }
         if (preparingOffline) return
         preparingOffline = true
         scope.launch {
-            val installer = KwsModelInstaller(this@WakeWordService)
-            val ready = withContext(Dispatchers.IO) {
-                if (installer.isReady()) {
-                    Result.success(installer.modelDir())
-                } else {
-                    app.voiceEventBus.emit(VoiceEvent.Status("正在下载离线模型"))
-                    installer.ensureInstalled { name ->
-                        app.voiceEventBus.emit(VoiceEvent.Status("下载 $name"))
+            val kwsInstaller = KwsModelInstaller(this@WakeWordService)
+            val asrInstaller = AsrModelInstaller(this@WakeWordService)
+            val prepared = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (!kwsInstaller.isReady()) {
+                        app.voiceEventBus.emit(VoiceEvent.Status("正在下载唤醒模型"))
+                        kwsInstaller.ensureInstalled { name ->
+                            app.voiceEventBus.emit(VoiceEvent.Status("下载 $name"))
+                        }.getOrThrow()
                     }
+                    if (!asrInstaller.isReady()) {
+                        app.voiceEventBus.emit(VoiceEvent.Status("正在下载指令模型"))
+                        asrInstaller.ensureInstalled { name ->
+                            app.voiceEventBus.emit(VoiceEvent.Status("下载 $name"))
+                        }.getOrThrow()
+                    }
+                    Pair(kwsInstaller.modelDir(), asrInstaller.modelDir())
                 }
             }
             preparingOffline = false
-            ready.onSuccess { dir ->
+            prepared.onSuccess { (kwsDir, asrDir) ->
                 engine?.stop()
-                engine = SherpaWakeEngine(
+                val created = SherpaWakeEngine(
                     context = this@WakeWordService,
-                    modelDir = dir,
+                    kwsModelDir = kwsDir,
+                    asrModelDir = asrDir,
                     phraseProvider = { app.wakeSettingsStore.settings.value.phrase },
+                    autoSendProvider = { app.wakeSettingsStore.settings.value.autoSend },
                     bus = app.voiceEventBus,
-                ).also { it.startListeningLoop() }
+                )
+                engine = created
+                if (pushToTalk) {
+                    created.startPushToTalk()
+                } else {
+                    created.startListeningLoop()
+                }
             }.onFailure { err ->
                 app.voiceEventBus.emit(VoiceEvent.Error(err.message ?: "离线模型下载失败"))
                 app.wakeSettingsStore.update { it.copy(enabled = false) }
@@ -146,7 +164,7 @@ class WakeWordService : Service() {
                 when (event) {
                     is VoiceEvent.WakeDetected -> {
                         vibrate()
-                        updateNotification("在呢")
+                        updateNotification("请说指令")
                     }
                     is VoiceEvent.Status -> updateNotification(event.message)
                     is VoiceEvent.Transcript -> {

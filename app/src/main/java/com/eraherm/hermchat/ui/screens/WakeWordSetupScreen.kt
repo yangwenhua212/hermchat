@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.local.WakeEngineKind
 import com.eraherm.hermchat.data.local.WakeSettings
+import com.eraherm.hermchat.service.AsrModelInstaller
 import com.eraherm.hermchat.service.KwsModelInstaller
 import com.eraherm.hermchat.service.WakeWordService
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
@@ -55,7 +56,11 @@ fun WakeWordSetupScreen(
     val app = context.applicationContext as HermChatApp
     val settings by app.wakeSettingsStore.settings.collectAsStateWithLifecycle()
     val systemAvailable = remember { SpeechRecognizer.isRecognitionAvailable(context) }
-    val modelReady = remember { mutableStateOf(KwsModelInstaller(context).isReady()) }
+    val modelReady = remember {
+        mutableStateOf(
+            KwsModelInstaller(context).isReady() && AsrModelInstaller(context).isReady(),
+        )
+    }
     var statusText by remember { mutableStateOf<String?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -82,10 +87,6 @@ fun WakeWordSetupScreen(
         if (engine == WakeEngineKind.SYSTEM && !systemAvailable) {
             statusText = "本机暂无系统语音识别"
             app.wakeSettingsStore.update { it.copy(enabled = false) }
-            return
-        }
-        if (engine == WakeEngineKind.OFFLINE && !modelReady.value) {
-            statusText = "请先下载模型"
             return
         }
         val permissions = buildList {
@@ -141,9 +142,16 @@ fun WakeWordSetupScreen(
                         onClick = {
                             statusText = "下载中"
                             Thread {
-                                val result = KwsModelInstaller(context).ensureInstalled()
+                                val kws = KwsModelInstaller(context).ensureInstalled()
+                                if (kws.isFailure) {
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        statusText = kws.exceptionOrNull()?.message ?: "下载失败"
+                                    }
+                                    return@Thread
+                                }
+                                val asr = AsrModelInstaller(context).ensureInstalled()
                                 android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                    result.onSuccess {
+                                    asr.onSuccess {
                                         modelReady.value = true
                                         statusText = "模型已就绪"
                                     }.onFailure {
