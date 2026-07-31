@@ -44,7 +44,9 @@ Thumbs.db
 *.swp
 *~
 .vscode/
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 
 # Captures / logs
 captures/

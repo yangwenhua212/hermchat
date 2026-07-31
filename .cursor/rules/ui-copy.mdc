@@ -1,0 +1,16 @@
+---
+description: HxSync UI copy must stay clean — no footnote/hint clutter
+alwaysApply: true
+---
+
+# UI 文案：不要小字备注
+
+修改或新增 HxSync（hermchat）界面时：
+
+- **不要**在卡片、列表、配置步进、设置页下增加灰色说明句、hint、备注、说教提示。
+- 只保留标题、按钮、字段 label、短 placeholder、必要短状态（如「测连成功」）。
+- 长说明、协议、踩坑写到 `docs/`（见 `docs/UI.md`），不要塞进 Compose UI。
+- 禁止在用户可见文案中暴露调试信息（如 `eventId=`）。
+- 短暂错误提示应可自动消失，勿长期霸占聊天顶栏。
+
+若「删掉灰字后仍可操作」，就必须删掉。
