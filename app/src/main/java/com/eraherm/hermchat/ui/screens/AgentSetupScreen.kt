@@ -1,5 +1,10 @@
 package com.eraherm.hermchat.ui.screens
 
+import android.Manifest
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -29,6 +35,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -39,11 +48,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
+import com.eraherm.hermchat.data.network.EndpointProbe
+import com.eraherm.hermchat.data.network.ProbeHit
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
 import com.eraherm.hermchat.viewmodel.SetupViewModel
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 
 @Composable
 fun AgentSetupScreen(
@@ -51,12 +64,64 @@ fun AgentSetupScreen(
     onFinished: (AgentProfile) -> Unit,
     onCancel: (() -> Unit)? = null,
 ) {
-    val app = LocalContext.current.applicationContext as HermChatApp
+    val context = LocalContext.current
+    val app = context.applicationContext as HermChatApp
     val viewModel: SetupViewModel = viewModel(
         key = editing?.id ?: "new-agent",
-        factory = SetupViewModel.factory(app.agentStore, editing),
+        factory = SetupViewModel.factory(
+            agentStore = app.agentStore,
+            endpointProbe = EndpointProbe(app),
+            initial = editing,
+        ),
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showPasteDialog by remember { mutableStateOf(false) }
+    var pasteDraft by remember { mutableStateOf("") }
+    var cameraHint by remember { mutableStateOf<String?>(null) }
+
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val contents = result.contents
+        if (!contents.isNullOrBlank()) {
+            viewModel.applyImport(contents)
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            cameraHint = null
+            scanLauncher.launch(
+                ScanOptions().apply {
+                    setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                    setPrompt("扫描电脑上的配置二维码")
+                    setBeepEnabled(false)
+                    setOrientationLocked(true)
+                },
+            )
+        } else {
+            cameraHint = "没有相机权限时，可改用「粘贴配置」"
+            showPasteDialog = true
+        }
+    }
+
+    fun startScan() {
+        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+    }
+
+    fun pasteFromClipboard() {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val text = clipboard.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(context)
+            ?.toString()
+            .orEmpty()
+        if (text.isNotBlank()) {
+            pasteDraft = text
+        }
+        showPasteDialog = true
+    }
 
     LaunchedEffect(uiState.completedProfile) {
         uiState.completedProfile?.let(onFinished)
@@ -92,21 +157,38 @@ fun AgentSetupScreen(
                         1 -> StepSelectKind(
                             selected = uiState.kind,
                             onSelect = viewModel::selectKind,
+                            onScan = ::startScan,
+                            onPaste = ::pasteFromClipboard,
                         )
                         2 -> StepEndpoint(
+                            kind = uiState.kind,
                             endpoint = uiState.endpoint,
                             testing = uiState.testing,
                             testPassed = uiState.testPassed,
                             testMessage = uiState.testMessage,
+                            probing = uiState.probing,
+                            probeHits = uiState.probeHits,
+                            probeMessage = uiState.probeMessage,
+                            importHint = uiState.importHint,
                             onEndpointChange = viewModel::updateEndpoint,
                             onTest = viewModel::testConnection,
                             onUsePreset = { kind -> viewModel.selectKind(kind) },
                             onSkipTest = viewModel::skipTestAndContinue,
-                            kind = uiState.kind,
+                            onProbe = viewModel::probeEndpoints,
+                            onUseHit = viewModel::useProbeHit,
+                            onScan = ::startScan,
+                            onPaste = ::pasteFromClipboard,
                         )
                         else -> StepName(
                             name = uiState.name,
                             onNameChange = viewModel::updateName,
+                        )
+                    }
+                    cameraHint?.let { hint ->
+                        Text(
+                            text = hint,
+                            color = SoftGray,
+                            style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                     uiState.error?.let { error ->
@@ -138,7 +220,7 @@ fun AgentSetupScreen(
                     onClick = {
                         if (uiState.step < 3) viewModel.nextStep() else viewModel.finish()
                     },
-                    enabled = !uiState.testing && !uiState.saving,
+                    enabled = !uiState.testing && !uiState.saving && !uiState.probing,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                 ) {
@@ -152,6 +234,42 @@ fun AgentSetupScreen(
                 }
             }
         }
+    }
+
+    if (showPasteDialog) {
+        AlertDialog(
+            onDismissRequest = { showPasteDialog = false },
+            title = { Text("粘贴配置") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "支持 JSON、hxsync:// 链接，或直接粘贴 ws/http 地址。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SoftGray,
+                    )
+                    OutlinedTextField(
+                        value = pasteDraft,
+                        onValueChange = { pasteDraft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        label = { Text("配置内容") },
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showPasteDialog = false
+                        viewModel.applyImport(pasteDraft)
+                    },
+                    enabled = pasteDraft.isNotBlank(),
+                ) { Text("导入") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPasteDialog = false }) { Text("取消") }
+            },
+        )
     }
 }
 
@@ -198,13 +316,43 @@ private fun StepHeader(current: Int) {
 }
 
 @Composable
+private fun ImportActions(
+    onScan: () -> Unit,
+    onPaste: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedButton(
+            onClick = onScan,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(12.dp),
+        ) { Text("扫码导入") }
+        OutlinedButton(
+            onClick = onPaste,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(12.dp),
+        ) { Text("粘贴配置") }
+    }
+}
+
+@Composable
 private fun StepSelectKind(
     selected: AgentKind,
     onSelect: (AgentKind) -> Unit,
+    onScan: () -> Unit,
+    onPaste: () -> Unit,
 ) {
     Text(
         text = "Step 1：选择你的 Agent 类型",
         style = MaterialTheme.typography.bodyLarge,
+    )
+    ImportActions(onScan = onScan, onPaste = onPaste)
+    Text(
+        text = "电脑终端出二维码时，可直接扫码跳过手填。",
+        style = MaterialTheme.typography.bodyMedium,
+        color = SoftGray,
     )
     AgentKind.entries.forEach { kind ->
         val selectedKind = kind == selected
@@ -259,20 +407,36 @@ private fun StepEndpoint(
     testing: Boolean,
     testPassed: Boolean,
     testMessage: String?,
+    probing: Boolean,
+    probeHits: List<ProbeHit>,
+    probeMessage: String?,
+    importHint: String?,
     onEndpointChange: (String) -> Unit,
     onTest: () -> Unit,
     onUsePreset: (AgentKind) -> Unit,
     onSkipTest: () -> Unit,
+    onProbe: () -> Unit,
+    onUseHit: (ProbeHit) -> Unit,
+    onScan: () -> Unit,
+    onPaste: () -> Unit,
 ) {
     Text(
         text = "Step 2：填地址（就这一行）",
         style = MaterialTheme.typography.bodyLarge,
     )
     Text(
-        text = "真机请改成电脑局域网 IP；模拟器访问本机用 10.0.2.2",
+        text = "可自动探测局域网常见端口；真机请与电脑同一 Wi‑Fi。",
         style = MaterialTheme.typography.bodyMedium,
         color = SoftGray,
     )
+    ImportActions(onScan = onScan, onPaste = onPaste)
+    importHint?.let { hint ->
+        Text(
+            text = hint,
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
     OutlinedTextField(
         value = endpoint,
         onValueChange = onEndpointChange,
@@ -286,17 +450,63 @@ private fun StepEndpoint(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         OutlinedButton(
-            onClick = { onUsePreset(kind) },
+            onClick = onProbe,
+            enabled = !probing && !testing,
             modifier = Modifier.weight(1f),
         ) {
-            Text("恢复预设")
+            Text(if (probing) "探测中…" else "自动探测")
         }
         Button(
             onClick = onTest,
-            enabled = endpoint.isNotBlank() && !testing,
+            enabled = endpoint.isNotBlank() && !testing && !probing,
             modifier = Modifier.weight(1f),
         ) {
             Text(if (testing) "测试中…" else "测试")
+        }
+    }
+    OutlinedButton(
+        onClick = { onUsePreset(kind) },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("恢复预设地址")
+    }
+    probeMessage?.let { message ->
+        Text(
+            text = message,
+            color = SoftGray,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+    probeHits.forEach { hit ->
+        val selected = hit.endpoint == endpoint
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = selected,
+                    onClick = { onUseHit(hit) },
+                    role = Role.RadioButton,
+                ),
+            shape = RoundedCornerShape(14.dp),
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+            border = BorderStroke(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.primary else Line,
+            ),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(hit.endpoint, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = hit.detail,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SoftGray,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
     }
     testMessage?.let { message ->

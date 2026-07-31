@@ -10,6 +10,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.ui.screens.AgentSetupScreen
+import com.eraherm.hermchat.ui.screens.ChatPrefsScreen
 import com.eraherm.hermchat.ui.screens.ChatScreen
 import com.eraherm.hermchat.ui.screens.WakeWordSetupScreen
 
@@ -17,6 +18,7 @@ private sealed interface AppDestination {
     data object Setup : AppDestination
     data object Chat : AppDestination
     data object WakeSetup : AppDestination
+    data object ChatPrefs : AppDestination
 }
 
 @Composable
@@ -60,6 +62,12 @@ fun HermChatAppRoot() {
             )
         }
 
+        AppDestination.ChatPrefs -> {
+            ChatPrefsScreen(
+                onBack = { destination = AppDestination.Chat },
+            )
+        }
+
         AppDestination.Chat -> {
             val current = agents.find { it.id == currentId } ?: agents.firstOrNull()
             ChatScreen(
@@ -80,6 +88,9 @@ fun HermChatAppRoot() {
                 },
                 onOpenWakeSetup = {
                     destination = AppDestination.WakeSetup
+                },
+                onOpenChatPrefs = {
+                    destination = AppDestination.ChatPrefs
                 },
             )
         }

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,11 +47,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eraherm.hermchat.HermChatApp
+import com.eraherm.hermchat.data.local.InputMode
+import com.eraherm.hermchat.data.local.ShortcutAction
+import com.eraherm.hermchat.data.local.ShortcutDef
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.service.VoiceEvent
 import com.eraherm.hermchat.service.WakeWordService
@@ -59,6 +65,7 @@ import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.ConfirmCard
 import com.eraherm.hermchat.ui.components.ConnectionStatus
 import com.eraherm.hermchat.ui.components.MessageBubble
+import com.eraherm.hermchat.ui.components.ShortcutBar
 import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
 import com.eraherm.hermchat.viewmodel.ChatViewModel
@@ -71,6 +78,7 @@ fun ChatScreen(
     onAddAgent: () -> Unit,
     onConfigureAgent: () -> Unit,
     onOpenWakeSetup: () -> Unit,
+    onOpenChatPrefs: () -> Unit,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as HermChatApp
@@ -83,13 +91,25 @@ fun ChatScreen(
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val wakeSettings by app.wakeSettingsStore.settings.collectAsStateWithLifecycle()
+    val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf("") }
     var voiceStatus by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
-    val canSend = draft.isNotBlank() && agent != null && !uiState.isSending && !uiState.isStreaming
+    val textFocus = remember { FocusRequester() }
+    val busy = uiState.isSending || uiState.isStreaming
+    val canSend = draft.isNotBlank() && agent != null && !busy
+    val shortcutsEnabled = agent != null && !busy
     val sendScale by animateFloatAsState(
         targetValue = if (canSend) 1f else 0.92f,
         label = "sendScale",
+    )
+    val micScale by animateFloatAsState(
+        targetValue = when (chatPrefs.inputMode) {
+            InputMode.VOICE_FIRST -> 1.12f
+            InputMode.TEXT_FIRST -> 0.92f
+            InputMode.MIXED -> 1f
+        },
+        label = "micScale",
     )
 
     val pttPermissionLauncher = rememberLauncherForActivityResult(
@@ -111,6 +131,27 @@ fun ChatScreen(
         } else {
             voiceStatus = "没有日历权限，无法创建日程"
             viewModel.denyPendingTool()
+        }
+    }
+
+    fun requestPushToTalk() {
+        val permissions = buildList {
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= 33) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }.toTypedArray()
+        pttPermissionLauncher.launch(permissions)
+    }
+
+    fun applyShortcut(shortcut: ShortcutDef) {
+        when (shortcut.action) {
+            ShortcutAction.INSERT -> draft = shortcut.text
+            ShortcutAction.SEND -> {
+                if (!shortcutsEnabled) return
+                draft = ""
+                viewModel.sendMessage(shortcut.text)
+            }
         }
     }
 
@@ -142,6 +183,12 @@ fun ChatScreen(
         }
     }
 
+    LaunchedEffect(chatPrefs.inputMode) {
+        if (chatPrefs.inputMode == InputMode.TEXT_FIRST) {
+            runCatching { textFocus.requestFocus() }
+        }
+    }
+
     AtmosphereBackground {
         Column(
             modifier = Modifier
@@ -164,6 +211,13 @@ fun ChatScreen(
                     modifier = Modifier.weight(1f),
                 )
                 ConnectionStatus(connected = uiState.connected)
+                IconButton(onClick = onOpenChatPrefs) {
+                    Icon(
+                        imageVector = Icons.Filled.Tune,
+                        contentDescription = "聊天偏好",
+                        tint = SoftGray,
+                    )
+                }
                 IconButton(onClick = onOpenWakeSetup) {
                     Icon(
                         imageVector = Icons.Filled.RecordVoiceOver,
@@ -220,100 +274,34 @@ fun ChatScreen(
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-                        shape = RoundedCornerShape(24.dp),
-                    )
-                    .border(1.dp, Line.copy(alpha = 0.9f), RoundedCornerShape(24.dp))
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    onClick = {
-                        val permissions = buildList {
-                            add(Manifest.permission.RECORD_AUDIO)
-                            if (Build.VERSION.SDK_INT >= 33) {
-                                add(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        }.toTypedArray()
-                        pttPermissionLauncher.launch(permissions)
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Mic,
-                        contentDescription = "语音输入",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = {
-                        Text(
-                            when {
-                                wakeSettings.enabled -> "说「${wakeSettings.phrase}」或点麦克风…"
-                                agent != null -> "对 ${agent.name} 说…"
-                                else -> "输入消息…"
-                            },
-                            color = SoftGray,
-                        )
-                    },
-                    shape = RoundedCornerShape(18.dp),
-                    maxLines = 4,
-                    enabled = !uiState.isSending && !uiState.isStreaming,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                        disabledBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                        focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    ),
-                )
-                if (uiState.isSending || uiState.isStreaming) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .size(22.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                } else {
-                    IconButton(
-                        onClick = {
-                            val text = draft
-                            draft = ""
-                            viewModel.sendMessage(text)
-                        },
-                        enabled = canSend,
-                        modifier = Modifier
-                            .scale(sendScale)
-                            .padding(end = 2.dp)
-                            .background(
-                                color = if (canSend) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                },
-                                shape = CircleShape,
-                            ),
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "发送",
-                            tint = if (canSend) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                SoftGray
-                            },
-                        )
-                    }
-                }
-            }
+            ShortcutBar(
+                shortcuts = chatPrefs.shortcuts,
+                enabled = shortcutsEnabled,
+                onClick = ::applyShortcut,
+                onMoveLeft = { app.chatPrefsStore.moveShortcut(it.id, -1) },
+                onMoveRight = { app.chatPrefsStore.moveShortcut(it.id, 1) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            ComposerRow(
+                draft = draft,
+                onDraftChange = { draft = it },
+                inputMode = chatPrefs.inputMode,
+                wakeEnabled = wakeSettings.enabled,
+                wakePhrase = wakeSettings.phrase,
+                agentName = agent?.name,
+                busy = busy,
+                canSend = canSend,
+                sendScale = sendScale,
+                micScale = micScale,
+                textFocus = textFocus,
+                onMic = ::requestPushToTalk,
+                onSend = {
+                    val text = draft
+                    draft = ""
+                    viewModel.sendMessage(text)
+                },
+            )
         }
     }
 
@@ -330,6 +318,138 @@ fun ChatScreen(
                 }
             },
             onDeny = viewModel::denyPendingTool,
+        )
+    }
+}
+
+@Composable
+private fun ComposerRow(
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    inputMode: InputMode,
+    wakeEnabled: Boolean,
+    wakePhrase: String,
+    agentName: String?,
+    busy: Boolean,
+    canSend: Boolean,
+    sendScale: Float,
+    micScale: Float,
+    textFocus: FocusRequester,
+    onMic: () -> Unit,
+    onSend: () -> Unit,
+) {
+    val micTint = when (inputMode) {
+        InputMode.VOICE_FIRST -> MaterialTheme.colorScheme.primary
+        InputMode.TEXT_FIRST -> SoftGray
+        InputMode.MIXED -> MaterialTheme.colorScheme.primary
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .background(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                shape = RoundedCornerShape(24.dp),
+            )
+            .border(1.dp, Line.copy(alpha = 0.9f), RoundedCornerShape(24.dp))
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (inputMode != InputMode.TEXT_FIRST) {
+            MicButton(onClick = onMic, tint = micTint, scale = micScale)
+        }
+
+        OutlinedTextField(
+            value = draft,
+            onValueChange = onDraftChange,
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (inputMode == InputMode.TEXT_FIRST) {
+                        Modifier.focusRequester(textFocus)
+                    } else {
+                        Modifier
+                    },
+                ),
+            placeholder = {
+                Text(
+                    when {
+                        wakeEnabled -> "说「$wakePhrase」或点麦克风…"
+                        agentName != null -> "对 $agentName 说…"
+                        else -> "输入消息…"
+                    },
+                    color = SoftGray,
+                )
+            },
+            shape = RoundedCornerShape(18.dp),
+            maxLines = 4,
+            enabled = !busy,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                disabledBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+            ),
+        )
+
+        if (inputMode == InputMode.TEXT_FIRST) {
+            MicButton(onClick = onMic, tint = micTint, scale = micScale)
+        }
+
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .padding(12.dp)
+                    .size(22.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            IconButton(
+                onClick = onSend,
+                enabled = canSend,
+                modifier = Modifier
+                    .scale(sendScale)
+                    .padding(end = 2.dp)
+                    .background(
+                        color = if (canSend) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        shape = CircleShape,
+                    ),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "发送",
+                    tint = if (canSend) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        SoftGray
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MicButton(
+    onClick: () -> Unit,
+    tint: androidx.compose.ui.graphics.Color,
+    scale: Float,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.scale(scale),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Mic,
+            contentDescription = "语音输入",
+            tint = tint,
         )
     }
 }

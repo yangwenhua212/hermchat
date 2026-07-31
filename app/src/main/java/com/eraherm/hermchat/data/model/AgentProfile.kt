@@ -23,11 +23,11 @@ enum class AgentKind(
     ;
 
     companion object {
-        fun fromStored(raw: String): AgentKind = when (raw) {
-            "HERMES", "WEBSOCKET" -> WEBSOCKET
-            "OPENCLAW", "HTTP_COMPAT" -> HTTP_COMPAT
+        fun fromStored(raw: String): AgentKind = when (raw.trim().uppercase()) {
+            "HERMES", "WEBSOCKET", "WS" -> WEBSOCKET
+            "OPENCLAW", "HTTP_COMPAT", "HTTP", "OPENAI" -> HTTP_COMPAT
             "CUSTOM" -> CUSTOM
-            else -> runCatching { valueOf(raw) }.getOrDefault(CUSTOM)
+            else -> runCatching { valueOf(raw.trim().uppercase()) }.getOrDefault(CUSTOM)
         }
     }
 }

@@ -3,6 +3,7 @@ package com.eraherm.hermchat
 import android.app.Application
 import com.eraherm.hermchat.data.local.AgentStore
 import com.eraherm.hermchat.data.local.AppDatabase
+import com.eraherm.hermchat.data.local.ChatPrefsStore
 import com.eraherm.hermchat.data.local.MessageRepository
 import com.eraherm.hermchat.data.local.WakeSettingsStore
 import com.eraherm.hermchat.service.VoiceEventBus
@@ -15,6 +16,7 @@ class HermChatApp : Application() {
     }
     val agentStore: AgentStore by lazy { AgentStore(this) }
     val wakeSettingsStore: WakeSettingsStore by lazy { WakeSettingsStore(this) }
+    val chatPrefsStore: ChatPrefsStore by lazy { ChatPrefsStore(this) }
     val voiceEventBus: VoiceEventBus by lazy { VoiceEventBus() }
     val toolRegistry: ToolRegistry by lazy { ToolRegistry(this) }
 }

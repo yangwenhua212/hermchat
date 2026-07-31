@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.eraherm.hermchat.data.local.AgentStore
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
+import com.eraherm.hermchat.data.network.AgentConfigImport
 import com.eraherm.hermchat.data.network.ConnectionTester
+import com.eraherm.hermchat.data.network.EndpointProbe
+import com.eraherm.hermchat.data.network.ProbeHit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +24,10 @@ data class SetupUiState(
     val testing: Boolean = false,
     val testPassed: Boolean = false,
     val testMessage: String? = null,
+    val probing: Boolean = false,
+    val probeHits: List<ProbeHit> = emptyList(),
+    val probeMessage: String? = null,
+    val importHint: String? = null,
     val saving: Boolean = false,
     val error: String? = null,
     val completedProfile: AgentProfile? = null,
@@ -28,6 +35,7 @@ data class SetupUiState(
 
 class SetupViewModel(
     private val agentStore: AgentStore,
+    private val endpointProbe: EndpointProbe,
     private val connectionTester: ConnectionTester = ConnectionTester(),
     initial: AgentProfile? = null,
 ) : ViewModel() {
@@ -60,6 +68,8 @@ class SetupViewModel(
                 },
                 testPassed = false,
                 testMessage = null,
+                probeHits = emptyList(),
+                probeMessage = null,
                 error = null,
             )
         }
@@ -78,6 +88,85 @@ class SetupViewModel(
 
     fun updateName(value: String) {
         _uiState.update { it.copy(name = value, error = null) }
+    }
+
+    fun applyImport(raw: String) {
+        val parsed = AgentConfigImport.parse(raw)
+        parsed.fold(
+            onSuccess = { cfg ->
+                val kind = cfg.kind ?: _uiState.value.kind
+                _uiState.update {
+                    it.copy(
+                        step = 2,
+                        kind = kind,
+                        endpoint = cfg.endpoint,
+                        name = cfg.name?.takeIf { n -> n.isNotBlank() }
+                            ?: if (it.name.isBlank() || it.name == it.kind.defaultName) {
+                                kind.defaultName
+                            } else {
+                                it.name
+                            },
+                        testPassed = false,
+                        testMessage = null,
+                        probeHits = emptyList(),
+                        probeMessage = null,
+                        importHint = "已从二维码/粘贴填入，建议点「测试」确认",
+                        error = null,
+                    )
+                }
+            },
+            onFailure = { err ->
+                _uiState.update {
+                    it.copy(error = "导入失败：${err.message ?: "无法识别"}")
+                }
+            },
+        )
+    }
+
+    fun clearImportHint() {
+        _uiState.update { it.copy(importHint = null) }
+    }
+
+    fun probeEndpoints() {
+        val kind = _uiState.value.kind
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    probing = true,
+                    probeHits = emptyList(),
+                    probeMessage = null,
+                    error = null,
+                )
+            }
+            val hits = runCatching { endpointProbe.discover(kind) }
+                .getOrElse { emptyList() }
+            _uiState.update {
+                it.copy(
+                    probing = false,
+                    probeHits = hits,
+                    probeMessage = if (hits.isEmpty()) {
+                        "附近未发现可达端点。真机请确认与电脑同一 Wi‑Fi，或手动填局域网 IP。"
+                    } else {
+                        "发现 ${hits.size} 个可达地址，点选填入"
+                    },
+                    endpoint = hits.firstOrNull()?.endpoint ?: it.endpoint,
+                    testPassed = hits.isNotEmpty(),
+                    testMessage = hits.firstOrNull()?.detail,
+                )
+            }
+        }
+    }
+
+    fun useProbeHit(hit: ProbeHit) {
+        _uiState.update {
+            it.copy(
+                endpoint = hit.endpoint,
+                testPassed = true,
+                testMessage = hit.detail,
+                importHint = null,
+                error = null,
+            )
+        }
     }
 
     fun nextStep() {
@@ -166,13 +255,18 @@ class SetupViewModel(
     companion object {
         fun factory(
             agentStore: AgentStore,
+            endpointProbe: EndpointProbe,
             initial: AgentProfile? = null,
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     if (modelClass.isAssignableFrom(SetupViewModel::class.java)) {
-                        return SetupViewModel(agentStore, initial = initial) as T
+                        return SetupViewModel(
+                            agentStore = agentStore,
+                            endpointProbe = endpointProbe,
+                            initial = initial,
+                        ) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
                 }

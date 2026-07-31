@@ -54,7 +54,7 @@ HermChat 反向设计：**简单配置 + 界面归属用户**。
 | HTTP 兼容 | OpenAI 风格 `/v1/chat/completions` |
 | 自定义 | 任意可达端点 |
 
-电脑跑 Agent 时终端出二维码 → 手机一扫填好配置（后置）。
+电脑跑 Agent 时终端出二维码 → 手机「扫码导入」或「粘贴配置」填好（格式见 [BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)）。配置页另有「自动探测」局域网常见端点。
 
 ## 聊天页：用户说了算
 
