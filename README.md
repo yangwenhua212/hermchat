@@ -2,43 +2,82 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-**手机端 Hermes 语音助手（MVP 开发中）**
+**HxSync** — 把你自己的 AI Agent 装进口袋。
 
-> 自定义 / 预设唤醒 → 语音或文字指令 → Hermes 处理 → 手机工具执行（需用户确认）
+> 不是企业 IM 里的机器人插件，而是**个人拥有的 Agent 客户端**：三步配好、界面听你的、多个 Agent 像切账号一样切换。
 
 | | 名称 |
 |--|------|
 | 仓库 / 工程 | `hermchat` |
 | App 显示名 | **HxSync** |
-| 应用 ID（规划） | `com.eraherm.hermchat` |
+| 应用 ID | `com.eraherm.hermchat` |
 
-与 [eraherm-memory](https://github.com/yangwenhua212/eraherm-memory) 同属 EraHerm 生态：记忆内核管「记得住」，本仓库管「喊得醒、办得成」。
+与 [eraherm-memory](https://github.com/yangwenhua212/eraherm-memory) 同属 EraHerm 生态：记忆内核管「记得住」，本仓库管「连得上、喊得醒、办得成」。
+
+产品定位全文见 [docs/PRODUCT.md](docs/PRODUCT.md)。
 
 **许可**：默认 [AGPL-3.0](LICENSE)；闭源商用见 [COMMERCIAL.md](COMMERCIAL.md)。
 
 ---
 
-## 状态
+## 要解决什么
 
-🚧 脚手架阶段。目标：30 天内产出可安装 APK，跑通：
+飞书一类工具为企业 IT 设计：机器人藏在工作台 / 应用管理 / 开发者后台，还要配白名单、事件订阅、回调地址。个人用户只想「连上我的 Hermes / OpenClaw，在自己手机里用」——却要买下一栋楼。
 
-1. 文字流式对话 + 本地持久化  
-2. 离线唤醒（预设词优先）+ ASR  
-3. 日历等工具调用 + 确认卡片  
+**HermChat 只做一件事：** 用最简单的方式，把**你自己的** AI Agent 装进手机。
 
-## 技术栈（规划）
+| 原则 | 做法 |
+|------|------|
+| 配置在 App 内 | 不跳转网页；不问 IP 白名单、回调地址 |
+| 三步五分钟 | 选类型 → 填地址（可测连）→ 起名字 |
+| 界面归用户 | 快捷指令、气泡主题、输入偏好、头像可定制 |
+| Agent 是主角 | 多 Agent 顶栏切换；IM 只是交互壳 |
+
+闭环（MVP）：`唤醒 / 打字 → Agent 处理 → 手机工具（确认后执行）`。
+
+---
+
+## 配置体验（目标形态）
+
+```
+Step 1  选类型：Hermes │ OpenClaw │ 自定义
+Step 2  填地址：ws://…  [测试]
+Step 3  起名字：我的小龙虾（可选）
+        → 连接成功，开始聊天
+```
+
+进阶（非 Day-1）：本机预设自动探测、云端扫码、终端二维码一扫即配。
+
+多 Agent：顶栏下拉切换「家里 Hermes / 工作 OpenClaw」，点一下就换，不用重配。
+
+---
+
+## 当前状态
+
+分步进度见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+
+✅ **MVP 主路径 Step 0–6 已完成**：配置 Agent → 流式对话 → 多 Agent → 唤醒/ASR → 日历确认执行。
+
+自定义主题 / 快捷指令栏 / 扫码导入：主闭环之后再做，设计不偏离「简单 + 听用户的」。
+
+## 技术栈
 
 | 模块 | 方案 |
 |------|------|
 | UI | Jetpack Compose |
-| 网络 | OkHttp WebSocket → Hermes Bridge |
+| 网络 | OkHttp WebSocket → Agent Bridge |
 | 存储 | Room + EncryptedSharedPreferences |
 | 唤醒 / ASR | 开源栈（如 sherpa-onnx / Vosk） |
 | 许可 | AGPL-3.0 + 商业双轨 |
 
 ## 本地开发
 
-Android 工程将置于本仓库根目录（Gradle）。配置与编译说明随首版可运行空壳补齐。
+```bash
+# 需本机 Android SDK（local.properties 里 sdk.dir）
+./gradlew :app:assembleDebug
+```
+
+用 Android Studio 打开本仓库根目录，运行 `app`。桌面显示名：**HxSync**。
 
 ## 许可
 
