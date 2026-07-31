@@ -17,11 +17,13 @@
 | 10 | 上手收口（README / 踩坑 / 0.1.1） | ✅ 五分钟真机路径；ACCEPTANCE 补坑；版本 0.1.1 |
 | 11 | 第二本机工具（闹钟/提醒） | ✅ `alarm.create` + 本地话术；确认后调系统闹钟 |
 | 12 | 离线唤醒 sherpa-onnx | ⬜ 替换系统 SpeechRecognizer；无网可唤醒 |
+| 13 | 本地运行时 Phase B | ⬜ 见 [LOCAL_MODEL.md](LOCAL_MODEL.md)；手机内推理/编排 |
 
-产品原则见 [PRODUCT.md](PRODUCT.md)。实现说明见 [NEXT_IMPL.md](NEXT_IMPL.md)（含「哪些已做好、哪些还没做」）。
+产品原则见 [PRODUCT.md](PRODUCT.md)（三种模式 + 分阶段；品牌表述 B）。实现备忘见 [NEXT_IMPL.md](NEXT_IMPL.md)。UI 文案见 [UI.md](UI.md)。
 
-- 最短上手：仓库 [README.md](../README.md#五分钟上手真机--演示-bridge)
+- 最短上手：仓库 [README.md](../README.md)
 - 接 Agent / API：[CONNECT_AGENTS.md](CONNECT_AGENTS.md)
+- 本地模型规划：[LOCAL_MODEL.md](LOCAL_MODEL.md)
 - 真机清单：[ACCEPTANCE.md](ACCEPTANCE.md)
 - 打包装机：[RELEASE.md](RELEASE.md)
 - 电脑出码：[SETUP_QR.md](SETUP_QR.md)
