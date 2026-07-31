@@ -12,21 +12,20 @@ import java.util.Locale
 
 /**
  * Preset-phrase wake + command ASR via on-device / system SpeechRecognizer.
- * Swap later for sherpa-onnx / Vosk without changing VoiceEventBus contract.
  */
 class SpeechWakeEngine(
     private val context: Context,
     private val phraseProvider: () -> String,
     private val autoSendProvider: () -> Boolean,
     private val bus: VoiceEventBus,
-) {
+) : VoiceEngine {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var mode: Mode = Mode.WAKE
     private var running = false
     private var pushToTalk = false
 
-    fun startListeningLoop() {
+    override fun startListeningLoop() {
         mainHandler.post {
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
                 bus.emit(VoiceEvent.Error("本机暂无语音识别，请用键盘输入"))
@@ -40,7 +39,7 @@ class SpeechWakeEngine(
         }
     }
 
-    fun stop() {
+    override fun stop() {
         mainHandler.post {
             running = false
             pushToTalk = false
@@ -52,7 +51,7 @@ class SpeechWakeEngine(
     }
 
     /** One-shot command dictation from the mic button. */
-    fun startPushToTalk() {
+    override fun startPushToTalk() {
         mainHandler.post {
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
                 bus.emit(VoiceEvent.Error("本机暂无语音识别，请用键盘输入"))

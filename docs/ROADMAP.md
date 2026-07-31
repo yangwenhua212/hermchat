@@ -16,7 +16,7 @@
 | 9 | 验收清单 + Release + 电脑出码 | ✅ 文档与脚本就绪；可 `assembleRelease` |
 | 10 | 上手收口（README / 踩坑 / 0.1.1） | ✅ 五分钟真机路径；ACCEPTANCE 补坑；版本 0.1.1 |
 | 11 | 第二本机工具（闹钟/提醒） | ✅ `alarm.create` + 本地话术；确认后调系统闹钟 |
-| 12 | 离线唤醒 sherpa-onnx | ⬜ 替换系统 SpeechRecognizer；无网可唤醒 |
+| 12 | 离线唤醒 sherpa-onnx | ✅ KWS 离线唤醒；引擎可切换；模型按需下载；短指令 ASR 后置 |
 | 13 | 本地运行时 Phase B | ⬜ 见 [LOCAL_MODEL.md](LOCAL_MODEL.md)；手机内推理/编排 |
 
 产品原则见 [PRODUCT.md](PRODUCT.md)（三种模式 + 分阶段；品牌表述 B）。实现备忘见 [NEXT_IMPL.md](NEXT_IMPL.md)。UI 文案见 [UI.md](UI.md)。
@@ -29,7 +29,7 @@
 - 电脑出码：[SETUP_QR.md](SETUP_QR.md)
 - 演示 Bridge：`scripts/demo_bridge.py`
 
-唤醒说明：Step 5 使用系统 `SpeechRecognizer`；接口经 `VoiceEventBus`，Step 12 换 sherpa-onnx / Vosk。
+唤醒说明：Step 5 系统 `SpeechRecognizer`；Step 12 增加离线 sherpa-onnx KWS，经同一 `VoiceEngine` / `VoiceEventBus` 切换。
 
 工具说明：`PhoneTool` + `ToolRegistry`；日历已接入，Step 11 扩展闹钟。协议见 [BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)。
 

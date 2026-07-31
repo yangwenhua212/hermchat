@@ -19,17 +19,20 @@ import androidx.core.app.ServiceCompat
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.MainActivity
 import com.eraherm.hermchat.R
+import com.eraherm.hermchat.data.local.WakeEngineKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class WakeWordService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var engine: SpeechWakeEngine? = null
+    private var engine: VoiceEngine? = null
     private var listeningEvents = false
+    private var preparingOffline = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -45,22 +48,39 @@ class WakeWordService : Service() {
         }
 
         val app = application as HermChatApp
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            app.voiceEventBus.emit(VoiceEvent.Error("本机暂无语音识别，请用键盘输入"))
-            app.wakeSettingsStore.update { it.copy(enabled = false) }
-            stopSelfSafe()
-            return START_NOT_STICKY
-        }
-
+        val engineKind = app.wakeSettingsStore.preferredEngine()
         val phrase = app.wakeSettingsStore.settings.value.phrase
-        promoteForeground("正在听「$phrase」")
-        app.wakeSettingsStore.update { it.copy(enabled = true) }
-        observeEventsOnce(app)
-        ensureEngine()
 
-        when (intent?.action) {
-            ACTION_PTT -> engine?.startPushToTalk()
-            else -> engine?.startListeningLoop()
+        when (engineKind) {
+            WakeEngineKind.SYSTEM -> {
+                if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+                    app.voiceEventBus.emit(VoiceEvent.Error("本机暂无系统语音识别"))
+                    app.wakeSettingsStore.update { it.copy(enabled = false) }
+                    stopSelfSafe()
+                    return START_NOT_STICKY
+                }
+                promoteForeground("正在听「$phrase」")
+                app.wakeSettingsStore.update { it.copy(enabled = true) }
+                observeEventsOnce(app)
+                ensureSystemEngine()
+                when (intent?.action) {
+                    ACTION_PTT -> engine?.startPushToTalk()
+                    else -> engine?.startListeningLoop()
+                }
+            }
+
+            WakeEngineKind.OFFLINE -> {
+                promoteForeground("正在听「$phrase」")
+                app.wakeSettingsStore.update { it.copy(enabled = true) }
+                observeEventsOnce(app)
+                when (intent?.action) {
+                    ACTION_PTT -> {
+                        // Offline KWS has no ASR; wake UI for typing.
+                        app.voiceEventBus.emit(VoiceEvent.WakeDetected(phrase))
+                    }
+                    else -> startOfflineListening(app)
+                }
+            }
         }
         return START_STICKY
     }
@@ -71,6 +91,38 @@ class WakeWordService : Service() {
         (application as? HermChatApp)?.wakeSettingsStore?.update { it.copy(enabled = false) }
         scope.cancel()
         super.onDestroy()
+    }
+
+    private fun startOfflineListening(app: HermChatApp) {
+        if (preparingOffline) return
+        preparingOffline = true
+        scope.launch {
+            val installer = KwsModelInstaller(this@WakeWordService)
+            val ready = withContext(Dispatchers.IO) {
+                if (installer.isReady()) {
+                    Result.success(installer.modelDir())
+                } else {
+                    app.voiceEventBus.emit(VoiceEvent.Status("正在下载离线模型"))
+                    installer.ensureInstalled { name ->
+                        app.voiceEventBus.emit(VoiceEvent.Status("下载 $name"))
+                    }
+                }
+            }
+            preparingOffline = false
+            ready.onSuccess { dir ->
+                engine?.stop()
+                engine = SherpaWakeEngine(
+                    context = this@WakeWordService,
+                    modelDir = dir,
+                    phraseProvider = { app.wakeSettingsStore.settings.value.phrase },
+                    bus = app.voiceEventBus,
+                ).also { it.startListeningLoop() }
+            }.onFailure { err ->
+                app.voiceEventBus.emit(VoiceEvent.Error(err.message ?: "离线模型下载失败"))
+                app.wakeSettingsStore.update { it.copy(enabled = false) }
+                stopSelfSafe()
+            }
+        }
     }
 
     private fun promoteForeground(content: String) {
@@ -94,7 +146,7 @@ class WakeWordService : Service() {
                 when (event) {
                     is VoiceEvent.WakeDetected -> {
                         vibrate()
-                        updateNotification("在呢 · 请说指令")
+                        updateNotification("在呢")
                     }
                     is VoiceEvent.Status -> updateNotification(event.message)
                     is VoiceEvent.Transcript -> {
@@ -107,7 +159,7 @@ class WakeWordService : Service() {
         }
     }
 
-    private fun ensureEngine(): SpeechWakeEngine {
+    private fun ensureSystemEngine(): VoiceEngine {
         engine?.let { return it }
         val app = application as HermChatApp
         return SpeechWakeEngine(
@@ -121,6 +173,7 @@ class WakeWordService : Service() {
     private fun stopSelfSafe() {
         engine?.stop()
         engine = null
+        preparingOffline = false
         (application as? HermChatApp)?.wakeSettingsStore?.update { it.copy(enabled = false) }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -154,9 +207,7 @@ class WakeWordService : Service() {
             CHANNEL_ID,
             "唤醒监听",
             NotificationManager.IMPORTANCE_LOW,
-        ).apply {
-            description = "HxSync 前台监听预设唤醒词"
-        }
+        )
         manager.createNotificationChannel(channel)
     }
 

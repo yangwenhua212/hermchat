@@ -39,7 +39,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eraherm.hermchat.HermChatApp
+import com.eraherm.hermchat.data.local.WakeEngineKind
 import com.eraherm.hermchat.data.local.WakeSettings
+import com.eraherm.hermchat.service.KwsModelInstaller
 import com.eraherm.hermchat.service.WakeWordService
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
@@ -52,7 +54,9 @@ fun WakeWordSetupScreen(
     val context = LocalContext.current
     val app = context.applicationContext as HermChatApp
     val settings by app.wakeSettingsStore.settings.collectAsStateWithLifecycle()
-    var permissionHint by remember { mutableStateOf<String?>(null) }
+    val systemAvailable = remember { SpeechRecognizer.isRecognitionAvailable(context) }
+    val modelReady = remember { mutableStateOf(KwsModelInstaller(context).isReady()) }
+    var statusText by remember { mutableStateOf<String?>(null) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -64,19 +68,24 @@ fun WakeWordSetupScreen(
             true
         }
         if (mic && notif) {
-            permissionHint = null
+            statusText = null
             WakeWordService.start(context)
             app.wakeSettingsStore.update { it.copy(enabled = true) }
         } else {
-            permissionHint = "没有麦克风权限就无法唤醒"
+            statusText = "没有麦克风权限"
             app.wakeSettingsStore.update { it.copy(enabled = false) }
         }
     }
 
     fun requestStart() {
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            permissionHint = "本机暂无语音识别，请用键盘聊天"
+        val engine = settings.engine
+        if (engine == WakeEngineKind.SYSTEM && !systemAvailable) {
+            statusText = "本机暂无系统语音识别"
             app.wakeSettingsStore.update { it.copy(enabled = false) }
+            return
+        }
+        if (engine == WakeEngineKind.OFFLINE && !modelReady.value) {
+            statusText = "请先下载模型"
             return
         }
         val permissions = buildList {
@@ -87,115 +96,204 @@ fun WakeWordSetupScreen(
     }
 
     AtmosphereBackground {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(20.dp),
-    ) {
-        BrandMark(compact = true)
-        Spacer(modifier = Modifier.height(16.dp))
-
         Column(
             modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(20.dp),
         ) {
-            WakeSettings.PRESETS.forEach { phrase ->
-                val selected = settings.phrase == phrase
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .selectable(
-                            selected = selected,
-                            onClick = {
-                                app.wakeSettingsStore.update { it.copy(phrase = phrase) }
-                            },
-                            role = Role.RadioButton,
-                        ),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                    } else {
-                        MaterialTheme.colorScheme.surface
+            BrandMark(compact = true)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("引擎", style = MaterialTheme.typography.titleMedium)
+                EngineOption(
+                    label = "系统",
+                    selected = settings.engine == WakeEngineKind.SYSTEM,
+                    enabled = systemAvailable,
+                    onClick = {
+                        if (systemAvailable) {
+                            app.wakeSettingsStore.update { it.copy(engine = WakeEngineKind.SYSTEM) }
+                            statusText = null
+                        } else {
+                            statusText = "本机暂无系统语音识别"
+                        }
                     },
-                    border = BorderStroke(
-                        1.dp,
-                        if (selected) MaterialTheme.colorScheme.primary else Line,
-                    ),
+                )
+                EngineOption(
+                    label = "离线",
+                    selected = settings.engine == WakeEngineKind.OFFLINE,
+                    enabled = true,
+                    onClick = {
+                        app.wakeSettingsStore.update { it.copy(engine = WakeEngineKind.OFFLINE) }
+                        statusText = null
+                    },
+                )
+
+                if (settings.engine == WakeEngineKind.OFFLINE && !modelReady.value) {
+                    Button(
+                        onClick = {
+                            statusText = "下载中"
+                            Thread {
+                                val result = KwsModelInstaller(context).ensureInstalled()
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    result.onSuccess {
+                                        modelReady.value = true
+                                        statusText = "模型已就绪"
+                                    }.onFailure {
+                                        statusText = it.message ?: "下载失败"
+                                    }
+                                }
+                            }.start()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    ) { Text("下载模型") }
+                }
+
+                Text("唤醒词", style = MaterialTheme.typography.titleMedium)
+                WakeSettings.PRESETS.forEach { phrase ->
+                    val selected = settings.phrase == phrase
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = selected,
+                                onClick = {
+                                    app.wakeSettingsStore.update { it.copy(phrase = phrase) }
+                                },
+                                role = Role.RadioButton,
+                            ),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (selected) MaterialTheme.colorScheme.primary else Line,
+                        ),
+                    ) {
+                        Text(
+                            text = phrase,
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Text("识别后自动发送", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = settings.autoSend,
+                        onCheckedChange = { checked ->
+                            app.wakeSettingsStore.update { it.copy(autoSend = checked) }
+                        },
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("后台持续监听", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = settings.enabled,
+                        onCheckedChange = { checked ->
+                            if (checked) {
+                                requestStart()
+                            } else {
+                                WakeWordService.stop(context)
+                                app.wakeSettingsStore.update { it.copy(enabled = false) }
+                            }
+                        },
+                    )
+                }
+
+                statusText?.let {
                     Text(
-                        text = phrase,
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.titleMedium,
+                        it,
+                        color = if (it.contains("失败") || it.contains("没有") || it.contains("暂无")) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                     )
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("识别后自动发送", style = MaterialTheme.typography.bodyLarge)
-                }
-                Switch(
-                    checked = settings.autoSend,
-                    onCheckedChange = { checked ->
-                        app.wakeSettingsStore.update { it.copy(autoSend = checked) }
-                    },
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("后台持续监听", style = MaterialTheme.typography.bodyLarge)
-                }
-                Switch(
-                    checked = settings.enabled,
-                    onCheckedChange = { checked ->
-                        if (checked) {
-                            requestStart()
-                        } else {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick = onBack) { Text("返回") }
+                if (!settings.enabled) {
+                    Button(
+                        onClick = ::requestStart,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                    ) { Text("开启监听") }
+                } else {
+                    OutlinedButton(
+                        onClick = {
                             WakeWordService.stop(context)
                             app.wakeSettingsStore.update { it.copy(enabled = false) }
-                        }
-                    },
-                )
-            }
-
-            permissionHint?.let {
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(onClick = onBack) { Text("返回") }
-            if (!settings.enabled) {
-                Button(
-                    onClick = ::requestStart,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                ) { Text("开启监听") }
-            } else {
-                OutlinedButton(
-                    onClick = {
-                        WakeWordService.stop(context)
-                        app.wakeSettingsStore.update { it.copy(enabled = false) }
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                ) { Text("停止监听") }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                    ) { Text("停止监听") }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun EngineOption(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                onClick = onClick,
+                role = Role.RadioButton,
+            ),
+        shape = RoundedCornerShape(14.dp),
+        color = when {
+            !enabled -> MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            else -> MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else Line,
+        ),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+            },
+        )
     }
 }

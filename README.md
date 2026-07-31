@@ -11,7 +11,7 @@
 | 仓库 / 工程 | `hermchat` |
 | App 显示名 | **HxSync** |
 | 应用 ID | `com.eraherm.hermchat` |
-| 当前版本 | **0.1.1** |
+| 当前版本 | **0.1.2** |
 
 ## 三种模式（分阶段）
 
@@ -61,7 +61,7 @@ python scripts/demo_bridge.py
 
 ## 当前状态
 
-Phase A 主干已可用（对话、多 Agent、扫码、日历/闹钟、主题与快捷指令等）。进度：[docs/ROADMAP.md](docs/ROADMAP.md)。UI 规范：[docs/UI.md](docs/UI.md)。
+Phase A 主干已可用；Step 12 离线唤醒（sherpa KWS）已接入。进度：[docs/ROADMAP.md](docs/ROADMAP.md)。UI 规范：[docs/UI.md](docs/UI.md)。
 
 ## 本地开发
 

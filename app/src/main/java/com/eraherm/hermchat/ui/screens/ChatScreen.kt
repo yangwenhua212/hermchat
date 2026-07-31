@@ -63,6 +63,7 @@ import com.eraherm.hermchat.data.local.ShortcutAction
 import com.eraherm.hermchat.data.local.ShortcutDef
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.service.VoiceEvent
+import com.eraherm.hermchat.data.local.WakeEngineKind
 import com.eraherm.hermchat.service.WakeWordService
 import com.eraherm.hermchat.ui.components.AgentSwitcher
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
@@ -106,6 +107,7 @@ fun ChatScreen(
     val speechAvailable = remember {
         SpeechRecognizer.isRecognitionAvailable(context)
     }
+    val voiceReady = speechAvailable || wakeSettings.engine == WakeEngineKind.OFFLINE
     val sendScale by animateFloatAsState(
         targetValue = if (canSend) 1f else 0.92f,
         label = "sendScale",
@@ -115,11 +117,7 @@ fun ChatScreen(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         if (result[Manifest.permission.RECORD_AUDIO] == true) {
-            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-                voiceStatus = "本机暂无语音识别，请用键盘输入"
-            } else {
-                WakeWordService.pushToTalk(context)
-            }
+            WakeWordService.pushToTalk(context)
         } else {
             voiceStatus = "没有麦克风权限"
         }
@@ -138,8 +136,8 @@ fun ChatScreen(
     }
 
     fun requestPushToTalk() {
-        if (!speechAvailable) {
-            voiceStatus = "本机暂无语音识别，请用键盘输入"
+        if (!voiceReady) {
+            voiceStatus = "本机暂无语音识别"
             return
         }
         val permissions = buildList {
@@ -309,7 +307,7 @@ fun ChatScreen(
                     busy = busy,
                     canSend = canSend,
                     sendScale = sendScale,
-                    showMic = speechAvailable && chatPrefs.inputMode != InputMode.TEXT_FIRST,
+                    showMic = voiceReady && chatPrefs.inputMode != InputMode.TEXT_FIRST,
                     textFocus = textFocus,
                     onMic = ::requestPushToTalk,
                     onSend = {
