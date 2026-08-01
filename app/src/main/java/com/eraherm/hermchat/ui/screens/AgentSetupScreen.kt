@@ -46,10 +46,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eraherm.hermchat.HermChatApp
+import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.data.network.EndpointProbe
 import com.eraherm.hermchat.data.network.ProbeHit
+import com.eraherm.hermchat.data.network.TransferProgress
 import com.eraherm.hermchat.ui.PortraitCaptureActivity
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
@@ -79,6 +81,11 @@ fun AgentSetupScreen(
         ),
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val customCatalog by app.localModelStore.customCatalog.collectAsStateWithLifecycle()
+    val modelCatalog = remember(customCatalog) {
+        app.localModelStore.allCatalog().values.toList()
+            .sortedBy { it.label }
+    }
     var showPasteDialog by remember { mutableStateOf(false) }
     var pasteDraft by remember { mutableStateOf("") }
     var cameraHint by remember { mutableStateOf<String?>(null) }
@@ -170,6 +177,9 @@ fun AgentSetupScreen(
                             endpoint = uiState.endpoint,
                             apiKey = uiState.apiKey,
                             model = uiState.model,
+                            localModelId = uiState.localModelId,
+                            modelCatalog = modelCatalog,
+                            modelStore = app.localModelStore,
                             testing = uiState.testing,
                             testPassed = uiState.testPassed,
                             testMessage = uiState.testMessage,
@@ -183,6 +193,7 @@ fun AgentSetupScreen(
                             onEndpointChange = viewModel::updateEndpoint,
                             onApiKeyChange = viewModel::updateApiKey,
                             onModelChange = viewModel::updateModel,
+                            onLocalModelChange = viewModel::updateLocalModelId,
                             onTest = viewModel::testConnection,
                             onDownloadModel = viewModel::downloadLocalModel,
                             onUsePreset = { kind -> viewModel.selectKind(kind) },
@@ -396,6 +407,9 @@ private fun StepEndpoint(
     endpoint: String,
     apiKey: String,
     model: String,
+    localModelId: String,
+    modelCatalog: List<LocalModelStore.ModelEntry>,
+    modelStore: LocalModelStore,
     testing: Boolean,
     testPassed: Boolean,
     testMessage: String?,
@@ -409,6 +423,7 @@ private fun StepEndpoint(
     onEndpointChange: (String) -> Unit,
     onApiKeyChange: (String) -> Unit,
     onModelChange: (String) -> Unit,
+    onLocalModelChange: (String) -> Unit,
     onTest: () -> Unit,
     onDownloadModel: () -> Unit,
     onUsePreset: (AgentKind) -> Unit,
@@ -420,6 +435,12 @@ private fun StepEndpoint(
 ) {
     if (kind == AgentKind.LOCAL) {
         Text("本地模型", style = MaterialTheme.typography.bodyLarge)
+        LocalModelPicker(
+            catalog = modelCatalog,
+            selectedId = model.ifBlank { LocalModelStore.DEFAULT_MODEL_ID },
+            modelStore = modelStore,
+            onSelect = onModelChange,
+        )
         OutlinedTextField(
             value = apiKey,
             onValueChange = onApiKeyChange,
@@ -518,6 +539,13 @@ private fun StepEndpoint(
             label = { Text("API 模型") },
             placeholder = { Text("deepseek-chat") },
             shape = RoundedCornerShape(16.dp),
+        )
+        Text("本地兜底模型", style = MaterialTheme.typography.bodyLarge)
+        LocalModelPicker(
+            catalog = modelCatalog,
+            selectedId = localModelId.ifBlank { LocalModelStore.DEFAULT_MODEL_ID },
+            modelStore = modelStore,
+            onSelect = onLocalModelChange,
         )
         Button(
             onClick = onDownloadModel,
@@ -806,4 +834,53 @@ private fun StepName(
         placeholder = { Text("我的助手") },
         shape = RoundedCornerShape(16.dp),
     )
+}
+
+@Composable
+private fun LocalModelPicker(
+    catalog: List<LocalModelStore.ModelEntry>,
+    selectedId: String,
+    modelStore: LocalModelStore,
+    onSelect: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        catalog.forEach { entry ->
+            val selected = entry.id == selectedId
+            val installed = modelStore.isReady(entry.id)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = selected,
+                        onClick = { onSelect(entry.id) },
+                        role = Role.RadioButton,
+                    ),
+                shape = RoundedCornerShape(14.dp),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+                border = BorderStroke(
+                    1.dp,
+                    if (selected) MaterialTheme.colorScheme.primary else Line,
+                ),
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(entry.label, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = buildString {
+                            append(if (installed) "已安装" else "未下载")
+                            if (entry.approxBytes > 0L) {
+                                append(" · 约 ")
+                                append(TransferProgress.formatBytes(entry.approxBytes))
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SoftGray,
+                    )
+                }
+            }
+        }
+    }
 }

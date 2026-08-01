@@ -64,6 +64,7 @@ private sealed interface PrefsFolder {
 fun ChatPrefsScreen(
     onBack: () -> Unit,
     onOpenAbout: () -> Unit = {},
+    onOpenLibrary: () -> Unit = {},
 ) {
     val app = LocalContext.current.applicationContext as HermChatApp
     val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
@@ -99,6 +100,7 @@ fun ChatPrefsScreen(
                             onOpenInput = { folder = PrefsFolder.Input },
                             onOpenAppearance = { folder = PrefsFolder.Appearance },
                             onOpenShortcuts = { folder = PrefsFolder.Shortcuts },
+                            onOpenLibrary = onOpenLibrary,
                             onOpenAbout = onOpenAbout,
                         )
                         PrefsFolder.Input -> PrefsInputDetail(
@@ -144,6 +146,7 @@ private fun PrefsRoot(
     onOpenInput: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenShortcuts: () -> Unit,
+    onOpenLibrary: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
     PrefsLeafRow(
@@ -154,6 +157,11 @@ private fun PrefsRoot(
                 onCheckedChange = { store.setAutoSpeakReplies(it) },
             )
         },
+    )
+    PrefsFolderRow(
+        title = "资源库",
+        summary = "Agent · 本地模型 · 搜索下载",
+        onClick = onOpenLibrary,
     )
     PrefsFolderRow(
         title = "默认输入",

@@ -30,7 +30,7 @@ object AIClientFactory {
                 apiBaseUrl = agent.endpoint.trim(),
                 apiKey = agent.apiKey,
                 apiModel = agent.model.ifBlank { "deepseek-chat" },
-                localModelId = LocalModelStore.DEFAULT_MODEL_ID,
+                localModelId = agent.localModelId.ifBlank { LocalModelStore.DEFAULT_MODEL_ID },
                 hfToken = agent.apiKey,
             )
         }

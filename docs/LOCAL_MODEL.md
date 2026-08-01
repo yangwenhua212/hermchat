@@ -14,7 +14,9 @@
 | Agent 类型「本地」 | ✅ 与 WebSocket / HTTP 并列切换 |
 | `LocalRuntimeClient` | ✅ 统一流式出口 |
 | 本机工具（日历/闹钟） | ✅ 经现有确认卡 |
-| 模型按需下载（默认 Gemma 3 **270M** Q8 `.task`；可选 1B） | ✅ **不打进 APK**；配置页下载 |
+| 模型按需下载（默认 Gemma 3 **270M** Q8 `.task`；可选 1B） | ✅ **不打进 APK**；配置页 / **资源库** 下载 |
+| 资源库管理（已装列表、删除、HF 搜索 litert `.task`） | ✅ 设置「资源库」或顶栏 Agent 下拉 |
+| 选用到 Agent | ✅ 资源库「选用到当前」；配置页目录选择（LOCAL=`model`，GATEWAY=`localModelId`） |
 | 内存门槛 | ✅ 不足则拒绝加载，不硬崩（270M 门槛较低） |
 | MediaPipe 本机推理 | ✅ 模型就绪且内存足够时加载 |
 | 未下载模型时主操作 | ✅ 「下载模型」按钮 |
@@ -32,7 +34,8 @@
 |----|------|
 | 推理 | MediaPipe `tasks-genai` + 默认 Gemma 3 **270M** Q8（可选手动填 `gemma3-1b-it-int4`） |
 | 编排 | `LocalRuntimeClient` + `LocalToolPlanner` |
-| 分发 | `LocalModelStore` → `filesDir/local_llm/` |
+| 分发 | `LocalModelStore` → `filesDir/local_llm/`（资源库可见路径） |
+| 开源搜索 | `HfModelSearch` → Hugging Face `litert-community` 的 `.task` |
 
 ## 非目标（仍后置）
 

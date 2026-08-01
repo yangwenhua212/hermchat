@@ -16,6 +16,8 @@ data class WakeSettings(
     val phrase: String = DEFAULT_PHRASE,
     val autoSend: Boolean = true,
     val engine: WakeEngineKind = WakeEngineKind.SYSTEM,
+    /** 开机后自动恢复后台监听（仍受系统自启/电池策略限制） */
+    val bootAutoStart: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_PHRASE = "小助手"
@@ -33,13 +35,15 @@ class WakeSettingsStore(
 
     fun update(transform: (WakeSettings) -> WakeSettings) {
         val next = transform(_settings.value)
+        val phrase = next.phrase.trim().ifBlank { WakeSettings.DEFAULT_PHRASE }
         prefs.edit()
             .putBoolean(KEY_ENABLED, next.enabled)
-            .putString(KEY_PHRASE, next.phrase)
+            .putString(KEY_PHRASE, phrase)
             .putBoolean(KEY_AUTO_SEND, next.autoSend)
             .putString(KEY_ENGINE, next.engine.name)
+            .putBoolean(KEY_BOOT_AUTO, next.bootAutoStart)
             .apply()
-        _settings.value = next
+        _settings.value = next.copy(phrase = phrase)
     }
 
     fun preferredEngine(): WakeEngineKind {
@@ -66,6 +70,7 @@ class WakeSettingsStore(
                 ?: WakeSettings.DEFAULT_PHRASE,
             autoSend = prefs.getBoolean(KEY_AUTO_SEND, true),
             engine = engine,
+            bootAutoStart = prefs.getBoolean(KEY_BOOT_AUTO, false),
         )
     }
 
@@ -75,5 +80,6 @@ class WakeSettingsStore(
         private const val KEY_PHRASE = "phrase"
         private const val KEY_AUTO_SEND = "auto_send"
         private const val KEY_ENGINE = "engine"
+        private const val KEY_BOOT_AUTO = "boot_auto_start"
     }
 }

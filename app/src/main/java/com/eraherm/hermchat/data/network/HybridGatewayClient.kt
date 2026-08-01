@@ -26,7 +26,7 @@ class HybridGatewayClient(
         localModelId.isBlank() ||
             localModelId == "default" ||
             localModelId == "deepseek-chat" ||
-            !LocalModelStore.isKnownModelId(localModelId) -> LocalModelStore.DEFAULT_MODEL_ID
+            !modelStore.isKnown(localModelId) -> LocalModelStore.DEFAULT_MODEL_ID
         else -> localModelId
     }
     private val apiConfigured = apiBaseUrl.isNotBlank() &&

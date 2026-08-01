@@ -48,17 +48,25 @@ class SherpaWakeEngine(
     private var worker: Thread? = null
     private var commandStartedAt = 0L
     private var pushToTalkOnly = false
+    @Volatile private var inAppDirect = false
 
     override fun startListeningLoop() {
         mainHandler.post {
             pushToTalkOnly = false
-            if (running.get()) return@post
+            if (running.get()) {
+                if (inAppDirect) enterCommandMode(fromPushToTalk = true)
+                return@post
+            }
             if (!prepareKws()) return@post
             prepareAsrQuietly()
             if (!startMic()) return@post
             running.set(true)
-            mode.set(Mode.WAKE)
-            bus.emit(VoiceEvent.Status("正在听「${phraseProvider()}」"))
+            if (inAppDirect) {
+                enterCommandMode(fromPushToTalk = true)
+            } else {
+                mode.set(Mode.WAKE)
+                bus.emit(VoiceEvent.Status("正在听「${phraseProvider()}」"))
+            }
             worker = thread(name = "sherpa-voice", start = true) { processLoop() }
         }
     }
@@ -66,7 +74,7 @@ class SherpaWakeEngine(
     override fun startPushToTalk() {
         mainHandler.post {
             if (asrModelDir == null || !prepareAsr()) {
-                bus.emit(VoiceEvent.WakeDetected(phraseProvider()))
+                bus.emit(VoiceEvent.Status("请说指令…"))
                 return@post
             }
             if (!running.get()) {
@@ -79,9 +87,22 @@ class SherpaWakeEngine(
         }
     }
 
+    override fun setInAppDirectListen(enabled: Boolean) {
+        mainHandler.post {
+            inAppDirect = enabled
+            if (!running.get() || pushToTalkOnly) return@post
+            if (enabled) {
+                enterCommandMode(fromPushToTalk = true)
+            } else {
+                returnToWake()
+            }
+        }
+    }
+
     override fun stop() {
         running.set(false)
         pushToTalkOnly = false
+        inAppDirect = false
         worker = null
         mainHandler.post {
             releaseMic()
@@ -203,6 +224,10 @@ class SherpaWakeEngine(
             releaseMic()
             releaseAsrStream()
             mode.set(Mode.WAKE)
+            return
+        }
+        if (inAppDirect) {
+            enterCommandMode(fromPushToTalk = true)
             return
         }
         recreateKwsStream()

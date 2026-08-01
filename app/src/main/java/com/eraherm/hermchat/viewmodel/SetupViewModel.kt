@@ -27,6 +27,8 @@ data class SetupUiState(
     val name: String = AgentKind.WEBSOCKET.defaultName,
     val apiKey: String = "",
     val model: String = "default",
+    /** GATEWAY 本地兜底模型 id */
+    val localModelId: String = LocalModelStore.DEFAULT_MODEL_ID,
     val testing: Boolean = false,
     val testPassed: Boolean = false,
     val testMessage: String? = null,
@@ -56,6 +58,15 @@ class SetupViewModel(
 
     private val _uiState = MutableStateFlow(
         if (initial != null) {
+            val onDeviceId = when (initial.kind) {
+                AgentKind.LOCAL -> initial.model.takeIf {
+                    it.isNotBlank() && it != "default"
+                } ?: LocalModelStore.DEFAULT_MODEL_ID
+                AgentKind.GATEWAY -> initial.localModelId.ifBlank {
+                    LocalModelStore.DEFAULT_MODEL_ID
+                }
+                else -> LocalModelStore.DEFAULT_MODEL_ID
+            }
             SetupUiState(
                 step = 1,
                 kind = initial.kind,
@@ -63,10 +74,12 @@ class SetupViewModel(
                 name = initial.name,
                 apiKey = initial.apiKey,
                 model = initial.model,
-                modelReady = localModelStore.isReady(
-                    initial.model.takeIf { it.isNotBlank() && it != "default" }
-                        ?: LocalModelStore.DEFAULT_MODEL_ID,
-                ),
+                localModelId = if (initial.kind == AgentKind.GATEWAY) {
+                    onDeviceId
+                } else {
+                    LocalModelStore.DEFAULT_MODEL_ID
+                },
+                modelReady = localModelStore.isReady(onDeviceId),
             )
         } else {
             SetupUiState(
@@ -84,9 +97,10 @@ class SetupViewModel(
                 model = when {
                     kind == AgentKind.LOCAL -> LocalModelStore.DEFAULT_MODEL_ID
                     kind == AgentKind.GATEWAY -> "deepseek-chat"
-                    LocalModelStore.isKnownModelId(it.model) -> "default"
+                    localModelStore.isKnown(it.model) -> "default"
                     else -> it.model
                 },
+                localModelId = LocalModelStore.DEFAULT_MODEL_ID,
                 name = if (it.name == it.kind.defaultName || it.name.isBlank()) {
                     kind.defaultName
                 } else {
@@ -96,7 +110,11 @@ class SetupViewModel(
                 testMessage = null,
                 probeHits = emptyList(),
                 probeMessage = null,
-                modelReady = if (kind == AgentKind.LOCAL) localModelStore.isReady() else it.modelReady,
+                modelReady = when (kind) {
+                    AgentKind.LOCAL, AgentKind.GATEWAY ->
+                        localModelStore.isReady(LocalModelStore.DEFAULT_MODEL_ID)
+                    else -> it.modelReady
+                },
                 error = null,
             )
         }
@@ -122,7 +140,32 @@ class SetupViewModel(
     }
 
     fun updateModel(value: String) {
-        _uiState.update { it.copy(model = value, error = null) }
+        _uiState.update {
+            val ready = if (it.kind == AgentKind.LOCAL) {
+                localModelStore.isReady(value.ifBlank { LocalModelStore.DEFAULT_MODEL_ID })
+            } else {
+                it.modelReady
+            }
+            it.copy(model = value, modelReady = ready, error = null)
+        }
+    }
+
+    fun updateLocalModelId(value: String) {
+        val id = value.ifBlank { LocalModelStore.DEFAULT_MODEL_ID }
+        _uiState.update {
+            it.copy(
+                localModelId = id,
+                modelReady = localModelStore.isReady(id),
+                error = null,
+            )
+        }
+    }
+
+    fun onDeviceModelId(state: SetupUiState = _uiState.value): String = when (state.kind) {
+        AgentKind.LOCAL -> state.model.ifBlank { LocalModelStore.DEFAULT_MODEL_ID }
+            .let { if (it == "default") LocalModelStore.DEFAULT_MODEL_ID else it }
+        AgentKind.GATEWAY -> state.localModelId.ifBlank { LocalModelStore.DEFAULT_MODEL_ID }
+        else -> LocalModelStore.DEFAULT_MODEL_ID
     }
 
     fun applyImport(raw: String) {
@@ -227,9 +270,7 @@ class SetupViewModel(
                 it.copy(testing = true, testMessage = null, testPassed = false, error = null)
             }
             if (state.kind == AgentKind.LOCAL) {
-                val ready = localModelStore.isReady(
-                    state.model.ifBlank { LocalModelStore.DEFAULT_MODEL_ID },
-                )
+                val ready = localModelStore.isReady(onDeviceModelId(state))
                 _uiState.update {
                     it.copy(
                         testing = false,
@@ -241,7 +282,7 @@ class SetupViewModel(
                 return@launch
             }
             if (state.kind == AgentKind.GATEWAY) {
-                val ready = localModelStore.isReady(LocalModelStore.DEFAULT_MODEL_ID)
+                val ready = localModelStore.isReady(onDeviceModelId(state))
                 _uiState.update { it.copy(modelReady = ready) }
             }
             val endpoint = runCatching { resolveEndpoint(state) }.getOrElse { err ->
@@ -292,7 +333,7 @@ class SetupViewModel(
             return
         }
         viewModelScope.launch {
-            val modelId = state.model.ifBlank { LocalModelStore.DEFAULT_MODEL_ID }
+            val modelId = onDeviceModelId(state)
             val approx = localModelStore.expectedBytes(modelId)
             _uiState.update {
                 it.copy(
@@ -380,6 +421,12 @@ class SetupViewModel(
                         AgentKind.GATEWAY -> "deepseek-chat"
                         else -> "default"
                     }
+                },
+                localModelId = when (state.kind) {
+                    AgentKind.GATEWAY -> state.localModelId.ifBlank {
+                        LocalModelStore.DEFAULT_MODEL_ID
+                    }
+                    else -> ""
                 },
                 localToolsEnabled = state.kind != AgentKind.HTTP_COMPAT,
             )

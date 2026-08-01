@@ -24,6 +24,7 @@ class SpeechWakeEngine(
     private var mode: Mode = Mode.WAKE
     private var running = false
     private var pushToTalk = false
+    private var inAppDirect = false
 
     override fun startListeningLoop() {
         mainHandler.post {
@@ -33,9 +34,9 @@ class SpeechWakeEngine(
             }
             running = true
             pushToTalk = false
-            mode = Mode.WAKE
+            mode = if (inAppDirect) Mode.COMMAND else Mode.WAKE
             ensureRecognizer()
-            restartListening("正在听唤醒词「${phraseProvider()}」")
+            restartListening(statusForCurrentMode())
         }
     }
 
@@ -50,7 +51,7 @@ class SpeechWakeEngine(
         }
     }
 
-    /** One-shot command dictation from the mic button. */
+    /** 聊天页点麦克风：不喊唤醒词，直接说指令。 */
     override fun startPushToTalk() {
         mainHandler.post {
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
@@ -60,7 +61,18 @@ class SpeechWakeEngine(
             pushToTalk = true
             mode = Mode.COMMAND
             ensureRecognizer()
-            restartListening("请说话…")
+            runCatching { recognizer?.cancel() }
+            restartListening("请说指令…")
+        }
+    }
+
+    override fun setInAppDirectListen(enabled: Boolean) {
+        mainHandler.post {
+            inAppDirect = enabled
+            if (!running || pushToTalk) return@post
+            mode = if (enabled) Mode.COMMAND else Mode.WAKE
+            runCatching { recognizer?.cancel() }
+            restartListening(statusForCurrentMode())
         }
     }
 
@@ -93,12 +105,19 @@ class SpeechWakeEngine(
         }
     }
 
+    private fun statusForCurrentMode(): String =
+        if (inAppDirect || mode == Mode.COMMAND) {
+            "请说指令…"
+        } else {
+            "正在听唤醒词「${phraseProvider()}」"
+        }
+
     private fun scheduleRestart(delayMs: Long) {
         if (!running || pushToTalk) return
         mainHandler.postDelayed({
             if (running && !pushToTalk) {
-                mode = Mode.WAKE
-                restartListening("正在听唤醒词「${phraseProvider()}」")
+                mode = if (inAppDirect) Mode.COMMAND else Mode.WAKE
+                restartListening(statusForCurrentMode())
             }
         }, delayMs)
     }
@@ -143,7 +162,6 @@ class SpeechWakeEngine(
                     bus.emit(VoiceEvent.Error("语音识别错误($error)"))
                 }
                 if (running) {
-                    mode = Mode.WAKE
                     scheduleRestart(400)
                 }
                 return
@@ -168,14 +186,10 @@ class SpeechWakeEngine(
                 pushToTalk -> {
                     pushToTalk = false
                     if (running) {
-                        mode = Mode.WAKE
                         scheduleRestart(400)
                     }
                 }
-                mode == Mode.COMMAND -> {
-                    mode = Mode.WAKE
-                    scheduleRestart(400)
-                }
+                mode == Mode.COMMAND -> scheduleRestart(400)
                 else -> scheduleRestart(300)
             }
         }

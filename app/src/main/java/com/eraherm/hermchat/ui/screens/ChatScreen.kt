@@ -62,7 +62,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -98,6 +100,7 @@ fun ChatScreen(
     onConfigureAgent: () -> Unit,
     onOpenWakeSetup: () -> Unit,
     onOpenChatPrefs: () -> Unit,
+    onOpenLibrary: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as HermChatApp
@@ -255,6 +258,28 @@ fun ChatScreen(
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             viewModel.onForeground()
+            // 聊天页在前台且已开后台监听：免唤醒词，直接听指令
+            if (wakeSettings.enabled) {
+                WakeWordService.setInAppDirectListen(context, true)
+            }
+        }
+    }
+    DisposableEffect(lifecycleOwner, wakeSettings.enabled) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP ->
+                    WakeWordService.setInAppDirectListen(context, false)
+                Lifecycle.Event.ON_START ->
+                    if (wakeSettings.enabled) {
+                        WakeWordService.setInAppDirectListen(context, true)
+                    }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            WakeWordService.setInAppDirectListen(context, false)
         }
     }
 
@@ -278,7 +303,7 @@ fun ChatScreen(
         app.ttsSpeaker.speak(last.content, last.id)
     }
 
-    androidx.compose.runtime.DisposableEffect(Unit) {
+    DisposableEffect(Unit) {
         onDispose { app.ttsSpeaker.stop() }
     }
 
@@ -302,6 +327,7 @@ fun ChatScreen(
                     onSelect = onSelectAgent,
                     onAdd = onAddAgent,
                     onEditCurrent = onConfigureAgent,
+                    onManageLibrary = onOpenLibrary,
                     modifier = Modifier.weight(1f),
                 )
                 ConnectionStatus(connected = uiState.connected)
@@ -344,7 +370,8 @@ fun ChatScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        text = voiceStatus?.takeIf { it.isNotBlank() } ?: "后台正在听「${wakeSettings.phrase}」",
+                        text = voiceStatus?.takeIf { it.isNotBlank() }
+                            ?: "已开监听 · 在本页直接说指令",
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f),

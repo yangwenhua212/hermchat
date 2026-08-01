@@ -23,11 +23,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,7 +68,12 @@ fun WakeWordSetupScreen(
         )
     }
     var statusText by remember { mutableStateOf<String?>(null) }
+    var customPhrase by remember { mutableStateOf(settings.phrase) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(settings.phrase) {
+        customPhrase = settings.phrase
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -171,6 +178,31 @@ fun WakeWordSetupScreen(
                 }
 
                 Text("唤醒词", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = customPhrase,
+                    onValueChange = { customPhrase = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("自定义") },
+                    shape = RoundedCornerShape(14.dp),
+                )
+                Button(
+                    onClick = {
+                        val phrase = customPhrase.trim()
+                        if (phrase.isBlank()) {
+                            statusText = "唤醒词不能为空"
+                            return@Button
+                        }
+                        app.wakeSettingsStore.update { it.copy(phrase = phrase) }
+                        statusText = "已设为「$phrase」"
+                        if (settings.enabled) {
+                            WakeWordService.stop(context)
+                            requestStart()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                ) { Text("保存唤醒词") }
                 WakeSettings.PRESETS.forEach { phrase ->
                     val selected = settings.phrase == phrase
                     Surface(
@@ -179,7 +211,12 @@ fun WakeWordSetupScreen(
                             .selectable(
                                 selected = selected,
                                 onClick = {
+                                    customPhrase = phrase
                                     app.wakeSettingsStore.update { it.copy(phrase = phrase) }
+                                    if (settings.enabled) {
+                                        WakeWordService.stop(context)
+                                        requestStart()
+                                    }
                                 },
                                 role = Role.RadioButton,
                             ),
@@ -231,6 +268,20 @@ fun WakeWordSetupScreen(
                                 WakeWordService.stop(context)
                                 app.wakeSettingsStore.update { it.copy(enabled = false) }
                             }
+                        },
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("开机恢复监听", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = settings.bootAutoStart,
+                        onCheckedChange = { checked ->
+                            app.wakeSettingsStore.update { it.copy(bootAutoStart = checked) }
                         },
                     )
                 }

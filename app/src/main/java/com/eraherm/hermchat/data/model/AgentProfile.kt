@@ -74,7 +74,13 @@ data class AgentProfile(
     val name: String,
     val endpoint: String,
     val apiKey: String = "",
+    /** LOCAL：端侧权重 id；GATEWAY/HTTP：云端 API 模型名。 */
     val model: String = "default",
+    /**
+     * GATEWAY 本地兜底权重 id；空则用默认 Gemma 270M。
+     * LOCAL 忽略此字段（用 [model]）。
+     */
+    val localModelId: String = "",
     /**
      * 远程大脑（HTTP/Hermes）返回的 tool_call 由本机 ToolRegistry 执行。
      * WebSocket / 本地默认同开。

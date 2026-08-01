@@ -49,45 +49,64 @@ class WakeWordService : Service() {
         }
 
         val app = application as HermChatApp
+
+        if (intent?.action == ACTION_IN_APP) {
+            val direct = intent.getBooleanExtra(EXTRA_IN_APP_DIRECT, false)
+            if (engine == null && app.wakeSettingsStore.settings.value.enabled) {
+                // 进程刚起来：先建立监听再切模式
+                bootstrapEngine(app, pushToTalk = false)
+            }
+            engine?.setInAppDirectListen(direct)
+            if (direct) {
+                updateNotification("请说指令…")
+            } else if (app.wakeSettingsStore.settings.value.enabled) {
+                updateNotification("正在听「${app.wakeSettingsStore.settings.value.phrase}」")
+            }
+            return START_STICKY
+        }
+
+        val pushToTalk = intent?.action == ACTION_PTT
+        if (!pushToTalk) {
+            app.wakeSettingsStore.update { it.copy(enabled = true) }
+        }
+        bootstrapEngine(app, pushToTalk = pushToTalk)
+        return START_STICKY
+    }
+
+    private fun bootstrapEngine(app: HermChatApp, pushToTalk: Boolean) {
         val engineKind = app.wakeSettingsStore.preferredEngine()
         val phrase = app.wakeSettingsStore.settings.value.phrase
-
         when (engineKind) {
             WakeEngineKind.SYSTEM -> {
                 if (!SpeechRecognizer.isRecognitionAvailable(this)) {
                     app.voiceEventBus.emit(VoiceEvent.Error("本机暂无系统语音识别"))
                     app.wakeSettingsStore.update { it.copy(enabled = false) }
                     stopSelfSafe()
-                    return START_NOT_STICKY
+                    return
                 }
-                promoteForeground("准备听「$phrase」…")
-                app.wakeSettingsStore.update { it.copy(enabled = true) }
+                promoteForeground(if (pushToTalk) "请说指令…" else "准备听「$phrase」…")
                 observeEventsOnce(app)
                 ensureSystemEngine()
-                when (intent?.action) {
-                    ACTION_PTT -> engine?.startPushToTalk()
-                    else -> engine?.startListeningLoop()
+                if (pushToTalk) {
+                    engine?.startPushToTalk()
+                    updateNotification("请说指令…")
+                } else {
+                    engine?.startListeningLoop()
+                    updateNotification("正在听「$phrase」")
                 }
-                updateNotification("正在听「$phrase」")
             }
-
             WakeEngineKind.OFFLINE -> {
-                promoteForeground("准备唤醒模型…")
-                app.wakeSettingsStore.update { it.copy(enabled = true) }
+                promoteForeground(if (pushToTalk) "请说指令…" else "准备唤醒模型…")
                 observeEventsOnce(app)
-                when (intent?.action) {
-                    ACTION_PTT -> startOfflineSession(app, pushToTalk = true)
-                    else -> startOfflineSession(app, pushToTalk = false)
-                }
+                startOfflineSession(app, pushToTalk = pushToTalk)
             }
         }
-        return START_STICKY
     }
 
     override fun onDestroy() {
         engine?.stop()
         engine = null
-        (application as? HermChatApp)?.wakeSettingsStore?.update { it.copy(enabled = false) }
+        // 不清除 enabled：进程被杀后仍表示「希望监听」，开机自启可据此恢复
         scope.cancel()
         super.onDestroy()
     }
@@ -180,9 +199,20 @@ class WakeWordService : Service() {
                     is VoiceEvent.Transcript -> {
                         if (event.autoSend) {
                             updateNotification("正在问助手…")
-                        } else {
-                            val phrase = app.wakeSettingsStore.settings.value.phrase
-                            updateNotification("正在听「$phrase」")
+                        } else if (app.wakeSettingsStore.settings.value.enabled) {
+                            updateNotification("正在听「${app.wakeSettingsStore.settings.value.phrase}」")
+                        }
+                        // 仅点麦、未开后台监听：说完后收起服务
+                        if (!app.wakeSettingsStore.settings.value.enabled) {
+                            scope.launch {
+                                delay(900)
+                                if (!app.wakeSettingsStore.settings.value.enabled) {
+                                    engine?.stop()
+                                    engine = null
+                                    stopForeground(STOP_FOREGROUND_REMOVE)
+                                    stopSelf()
+                                }
+                            }
                         }
                     }
                     is VoiceEvent.Status -> {
@@ -289,6 +319,8 @@ class WakeWordService : Service() {
         const val ACTION_STOP = "com.eraherm.hermchat.wake.STOP"
         const val ACTION_START = "com.eraherm.hermchat.wake.START"
         const val ACTION_PTT = "com.eraherm.hermchat.wake.PTT"
+        const val ACTION_IN_APP = "com.eraherm.hermchat.wake.IN_APP"
+        const val EXTRA_IN_APP_DIRECT = "in_app_direct"
 
         fun start(context: Context) {
             val intent = Intent(context, WakeWordService::class.java).setAction(ACTION_START)
@@ -303,6 +335,17 @@ class WakeWordService : Service() {
 
         fun pushToTalk(context: Context) {
             val intent = Intent(context, WakeWordService::class.java).setAction(ACTION_PTT)
+            context.startForegroundService(intent)
+        }
+
+        /** 聊天页前台：免唤醒词；退到后台：恢复喊唤醒词。 */
+        fun setInAppDirectListen(context: Context, enabled: Boolean) {
+            val app = context.applicationContext as? HermChatApp ?: return
+            if (!app.wakeSettingsStore.settings.value.enabled && !enabled) return
+            if (!app.wakeSettingsStore.settings.value.enabled) return
+            val intent = Intent(context, WakeWordService::class.java)
+                .setAction(ACTION_IN_APP)
+                .putExtra(EXTRA_IN_APP_DIRECT, enabled)
             context.startForegroundService(intent)
         }
     }

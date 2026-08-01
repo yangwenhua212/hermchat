@@ -47,6 +47,7 @@ fun AgentSwitcher(
     onSelect: (AgentProfile) -> Unit,
     onAdd: () -> Unit,
     onEditCurrent: (() -> Unit)? = null,
+    onManageLibrary: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -208,6 +209,21 @@ fun AgentSwitcher(
                     pendingAction = onAdd
                 },
             )
+
+            if (onManageLibrary != null) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "资源库",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        pendingAction = onManageLibrary
+                    },
+                )
+            }
         }
     }
 }
