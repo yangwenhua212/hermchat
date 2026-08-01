@@ -1,6 +1,7 @@
 package com.eraherm.hermchat.data.network
 
 import android.content.Context
+import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
 
@@ -13,9 +14,9 @@ object AIClientFactory {
                 ?: error("本地运行时需要 Context")
             return LocalRuntimeClient(
                 context = appContext,
-                modelId = agent.model.ifBlank { "gemma3-1b-it-int4" }
+                modelId = agent.model.ifBlank { LocalModelStore.DEFAULT_MODEL_ID }
                     .let { id ->
-                        if (id == "default") "gemma3-1b-it-int4" else id
+                        if (id == "default") LocalModelStore.DEFAULT_MODEL_ID else id
                     },
                 hfToken = agent.apiKey,
             )

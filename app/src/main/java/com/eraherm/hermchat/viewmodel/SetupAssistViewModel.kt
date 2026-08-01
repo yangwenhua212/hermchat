@@ -7,6 +7,7 @@ import com.eraherm.hermchat.data.local.AgentStore
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.data.network.ConnectionTester
+import com.eraherm.hermchat.data.network.EndpointProbe
 import com.eraherm.hermchat.data.network.SetupAssistDraft
 import com.eraherm.hermchat.data.network.SetupAssistParser
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,7 @@ data class SetupAssistUiState(
 
 class SetupAssistViewModel(
     private val agentStore: AgentStore,
+    private val endpointProbe: EndpointProbe,
     private val connectionTester: ConnectionTester = ConnectionTester(),
 ) : ViewModel() {
 
@@ -40,7 +42,7 @@ class SetupAssistViewModel(
             messages = listOf(
                 AssistChatMessage(
                     fromUser = false,
-                    text = "把主机和 Key 发给我即可，例如「连一下 47.x.x.x，密码是 sk-…」。听不懂时可点下方手动配置。",
+                    text = "可以说「连电脑上的助手」自动探测 WebSocket，或「连一下 47.x.x.x，密码是 sk-…」配 Hermes。",
                 ),
             ),
         ),
@@ -77,11 +79,16 @@ class SetupAssistViewModel(
             val merged = _uiState.value.draft.merge(parsed)
             _uiState.update { it.copy(draft = merged, pendingConfirm = false) }
 
+            if (merged.wantsLanProbe || !merged.probeHost.isNullOrBlank()) {
+                runProbeAndConfirm(merged)
+                return@launch
+            }
+
             val missing = merged.missingHints()
             if (missing.isNotEmpty()) {
                 append(
                     fromUser = false,
-                    text = "还差${missing.joinToString("、")}。发主机 IP / 域名，或完整 ws/http 地址就行。",
+                    text = "还差${missing.joinToString("、")}。也可说「连电脑上的助手」让我自动探测。",
                 )
                 return@launch
             }
@@ -120,6 +127,67 @@ class SetupAssistViewModel(
             }
             append(fromUser = false, text = "好，请重新发一段。")
         }
+    }
+
+    private suspend fun runProbeAndConfirm(draft: SetupAssistDraft) {
+        val kind = draft.resolvedKind().let {
+            if (it == AgentKind.HERMES && draft.wantsLanProbe) AgentKind.WEBSOCKET else it
+        }.let { if (it == AgentKind.CUSTOM) AgentKind.WEBSOCKET else it }
+
+        _uiState.update { it.copy(busy = true) }
+        val host = draft.probeHost
+        append(
+            fromUser = false,
+            text = if (host.isNullOrBlank()) {
+                "正在局域网探测 WebSocket…"
+            } else {
+                "正在探测 $host 上的 WebSocket…"
+            },
+        )
+
+        val hits = runCatching {
+            if (!host.isNullOrBlank()) {
+                endpointProbe.discoverOnHost(host, AgentKind.WEBSOCKET)
+                    .ifEmpty { endpointProbe.discoverOnHost(host, kind) }
+            } else {
+                endpointProbe.discover(AgentKind.WEBSOCKET)
+            }
+        }.getOrElse { emptyList() }
+
+        _uiState.update { it.copy(busy = false) }
+
+        if (hits.isEmpty()) {
+            append(
+                fromUser = false,
+                text = "附近没找到可达端点。请发完整地址，例如 ws://192.168.1.8:8765/ws",
+            )
+            _uiState.update {
+                it.copy(
+                    draft = draft.copy(wantsLanProbe = false, probeHost = null),
+                )
+            }
+            return
+        }
+
+        val best = hits.first()
+        val extras = if (hits.size > 1) {
+            "（另有 ${hits.size - 1} 个也可达）"
+        } else {
+            ""
+        }
+        val next = draft.copy(
+            kind = AgentKind.WEBSOCKET,
+            endpoint = best.endpoint,
+            wantsLanProbe = false,
+            probeHost = null,
+            name = draft.name ?: AgentKind.WEBSOCKET.defaultName,
+        )
+        _uiState.update { it.copy(draft = next) }
+        append(
+            fromUser = false,
+            text = "探测到 ${best.endpoint}$extras。${SetupAssistParser.summarizeForConfirm(next)}",
+        )
+        _uiState.update { it.copy(pendingConfirm = true) }
     }
 
     private fun offerConfirm(allowEmptyKey: Boolean) {
@@ -212,12 +280,15 @@ class SetupAssistViewModel(
     }
 
     companion object {
-        fun factory(agentStore: AgentStore): ViewModelProvider.Factory =
+        fun factory(
+            agentStore: AgentStore,
+            endpointProbe: EndpointProbe,
+        ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     if (modelClass.isAssignableFrom(SetupAssistViewModel::class.java)) {
-                        return SetupAssistViewModel(agentStore) as T
+                        return SetupAssistViewModel(agentStore, endpointProbe) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
                 }

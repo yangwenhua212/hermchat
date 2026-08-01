@@ -49,46 +49,62 @@ class EndpointProbe(
             add("10.0.2.2") // 模拟器 → 宿主机
             gatewayHost()?.let { add(it) }
         }.distinct()
+        return hosts.flatMap { host -> candidatesForHost(host, kind) }.distinct()
+    }
 
+    fun candidatesForHost(host: String, kind: AgentKind): List<String> {
+        val h = host.trim().removePrefix("http://").removePrefix("https://")
+            .removePrefix("ws://").removePrefix("wss://")
+            .substringBefore("/")
+            .trimEnd('/')
+        if (h.isEmpty()) return emptyList()
         return when (kind) {
-            AgentKind.WEBSOCKET -> hosts.flatMap { host ->
-                listOf(
-                    "ws://$host:8765/ws",
-                    "ws://$host:8765/api/ws",
-                    "ws://$host:18789/ws",
-                    "ws://$host:8080/ws",
-                    "ws://$host:3000/ws",
-                )
-            }
-            AgentKind.HERMES -> hosts.flatMap { host ->
-                listOf(
-                    "http://$host",
-                    "http://$host:80",
-                    "http://$host:5000",
-                    "http://$host:8000",
-                    "http://$host:8080",
-                    "http://$host:3000",
-                )
-            }
-            AgentKind.HTTP_COMPAT -> hosts.flatMap { host ->
-                listOf(
-                    "http://$host:5000",
-                    "http://$host:8000",
-                    "http://$host:11434",
-                    "http://$host:3000",
-                    "http://$host:8080",
-                    "http://$host",
-                )
-            }
+            AgentKind.WEBSOCKET -> listOf(
+                "ws://$h:8765/ws",
+                "ws://$h:8765/api/ws",
+                "ws://$h:18789/ws",
+                "ws://$h:8080/ws",
+                "ws://$h:3000/ws",
+                "ws://$h/ws",
+                "ws://$h/api/ws",
+            )
+            AgentKind.HERMES -> listOf(
+                "http://$h",
+                "http://$h:80",
+                "http://$h:5000",
+                "http://$h:8000",
+                "http://$h:8080",
+                "http://$h:3000",
+            )
+            AgentKind.HTTP_COMPAT -> listOf(
+                "http://$h:5000",
+                "http://$h:8000",
+                "http://$h:11434",
+                "http://$h:3000",
+                "http://$h:8080",
+                "http://$h",
+            )
             AgentKind.CUSTOM -> (
-                candidates(AgentKind.WEBSOCKET) +
-                    candidates(AgentKind.HERMES) +
-                    candidates(AgentKind.HTTP_COMPAT)
+                candidatesForHost(h, AgentKind.WEBSOCKET) +
+                    candidatesForHost(h, AgentKind.HERMES)
                 ).distinct()
-
             AgentKind.LOCAL -> emptyList()
         }
     }
+
+    suspend fun discoverOnHost(host: String, kind: AgentKind): List<ProbeHit> =
+        withContext(Dispatchers.IO) {
+            val urls = candidatesForHost(host, kind).distinct()
+            coroutineScope {
+                urls.map { url ->
+                    async {
+                        tester.test(url).getOrNull()?.let { detail ->
+                            ProbeHit(endpoint = url, detail = detail)
+                        }
+                    }
+                }.awaitAll().filterNotNull()
+            }
+        }
 
     @Suppress("DEPRECATION")
     private fun gatewayHost(): String? {

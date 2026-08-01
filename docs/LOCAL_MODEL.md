@@ -14,8 +14,8 @@
 | Agent 类型「本地」 | ✅ 与 WebSocket / HTTP 并列切换 |
 | `LocalRuntimeClient` | ✅ 统一流式出口 |
 | 本机工具（日历/闹钟） | ✅ 经现有确认卡 |
-| 模型按需下载（Gemma 3 1B `.task`） | ✅ **不打进 APK**；配置页下载 |
-| 内存门槛 | ✅ 不足则拒绝加载，不硬崩 |
+| 模型按需下载（默认 Gemma 3 **270M** Q8 `.task`；可选 1B） | ✅ **不打进 APK**；配置页下载 |
+| 内存门槛 | ✅ 不足则拒绝加载，不硬崩（270M 门槛较低） |
 | MediaPipe 本机推理 | ✅ 模型就绪且内存足够时加载 |
 | 未下载模型时主操作 | ✅ 「下载模型」按钮 |
 
@@ -23,14 +23,14 @@
 
 1. 添加 Agent → 选 **本地**  
 2. 填 **下载令牌**（Hugging Face，需接受 Gemma 许可）  
-3. **下载模型**（约数百 MB，仅首次）→ **测试** → 命名 → 聊天  
+3. **下载模型**（默认约 300MB 的 270M；仅首次）→ **测试** → 命名 → 聊天  
 4. 无模型也可先测「编排已就绪」，日程/闹钟仍可用  
 
 ## 技术
 
 | 层 | 方案 |
 |----|------|
-| 推理 | MediaPipe `tasks-genai` + Gemma 3 1B INT4 |
+| 推理 | MediaPipe `tasks-genai` + 默认 Gemma 3 **270M** Q8（可选手动填 `gemma3-1b-it-int4`） |
 | 编排 | `LocalRuntimeClient` + `LocalToolPlanner` |
 | 分发 | `LocalModelStore` → `filesDir/local_llm/` |
 

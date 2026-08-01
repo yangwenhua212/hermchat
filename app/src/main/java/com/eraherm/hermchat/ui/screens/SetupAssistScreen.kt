@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.model.AgentProfile
+import com.eraherm.hermchat.data.network.EndpointProbe
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.Forest
@@ -59,7 +60,10 @@ fun SetupAssistScreen(
     val context = LocalContext.current
     val app = context.applicationContext as HermChatApp
     val viewModel: SetupAssistViewModel = viewModel(
-        factory = SetupAssistViewModel.factory(app.agentStore),
+        factory = SetupAssistViewModel.factory(
+            app.agentStore,
+            EndpointProbe(app),
+        ),
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf("") }
@@ -164,7 +168,7 @@ fun SetupAssistScreen(
                 ) {
                     if (draft.isEmpty()) {
                         Text(
-                            text = "连一下 47.x.x.x，密码是 sk-…",
+                            text = "连电脑上的助手 / 连一下 47.x.x.x",
                             color = SoftGray,
                             style = MaterialTheme.typography.bodyLarge,
                         )

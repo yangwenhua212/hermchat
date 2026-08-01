@@ -3,6 +3,7 @@ package com.eraherm.hermchat.data.network
 import com.eraherm.hermchat.data.model.AgentKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,6 +35,22 @@ class SetupAssistParserTest {
         )
         assertEquals(AgentKind.WEBSOCKET, draft.kind)
         assertEquals("ws://192.168.1.8:8765/ws", draft.endpoint)
+    }
+
+    @Test
+    fun parse_lanProbeIntent() {
+        val draft = SetupAssistParser.parse("连电脑上的助手")
+        assertEquals(AgentKind.WEBSOCKET, draft.kind)
+        assertTrue(draft.wantsLanProbe)
+        assertNull(draft.endpoint)
+    }
+
+    @Test
+    fun parse_websocketHostNeedsProbe() {
+        val draft = SetupAssistParser.parse("websocket 192.168.1.8")
+        assertEquals(AgentKind.WEBSOCKET, draft.kind)
+        assertEquals("192.168.1.8", draft.probeHost)
+        assertNull(draft.endpoint)
     }
 
     @Test

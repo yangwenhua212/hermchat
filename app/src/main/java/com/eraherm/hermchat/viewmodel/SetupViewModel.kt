@@ -81,7 +81,7 @@ class SetupViewModel(
                 endpoint = kind.defaultEndpoint,
                 model = if (kind == AgentKind.LOCAL) {
                     LocalModelStore.DEFAULT_MODEL_ID
-                } else if (it.model == LocalModelStore.DEFAULT_MODEL_ID) {
+                } else if (LocalModelStore.isKnownModelId(it.model)) {
                     "default"
                 } else {
                     it.model

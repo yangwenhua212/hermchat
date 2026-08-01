@@ -3,11 +3,11 @@ package com.eraherm.hermchat.data.local
 import android.app.ActivityManager
 import android.content.Context
 
-/** Runtime checks before loading large on-device LLM weights. */
+/** Runtime checks before loading on-device LLM weights. */
 object DeviceCapability {
-    /** Rough floor for Gemma-class INT4 on-device inference. */
-    const val MIN_TOTAL_RAM_MB = 5500L
-    const val MIN_AVAIL_RAM_MB = 900L
+    /** Floor for Gemma 3 270M-class INT8 on-device inference. */
+    const val MIN_TOTAL_RAM_MB = 3000L
+    const val MIN_AVAIL_RAM_MB = 400L
 
     fun memorySnapshot(context: Context): MemorySnapshot {
         val am = context.getSystemService(ActivityManager::class.java)

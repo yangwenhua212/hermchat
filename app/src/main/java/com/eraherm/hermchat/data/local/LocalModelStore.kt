@@ -16,7 +16,7 @@ class LocalModelStore(
 
     fun isReady(modelId: String = DEFAULT_MODEL_ID): Boolean {
         val file = modelFile(modelId)
-        val minBytes = catalog[modelId]?.minBytes ?: MIN_BYTES
+        val minBytes = catalog[modelId]?.minBytes ?: MIN_BYTES_LIGHT
         return file.exists() && file.length() >= minBytes
     }
 
@@ -113,17 +113,30 @@ class LocalModelStore(
     )
 
     companion object {
-        const val DEFAULT_MODEL_ID = "gemma3-1b-it-int4"
-        private const val DEFAULT_FILE = "gemma3-1b-it-int4.task"
-        private const val MIN_BYTES = 50L * 1024L * 1024L
+        /** 默认：Gemma 3 270M Q8，体积与内存占用最小。 */
+        const val DEFAULT_MODEL_ID = "gemma3-270m-it-q8"
+        const val MODEL_1B_ID = "gemma3-1b-it-int4"
+
+        private const val DEFAULT_FILE = "gemma3-270m-it-q8.task"
+        private const val MIN_BYTES_LIGHT = 100L * 1024L * 1024L
+        private const val MIN_BYTES_1B = 50L * 1024L * 1024L
+
+        fun isKnownModelId(id: String): Boolean = catalog.containsKey(id)
 
         val catalog: Map<String, ModelEntry> = mapOf(
             DEFAULT_MODEL_ID to ModelEntry(
                 id = DEFAULT_MODEL_ID,
-                label = "Gemma 3 1B",
+                label = "Gemma 3 270M（轻量）",
                 fileName = DEFAULT_FILE,
+                url = "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.task",
+                minBytes = MIN_BYTES_LIGHT,
+            ),
+            MODEL_1B_ID to ModelEntry(
+                id = MODEL_1B_ID,
+                label = "Gemma 3 1B",
+                fileName = "gemma3-1b-it-int4.task",
                 url = "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task",
-                minBytes = MIN_BYTES,
+                minBytes = MIN_BYTES_1B,
             ),
         )
     }
