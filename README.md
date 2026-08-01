@@ -42,7 +42,7 @@ APK：`app/build/outputs/apk/release/app-release.apk`（**正式 release 签名*
 | # | 模式 | 说明 |
 |---|------|------|
 | ③ | **远端 Agent（主力）** | WebSocket「连电脑上的助手」/ Hermes HTTP；完整 Agent 引擎 |
-| ④ | **端侧网关** | 本地小模型 + API 混合路由；本机闹钟/日历；本地兜底可在资源库选用（[REMOTE_BRAIN_LOCAL_TOOLS.md](docs/REMOTE_BRAIN_LOCAL_TOOLS.md)） |
+| ④ | **端侧网关** | 本地 + API：自动判复杂度或设置里优先本地/云端；本机闹钟/日历须确认；本地兜底可在资源库选用（[REMOTE_BRAIN_LOCAL_TOOLS.md](docs/REMOTE_BRAIN_LOCAL_TOOLS.md)） |
 | ② | **纯 API 保底** | HTTP 兼容，只聊天（不配本机工具） |
 | ① | **本地小模型** | Gemma **270M** 等 `.task` 按需下载；资源库管理权重后选用到「本地」Agent |
 

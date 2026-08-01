@@ -1,6 +1,7 @@
 package com.eraherm.hermchat.data.network
 
 import android.content.Context
+import com.eraherm.hermchat.data.local.GatewayRouteMode
 import com.eraherm.hermchat.data.local.LocalModelStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +20,7 @@ class HybridGatewayClient(
     localModelId: String = LocalModelStore.DEFAULT_MODEL_ID,
     hfToken: String = "",
     private val modelStore: LocalModelStore = LocalModelStore(context),
+    private val routeModeProvider: () -> GatewayRouteMode = { GatewayRouteMode.AUTO },
 ) : StreamingChatClient {
 
     private val appContext = context.applicationContext
@@ -74,10 +76,12 @@ class HybridGatewayClient(
         history: List<ChatTurn>,
     ): Flow<String> = flow {
         val localReady = modelStore.isReady(resolvedLocalModelId)
+        val mode = routeModeProvider()
         val route = GatewayRouter.decide(
             prompt = prompt,
             localReady = localReady,
             apiConfigured = api != null,
+            mode = mode,
         )
 
         when (route) {
@@ -93,7 +97,11 @@ class HybridGatewayClient(
                     buffer.append(piece)
                 }
                 val localText = buffer.toString()
-                if (api != null && GatewayRouter.isWeakLocalReply(localText)) {
+                // 仅自动模式：本地弱回复再 escalate；手选本地不擅自改走云端
+                if (mode == GatewayRouteMode.AUTO &&
+                    api != null &&
+                    GatewayRouter.isWeakLocalReply(localText)
+                ) {
                     _lastRouteLabel.value = "网关·API"
                     api.streamChat(prompt, history).collect { emit(it) }
                 } else {

@@ -40,12 +40,21 @@ enum class BubbleStyle(val label: String) {
     SQUARE("直角"),
 }
 
+/** ④ 端侧网关路由：自动判复杂度，或手选优先本地 / 云端。 */
+enum class GatewayRouteMode(val label: String) {
+    AUTO("自动"),
+    LOCAL("优先本地"),
+    API("优先云端"),
+}
+
 data class ChatPrefs(
     val inputMode: InputMode = InputMode.MIXED,
     val themeStyle: ChatThemeStyle = ChatThemeStyle.FOREST,
     val bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
     /** 助手回复完成后自动朗读（系统 TTS） */
     val autoSpeakReplies: Boolean = false,
+    /** 仅对端侧网关 Agent 生效 */
+    val gatewayRouteMode: GatewayRouteMode = GatewayRouteMode.AUTO,
     val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
 ) {
     companion object {
@@ -89,6 +98,10 @@ class ChatPrefsStore(
         update { it.copy(autoSpeakReplies = enabled) }
     }
 
+    fun setGatewayRouteMode(mode: GatewayRouteMode) {
+        update { it.copy(gatewayRouteMode = mode) }
+    }
+
     fun moveShortcut(id: String, offset: Int) {
         update { current ->
             val list = current.shortcuts.toMutableList()
@@ -122,6 +135,7 @@ class ChatPrefsStore(
             .putString(KEY_THEME, value.themeStyle.name)
             .putString(KEY_BUBBLE, value.bubbleStyle.name)
             .putBoolean(KEY_AUTO_SPEAK, value.autoSpeakReplies)
+            .putString(KEY_GATEWAY_ROUTE, value.gatewayRouteMode.name)
             .putString(KEY_SHORTCUTS, array.toString())
             .apply()
     }
@@ -143,12 +157,18 @@ class ChatPrefsStore(
             }
             ?: BubbleStyle.ROUND
         val autoSpeak = prefs.getBoolean(KEY_AUTO_SPEAK, false)
+        val gatewayRoute = prefs.getString(KEY_GATEWAY_ROUTE, GatewayRouteMode.AUTO.name)
+            ?.let { raw ->
+                runCatching { GatewayRouteMode.valueOf(raw) }.getOrDefault(GatewayRouteMode.AUTO)
+            }
+            ?: GatewayRouteMode.AUTO
         val shortcuts = loadShortcuts()
         return ChatPrefs(
             inputMode = mode,
             themeStyle = theme,
             bubbleStyle = bubble,
             autoSpeakReplies = autoSpeak,
+            gatewayRouteMode = gatewayRoute,
             shortcuts = shortcuts,
         )
     }
@@ -182,6 +202,7 @@ class ChatPrefsStore(
         private const val KEY_THEME = "theme_style"
         private const val KEY_BUBBLE = "bubble_style"
         private const val KEY_AUTO_SPEAK = "auto_speak_replies"
+        private const val KEY_GATEWAY_ROUTE = "gateway_route_mode"
         private const val KEY_SHORTCUTS = "shortcuts"
     }
 }

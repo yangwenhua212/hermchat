@@ -1,6 +1,8 @@
 package com.eraherm.hermchat.data.network
 
 import android.content.Context
+import com.eraherm.hermchat.HermChatApp
+import com.eraherm.hermchat.data.local.GatewayRouteMode
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
@@ -25,6 +27,7 @@ object AIClientFactory {
         if (agent.kind == AgentKind.GATEWAY) {
             val appContext = context?.applicationContext
                 ?: error("端侧网关需要 Context")
+            val prefsStore = (appContext as? HermChatApp)?.chatPrefsStore
             return HybridGatewayClient(
                 context = appContext,
                 apiBaseUrl = agent.endpoint.trim(),
@@ -32,6 +35,9 @@ object AIClientFactory {
                 apiModel = agent.model.ifBlank { "deepseek-chat" },
                 localModelId = agent.localModelId.ifBlank { LocalModelStore.DEFAULT_MODEL_ID },
                 hfToken = agent.apiKey,
+                routeModeProvider = {
+                    prefsStore?.prefsFlow?.value?.gatewayRouteMode ?: GatewayRouteMode.AUTO
+                },
             )
         }
 

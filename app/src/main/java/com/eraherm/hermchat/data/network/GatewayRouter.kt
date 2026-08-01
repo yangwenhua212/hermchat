@@ -1,8 +1,11 @@
 package com.eraherm.hermchat.data.network
 
+import com.eraherm.hermchat.data.local.GatewayRouteMode
+
 /**
- * ④ 端侧网关路由：简单题优先本地，难题/长文/明示用大模型 → API；
- * 本地未就绪或回复是编排兜底文案时 escalate 到 API。
+ * ④ 端侧网关路由：
+ * - [GatewayRouteMode.AUTO]：按复杂度判断；弱本地回复可 escalate 到 API
+ * - [GatewayRouteMode.LOCAL] / [GatewayRouteMode.API]：用户手选优先通道（缺能力时才回落）
  */
 object GatewayRouter {
     enum class Route { LOCAL, API }
@@ -11,7 +14,22 @@ object GatewayRouter {
         prompt: String,
         localReady: Boolean,
         apiConfigured: Boolean,
+        mode: GatewayRouteMode = GatewayRouteMode.AUTO,
     ): Route {
+        when (mode) {
+            GatewayRouteMode.LOCAL -> {
+                if (localReady) return Route.LOCAL
+                if (apiConfigured) return Route.API
+                return Route.LOCAL
+            }
+            GatewayRouteMode.API -> {
+                if (apiConfigured) return Route.API
+                if (localReady) return Route.LOCAL
+                return Route.API
+            }
+            GatewayRouteMode.AUTO -> Unit
+        }
+
         if (apiConfigured && !localReady) return Route.API
         if (!apiConfigured && localReady) return Route.LOCAL
         if (!apiConfigured) return Route.API

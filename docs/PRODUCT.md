@@ -17,7 +17,7 @@
 | ① | **本地小模型** | 纯端侧推理（默认 Gemma 270M，可换已装权重） | 无网 / 隐私 / 零成本；简单问答 | ★★☆ | 0 元 | ❌ 纯文本（编排可顺带闹钟等意图） | 「本地」+ 资源库选用 | ✅ 主干 |
 | ② | **直连大模型 API** | 云端大模型（DeepSeek/OpenAI） | 有网、无 Agent 服务时的保底；永远能聊 | ★★★★ | 按 token | ❌ API 本身无工具（纯聊天） | 「HTTP 兼容」且关本机工具 | ✅ 主干 |
 | ③ | **远端 Agent 服务** | Hermes / 自建 / Bridge 完整引擎 | **主力**：长记忆、复杂推理、多工具、跨设备 | ★★★★★ | 服务器固定成本 | ✅ 经 Agent 服务间接操控 | WebSocket / Hermes HTTP | ✅ 主干（主线） |
-| ④ | **端侧 Agent 网关** | App 内轻量调度：API/本地 + 本机工具 | 平替主力：云端脑 + 手机手；可再挂 ③ | ★★★☆ | 极低（偶尔 API） | ✅ 有限（闹钟/日历等） | **端侧网关**+ 资源库选本地兜底 | ✅ 混合路由 + 本机工具 |
+| ④ | **端侧 Agent 网关** | App 内轻量调度：API/本地 + 本机工具 | 平替主力：云端脑 + 手机手；可再挂 ③ | ★★★☆ | 极低（偶尔 API） | ✅ 有限（闹钟/日历等，须确认） | **端侧网关**+ 资源库选本地兜底；设置可选手动路由 | ✅ 自动/手动路由 + 本机工具 |
 
 ```
                  ┌─────────────────────────────────┐
@@ -41,7 +41,7 @@
 
 细节：③ 见 [CONNECT_AGENTS.md](CONNECT_AGENTS.md)；④ 见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)；① / 资源库见 [LOCAL_MODEL.md](LOCAL_MODEL.md)。
 
-**④ 已通**：`HybridGatewayClient` + `GatewayRouter`（简单→本地，复杂→API，弱回复 escalate）。**④↔③** 发送失败时本轮自动改用备用 Agent（`AgentFailover`）。
+**④ 已通**：`HybridGatewayClient` + `GatewayRouter`（**自动**：简单→本地、复杂→API、弱回复 escalate；**手动**：设置里优先本地 / 优先云端）。本机工具须确认。**④↔③** 发送失败时本轮自动改用备用 Agent（`AgentFailover`）。
 
 ## EraHerm 分工
 

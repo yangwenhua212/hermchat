@@ -46,6 +46,7 @@ import com.eraherm.hermchat.data.local.BubbleStyle
 import com.eraherm.hermchat.data.local.ChatPrefs
 import com.eraherm.hermchat.data.local.ChatPrefsStore
 import com.eraherm.hermchat.data.local.ChatThemeStyle
+import com.eraherm.hermchat.data.local.GatewayRouteMode
 import com.eraherm.hermchat.data.local.InputMode
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
@@ -58,6 +59,7 @@ private sealed interface PrefsFolder {
     data object Input : PrefsFolder
     data object Appearance : PrefsFolder
     data object Shortcuts : PrefsFolder
+    data object Gateway : PrefsFolder
 }
 
 @Composable
@@ -100,6 +102,7 @@ fun ChatPrefsScreen(
                             onOpenInput = { folder = PrefsFolder.Input },
                             onOpenAppearance = { folder = PrefsFolder.Appearance },
                             onOpenShortcuts = { folder = PrefsFolder.Shortcuts },
+                            onOpenGateway = { folder = PrefsFolder.Gateway },
                             onOpenLibrary = onOpenLibrary,
                             onOpenAbout = onOpenAbout,
                         )
@@ -112,6 +115,10 @@ fun ChatPrefsScreen(
                             store = app.chatPrefsStore,
                         )
                         PrefsFolder.Shortcuts -> PrefsShortcutsDetail(
+                            prefs = chatPrefs,
+                            store = app.chatPrefsStore,
+                        )
+                        PrefsFolder.Gateway -> PrefsGatewayDetail(
                             prefs = chatPrefs,
                             store = app.chatPrefsStore,
                         )
@@ -146,6 +153,7 @@ private fun PrefsRoot(
     onOpenInput: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenShortcuts: () -> Unit,
+    onOpenGateway: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
@@ -157,6 +165,11 @@ private fun PrefsRoot(
                 onCheckedChange = { store.setAutoSpeakReplies(it) },
             )
         },
+    )
+    PrefsFolderRow(
+        title = "端侧网关",
+        summary = prefs.gatewayRouteMode.label,
+        onClick = onOpenGateway,
     )
     PrefsFolderRow(
         title = "资源库",
@@ -196,6 +209,21 @@ private fun PrefsInputDetail(
             title = mode.label,
             selected = prefs.inputMode == mode,
             onClick = { store.setInputMode(mode) },
+        )
+    }
+}
+
+@Composable
+private fun PrefsGatewayDetail(
+    prefs: ChatPrefs,
+    store: ChatPrefsStore,
+) {
+    Text("路由", style = MaterialTheme.typography.titleMedium)
+    GatewayRouteMode.entries.forEach { mode ->
+        PrefsOptionRow(
+            title = mode.label,
+            selected = prefs.gatewayRouteMode == mode,
+            onClick = { store.setGatewayRouteMode(mode) },
         )
     }
 }

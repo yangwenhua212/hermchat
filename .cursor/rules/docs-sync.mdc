@@ -1,0 +1,27 @@
+---
+description: 改代码后同步更新技术文档与产品说明
+alwaysApply: true
+---
+
+# 文档同步
+
+实现或变更功能后，**同一轮任务内**更新对应文档，不要等用户再提醒。
+
+## 必对表
+
+| 改动类型 | 优先更新 |
+|----------|----------|
+| 四档能力 / 路由 / Agent 行为 | `docs/PRODUCT.md`、`README.md` 档位表 |
+| ① 本地模型 / 资源库 | `docs/LOCAL_MODEL.md` |
+| ④ 端侧网关 / 本机工具 | `docs/REMOTE_BRAIN_LOCAL_TOOLS.md` |
+| ③ 连接 / 协议 | `docs/CONNECT_AGENTS.md`（及相关协议文档） |
+| 发版 / versionCode | `docs/RELEASE.md`、`docs/RELEASE_NOTES.md`、`README.md` 版本号 |
+| 真机验收相关 | `docs/ACCEPTANCE.md`（清单或踩坑表） |
+| UI 文案规范 | 遵守 `docs/UI.md`；说明长文进 docs，不堆进 App |
+
+## 要求
+
+1. 文档与代码行为一致：入口名称、字段（如 `localModelId`）、默认值、开关位置写对。  
+2. 只改相关段落，不整篇重写；保持简洁，细节放专题文档。  
+3. 用户未要求「提交」时，文档可与代码同批改完，是否 commit 仍听用户。  
+4. 纯重构且对外行为不变时，可只改技术注释；行为或入口变了必须改说明文档。
