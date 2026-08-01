@@ -5,11 +5,13 @@ App 内轻量调度：**简单题走本地 Gemma，难题/长文走 DeepSeek 等
 ```
 手机（HxSync · AgentKind.GATEWAY）
 ├── HybridGatewayClient
-│   ├── 本地：LocalRuntimeClient（Gemma 270M，按需下载）
-│   └── API：OpenAiCompatClient（DeepSeek 等）+ 短历史
+│   ├── 本地：LocalRuntimeClient（默认 Gemma 270M；AgentProfile.localModelId）
+│   └── API：OpenAiCompatClient（DeepSeek 等，model=API 名）+ 短历史
 ├── GatewayRouter：长度 / 关键词 / 本地是否就绪 → 选通道
 └── 本机手：ToolCallParser → 闹钟 / 日历（确认卡）
 ```
+
+本地权重：配置页下载，或 **资源库** 下载后「选用到当前」网关 Agent（详见 [LOCAL_MODEL.md](LOCAL_MODEL.md)）。
 
 ## 路由规则（当前）
 
@@ -27,19 +29,19 @@ App 内轻量调度：**简单题走本地 Gemma，难题/长文走 DeepSeek 等
 ## 怎么配
 
 1. 添加 Agent → **端侧网关**（或助手说「deepseek」「端侧网关」）  
-2. API Base：`https://api.deepseek.com`，模型：`deepseek-chat`，填 Key  
-3. （可选）**下载本地兜底模型** → 测 API → 保存  
+2. API Base：`https://api.deepseek.com`，**API 模型**：`deepseek-chat`，填 Key  
+3. （可选）选/下载 **本地兜底**（配置页目录，或资源库「选用到当前」）→ 测 API → 保存  
 
 纯聊天、不要本机工具 → 用 **HTTP 兼容**（②），不要选网关。
 
 ## 与四档
 
-| 档位 | |
-|------|--|
-| ① 仅本地 | 「本地」 |
-| ② 纯 API | 「HTTP 兼容」 |
-| ③ 远端 Agent | WebSocket / Hermes |
-| ④ 本页 | 「端侧网关」 |
+| 档位 | App 入口 | 端侧权重 |
+|------|----------|----------|
+| ① 仅本地 | 「本地」 | 资源库 / 配置页选用 → `model` |
+| ② 纯 API | 「HTTP 兼容」 | 不需要 |
+| ③ 远端 Agent | WebSocket / Hermes | 不需要 |
+| ④ 本页 | 「端侧网关」 | 资源库选用 → `localModelId`（与 API `model` 分开） |
 
 ## ④↔③ 自动故障转移
 

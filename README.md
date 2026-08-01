@@ -37,14 +37,16 @@ APK：`app/build/outputs/apk/release/app-release.apk`（**正式 release 签名*
 
 ## 四种能力档位
 
+顶栏切换已保存的 Agent。**资源库**（设置 / Agent 下拉）统一管 Agent 与端侧模型：下载、删除、HF 搜索、选用到当前 ①/④。
+
 | # | 模式 | 说明 |
 |---|------|------|
 | ③ | **远端 Agent（主力）** | WebSocket「连电脑上的助手」/ Hermes HTTP；完整 Agent 引擎 |
-| ④ | **端侧网关** | 本地小模型 + API 混合路由；本机闹钟/日历（[REMOTE_BRAIN_LOCAL_TOOLS.md](docs/REMOTE_BRAIN_LOCAL_TOOLS.md)） |
-| ② | **纯 API 保底** | HTTP 兼容，只聊天 |
-| ① | **本地小模型** | Gemma **270M** 按需下载；无网/隐私 |
+| ④ | **端侧网关** | 本地小模型 + API 混合路由；本机闹钟/日历；本地兜底可在资源库选用（[REMOTE_BRAIN_LOCAL_TOOLS.md](docs/REMOTE_BRAIN_LOCAL_TOOLS.md)） |
+| ② | **纯 API 保底** | HTTP 兼容，只聊天（不配本机工具） |
+| ① | **本地小模型** | Gemma **270M** 等 `.task` 按需下载；资源库管理权重后选用到「本地」Agent |
 
-主线打磨 **③**；出门用 **④**；纯闲聊可 **②/①**。配置助手一句话配。总览：[docs/PRODUCT.md](docs/PRODUCT.md) · [docs/CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md)。
+主线打磨 **③**；出门用 **④**；纯闲聊可 **②/①**。配置助手一句话配。总览：[docs/PRODUCT.md](docs/PRODUCT.md) · [docs/CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md) · ① [LOCAL_MODEL.md](docs/LOCAL_MODEL.md)。
 
 ## 安全提醒（必读）
 

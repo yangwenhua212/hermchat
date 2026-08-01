@@ -10,22 +10,25 @@
 
 顶栏切换已保存配置。**主力是 ③ 远端 Agent**；①② 是备选；④ 是 App 内轻量调度（远程大脑 + 本机手）。
 
+**资源库**（设置 → 资源库，或顶栏 Agent 下拉）：统一管理已保存 Agent，以及端侧 `.task` 权重（路径、下载/删除、HF `litert-community` 搜索）。已装模型可「选用到当前」——① 写入 `model`，④ 写入 `localModelId`（与 API 模型名分离）；配置页也可从目录点选。
+
 | # | 模式 | 核心驱动 | 适用场景 | 智能 | 成本 | 手机操控 | App 入口 | 状态 |
 |---|------|----------|----------|------|------|----------|----------|------|
-| ① | **本地小模型** | 纯端侧推理（如 Gemma 270M） | 无网 / 隐私 / 零成本；简单问答 | ★★☆ | 0 元 | ❌ 纯文本（编排可顺带闹钟等意图） | 「本地」 | ✅ 主干 |
+| ① | **本地小模型** | 纯端侧推理（默认 Gemma 270M，可换已装权重） | 无网 / 隐私 / 零成本；简单问答 | ★★☆ | 0 元 | ❌ 纯文本（编排可顺带闹钟等意图） | 「本地」+ 资源库选用 | ✅ 主干 |
 | ② | **直连大模型 API** | 云端大模型（DeepSeek/OpenAI） | 有网、无 Agent 服务时的保底；永远能聊 | ★★★★ | 按 token | ❌ API 本身无工具（纯聊天） | 「HTTP 兼容」且关本机工具 | ✅ 主干 |
 | ③ | **远端 Agent 服务** | Hermes / 自建 / Bridge 完整引擎 | **主力**：长记忆、复杂推理、多工具、跨设备 | ★★★★★ | 服务器固定成本 | ✅ 经 Agent 服务间接操控 | WebSocket / Hermes HTTP | ✅ 主干（主线） |
-| ④ | **端侧 Agent 网关** | App 内轻量调度：API/本地 + 本机工具 | 平替主力：云端脑 + 手机手；可再挂 ③ | ★★★☆ | 极低（偶尔 API） | ✅ 有限（闹钟/日历等） | **端侧网关** | ✅ 混合路由 + 本机工具 |
+| ④ | **端侧 Agent 网关** | App 内轻量调度：API/本地 + 本机工具 | 平替主力：云端脑 + 手机手；可再挂 ③ | ★★★☆ | 极低（偶尔 API） | ✅ 有限（闹钟/日历等） | **端侧网关**+ 资源库选本地兜底 | ✅ 混合路由 + 本机工具 |
 
 ```
                  ┌─────────────────────────────────┐
                  │          HxSync 手机             │
                  │  对话 UI · 确认卡 ·（④）调度层    │
+                 │  资源库：Agent + 本地 .task      │
                  └───────────────┬─────────────────┘
          ┌───────────┬───────────┼───────────┬───────────┐
          ▼           ▼           ▼           ▼
        ① 本地      ② 纯 API    ③ 远端 Agent   ④ 网关
-       Gemma       DeepSeek    WS / Hermes    API+本机工具
+       Gemma…      DeepSeek    WS / Hermes    API+本机工具
 ```
 
 | | ① 本地 | ② 纯 API | ③ 远端 Agent | ④ 端侧网关 |
@@ -33,9 +36,10 @@
 | 网络 | 可不需要 | 要 | 要（到你的服务） | 要（API 时） |
 | 算力 | 手机 | 服务商 | 电脑/云 | 服务商 + 手机 |
 | 记忆 / 多工具链 | 弱 | 弱（无 Agent） | **强** | 中（本机工具 + 短历史） |
+| 端侧权重 | 资源库下载并选用 | 不需要 | 不需要 | 资源库选本地兜底；API 模型另填 |
 | 典型用法 | 敏感/离线闲聊 | 临时保底问答 | **日常主力** | 没开电脑时改闹钟、问 DeepSeek |
 
-细节：③ 见 [CONNECT_AGENTS.md](CONNECT_AGENTS.md)；④ 见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)；① 见 [LOCAL_MODEL.md](LOCAL_MODEL.md)。
+细节：③ 见 [CONNECT_AGENTS.md](CONNECT_AGENTS.md)；④ 见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)；① / 资源库见 [LOCAL_MODEL.md](LOCAL_MODEL.md)。
 
 **④ 已通**：`HybridGatewayClient` + `GatewayRouter`（简单→本地，复杂→API，弱回复 escalate）。**④↔③** 发送失败时本轮自动改用备用 Agent（`AgentFailover`）。
 
@@ -70,15 +74,16 @@ HxSync 反向设计：**简单配置 + 界面归属用户 + 四档能力对等�
 
 ### Phase A（当前）
 
-1. 按档位选：③ WebSocket/Hermes │ ④/② HTTP │ ① 本地  
-2. 填地址（可测连 / 探测 / 扫码）；HTTP 可填 API Key、模型名  
-3. 起名字（可选）→ 聊天  
+1. 按档位选：③ WebSocket/Hermes │ ④ 端侧网关 │ ② HTTP 兼容 │ ① 本地  
+2. 填地址（可测连 / 探测 / 扫码）；HTTP / ④ 可填 API Key、API 模型名  
+3. ①/④ 需要端侧权重时：配置页下载，或 **资源库** 搜索/下载后「选用到当前」  
+4. 起名字（可选）→ 聊天  
 
-详见 [CONNECT_AGENTS.md](CONNECT_AGENTS.md)、[BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)、[SETUP_QR.md](SETUP_QR.md)、[REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)。
+详见 [CONNECT_AGENTS.md](CONNECT_AGENTS.md)、[BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)、[SETUP_QR.md](SETUP_QR.md)、[REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)、[LOCAL_MODEL.md](LOCAL_MODEL.md)。
 
-### Phase B（规划）
+### Phase B（本地运行时）
 
-本地运行时选型、模型下载与更新：见 [LOCAL_MODEL.md](LOCAL_MODEL.md)。
+端侧推理路径、资源库与模型选用已落地主干；细节见 [LOCAL_MODEL.md](LOCAL_MODEL.md)。更重的多工具链仍以 ③ 为准。
 
 ## 聊天页：用户说了算
 
@@ -86,7 +91,7 @@ HxSync 反向设计：**简单配置 + 界面归属用户 + 四档能力对等�
 
 - **新建对话**：顶栏入口；清空本地气泡并换新服务端 Session（HTTP 带 `X-Hermes-Session-Id`；避免隐式会话把上下文堆爆）  
 - **复制**：气泡文字可长按选中复制  
-- **Agent**：顶栏下拉切换 / 编辑 / 添加  
+- **Agent**：顶栏下拉切换 / 编辑 / 添加 / 进资源库  
 
 **界面文案规范**：主界面保持干净，不堆说明小字 / 备注；细则见 [UI.md](UI.md)。
 
@@ -95,9 +100,9 @@ HxSync 反向设计：**简单配置 + 界面归属用户 + 四档能力对等�
 **已做稳 / 继续打磨**
 
 - **③** 远端 Agent（WebSocket + Hermes HTTP）— 主线  
-- **②** 纯 API 聊天；**④** API + 本机工具确认卡（片段）  
-- **①** 本地 Gemma 按需下载  
-- 流式对话、多 Agent、新建对话换 Session、唤醒  
+- **②** 纯 API 聊天；**④** 混合路由 + 本机工具确认卡 + 可选本地兜底权重  
+- **①** 本地 Gemma（及资源库追加的 `.task`）按需下载与选用  
+- 资源库、流式对话、多 Agent、新建对话换 Session、唤醒（自定义词 / 页内免喊词 / 开机恢复）  
 
 **后置**
 
