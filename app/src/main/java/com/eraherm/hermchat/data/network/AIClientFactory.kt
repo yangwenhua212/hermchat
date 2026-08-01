@@ -23,10 +23,17 @@ object AIClientFactory {
 
         val endpoint = agent.endpoint.trim()
         return when {
-            endpoint.startsWith("http://", ignoreCase = true) ||
+            agent.kind == AgentKind.HERMES ||
+                agent.kind == AgentKind.HTTP_COMPAT ||
+                endpoint.startsWith("http://", ignoreCase = true) ||
                 endpoint.startsWith("https://", ignoreCase = true) -> {
+                val base = if (agent.kind == AgentKind.HERMES) {
+                    HermesEndpoint.normalize(endpoint)
+                } else {
+                    endpoint
+                }
                 OpenAiCompatClient(
-                    baseUrl = endpoint,
+                    baseUrl = base,
                     apiKey = agent.apiKey,
                     model = agent.model.ifBlank { "default" },
                 )

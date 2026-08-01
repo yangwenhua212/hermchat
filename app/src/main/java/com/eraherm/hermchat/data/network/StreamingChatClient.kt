@@ -8,5 +8,9 @@ interface StreamingChatClient {
     suspend fun ensureConnected()
     fun streamChat(prompt: String): Flow<String>
     fun sendToolResult(toolCallId: String, ok: Boolean, message: String) {}
+
+    /** 强制开启全新服务端会话（HTTP Hermes Session-Id / WS session.create）。 */
+    fun resetConversation() {}
+
     fun close()
 }

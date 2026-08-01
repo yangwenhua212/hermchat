@@ -1,8 +1,11 @@
 package com.eraherm.hermchat.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -10,18 +13,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -39,9 +44,8 @@ fun MessageBubble(
     message: Message,
     themeStyle: ChatThemeStyle = ChatThemeStyle.FOREST,
     bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
+    isStreaming: Boolean = false,
 ) {
-    var visible by remember(message.id) { mutableStateOf(false) }
-    LaunchedEffect(message.id) { visible = true }
     val userColor = when (themeStyle) {
         ChatThemeStyle.FOREST -> Forest
         ChatThemeStyle.INK -> Ink
@@ -53,12 +57,9 @@ fun MessageBubble(
         BubbleStyle.SQUARE -> 8.dp
     }
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn() + slideInVertically { it / 6 },
-    ) {
-        when (message.role) {
-            MessageRole.SYSTEM -> {
+    when (message.role) {
+        MessageRole.SYSTEM -> {
+            SelectionContainer {
                 Text(
                     text = message.content,
                     style = MaterialTheme.typography.bodyMedium,
@@ -66,48 +67,113 @@ fun MessageBubble(
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
                 )
             }
+        }
 
-            MessageRole.USER, MessageRole.ASSISTANT -> {
-                val isUser = message.role == MessageRole.USER
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .widthIn(max = 320.dp)
-                            .then(
-                                if (isUser) {
-                                    Modifier.background(
-                                        color = userColor,
+        MessageRole.USER, MessageRole.ASSISTANT -> {
+            val isUser = message.role == MessageRole.USER
+            val maxBubbleWidth = (LocalConfiguration.current.screenWidthDp * 0.78f).dp
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = maxBubbleWidth)
+                        .then(
+                            if (isUser) {
+                                Modifier.background(
+                                    color = userColor,
+                                    shape = bubbleShape(isUser, radius),
+                                )
+                            } else {
+                                Modifier
+                                    .background(
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                                         shape = bubbleShape(isUser, radius),
                                     )
-                                } else {
-                                    Modifier
-                                        .background(
-                                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                                            shape = bubbleShape(isUser, radius),
-                                        )
-                                        .border(
-                                            width = 1.dp,
-                                            color = Line.copy(alpha = 0.85f),
-                                            shape = bubbleShape(isUser, radius),
-                                        )
-                                },
-                            )
-                            .padding(horizontal = 14.dp, vertical = 11.dp),
-                    ) {
+                                    .border(
+                                        width = 0.5.dp,
+                                        color = Line.copy(alpha = 0.55f),
+                                        shape = bubbleShape(isUser, radius),
+                                    )
+                            },
+                        )
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    SelectionContainer {
                         Text(
-                            text = message.content,
+                            text = if (isStreaming && message.content.isNotEmpty()) {
+                                message.content + "▍"
+                            } else {
+                                message.content
+                            },
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun TypingBubble(
+    bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
+) {
+    val radius = when (bubbleStyle) {
+        BubbleStyle.ROUND -> 18.dp
+        BubbleStyle.SOFT -> 22.dp
+        BubbleStyle.SQUARE -> 8.dp
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        Box(
+            modifier = Modifier
+                .background(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                    shape = bubbleShape(isUser = false, radius = radius),
+                )
+                .border(
+                    width = 0.5.dp,
+                    color = Line.copy(alpha = 0.55f),
+                    shape = bubbleShape(isUser = false, radius = radius),
+                )
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            TypingDots()
+        }
+    }
+}
+
+@Composable
+private fun TypingDots() {
+    val transition = rememberInfiniteTransition(label = "typing")
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(3) { index ->
+            val alpha by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 420, delayMillis = index * 120, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "dot$index",
+            )
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .alpha(alpha)
+                    .background(SoftGray, CircleShape),
+            )
         }
     }
 }

@@ -110,13 +110,15 @@ class AgentStore(
             buildList {
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
-                    val kind = AgentKind.fromStored(obj.optString("kind", "CUSTOM"))
+                    val kindRaw = obj.optString("kind", "CUSTOM")
+                    val endpoint = obj.getString("endpoint")
+                    val kind = AgentKind.resolve(kindRaw, endpoint)
                     add(
                         AgentProfile(
                             id = obj.getString("id"),
                             kind = kind,
                             name = obj.getString("name"),
-                            endpoint = obj.getString("endpoint"),
+                            endpoint = endpoint,
                             apiKey = obj.optString("apiKey", ""),
                             model = obj.optString("model", "default").ifBlank { "default" },
                             createdAt = obj.optLong("createdAt", System.currentTimeMillis()),

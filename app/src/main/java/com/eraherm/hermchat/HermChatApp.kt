@@ -7,6 +7,7 @@ import com.eraherm.hermchat.data.local.ChatPrefsStore
 import com.eraherm.hermchat.data.local.MessageRepository
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.local.WakeSettingsStore
+import com.eraherm.hermchat.service.VoiceCloudBridge
 import com.eraherm.hermchat.service.VoiceEventBus
 import com.eraherm.hermchat.tools.ToolRegistry
 
@@ -21,4 +22,10 @@ class HermChatApp : Application() {
     val localModelStore: LocalModelStore by lazy { LocalModelStore(this) }
     val voiceEventBus: VoiceEventBus by lazy { VoiceEventBus() }
     val toolRegistry: ToolRegistry by lazy { ToolRegistry(this) }
+    val voiceCloudBridge: VoiceCloudBridge by lazy { VoiceCloudBridge(this) }
+
+    override fun onCreate() {
+        super.onCreate()
+        voiceCloudBridge.start()
+    }
 }

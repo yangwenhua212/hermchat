@@ -73,6 +73,11 @@ class HermesBridgeClient(
 
     override fun streamChat(prompt: String): Flow<String> = callbackFlow {
         ensureConnected()
+        if (protocol == WsProtocol.JSON_RPC && sessionId.isNullOrBlank()) {
+            runCatching { bootstrapSession() }.onFailure {
+                protocol = WsProtocol.SIMPLE
+            }
+        }
         val requestId = UUID.randomUUID().toString()
         val handler: (BridgeStreamEvent) -> Unit = { event ->
             when (event) {
@@ -105,6 +110,10 @@ class HermesBridgeClient(
             .put("content", message)
             .put("message", message)
         webSocket?.send(payload.toString())
+    }
+
+    override fun resetConversation() {
+        sessionId = null
     }
 
     override fun close() {
@@ -180,7 +189,7 @@ class HermesBridgeClient(
             }
         }
 
-        if (protocol == WsProtocol.JSON_RPC) {
+        if (protocol == WsProtocol.JSON_RPC && sessionId.isNullOrBlank()) {
             runCatching { bootstrapSession() }.onFailure {
                 protocol = WsProtocol.SIMPLE
             }

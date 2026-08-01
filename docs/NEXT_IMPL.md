@@ -12,6 +12,8 @@
 | 离线唤醒 sherpa-onnx KWS | ✅ Step 12 | 唤醒设置 → 引擎「离线」→ 下载模型 → 开启监听 |
 | 离线短指令 ASR | ✅ Step 14 | 唤醒后说指令；点按麦克风；自动发送进聊天 |
 | 本地运行时 Phase B | ✅ Step 13 | 添加 Agent →「本地」；可选下载 Gemma；工具确认流可用 |
+| Hermes HTTP 会话 / 新建对话 | ✅ Step 17 | 请求带 `X-Hermes-Session-Id`；顶栏新建对话；满 20 条自动换会话 |
+| 气泡复制 / 编辑 Agent 跳转 | ✅ Step 17 | 长按选中复制；下拉菜单关闭后再导航 |
 
 ---
 
@@ -51,8 +53,9 @@ WakeWordService
 ## 建议推进顺序
 
 1. ~~第二工具（闹钟）~~ ✅  
-2. ~~离线唤醒 sherpa KWS~~ ✅（ASR 可后置）  
-3. 本地运行时 Phase B — 见 [LOCAL_MODEL.md](LOCAL_MODEL.md)  
-4. 界面深化（头像、自定义快捷指令文案）  
+2. ~~离线唤醒 sherpa KWS~~ ✅  
+3. ~~本地运行时 Phase B~~ ✅ — 见 [LOCAL_MODEL.md](LOCAL_MODEL.md)  
+4. ~~Hermes 会话 / 新建对话 / 复制~~ ✅ Step 17  
+5. 界面深化（头像、自定义快捷指令文案）  
 
 UI 文案规范：[UI.md](UI.md)。

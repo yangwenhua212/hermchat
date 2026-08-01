@@ -2,19 +2,20 @@
 
 对照 [PRODUCT.md](PRODUCT.md) 成功标准：安装后不看企业后台文档，完成「配置 → 对话 →（可选）工具确认」。
 
-最短上手见仓库根目录 [README.md](../README.md#五分钟上手真机--演示-bridge)。
+最短上手见仓库根目录 [README.md](../README.md)。
 
 环境：Android 8+ 真机（或模拟器）；电脑与手机同一 Wi‑Fi；本机已跑 Agent / `scripts/demo_bridge.py`。
 
 ## A. 安装
 
-- [ ] 安装 Debug / Release APK（见 [RELEASE.md](RELEASE.md)）
+- [ ] 安装 Release APK（见 [RELEASE.md](RELEASE.md)）；同 release 签名可直接覆盖，**debug → release 须先卸载**
 - [ ] 首次打开进入三步配置，而非空白崩溃
 
 ## B. 配置（目标 ≤ 5 分钟）
 
 - [ ] **手填**：选 WebSocket → 填 `ws://<电脑局域网IP>:8765/ws` →「测试」成功 → 起名 → 进聊天
-- [ ] **自动探测**：点「自动探测」能列出至少一处可达端点（Bridge 已开机时）
+- [ ] **HTTP**：选 HTTP 兼容 → Base URL + Key + 模型 id →「测试」能显示具体成败原因
+- [ ] **自动探测**：点「自动探测」能列出至少一处可达端点（Bridge 已开机时；公网 Hermes 可能「未发现」属正常）
 - [ ] **扫码或粘贴**：用 [SETUP_QR.md](SETUP_QR.md) 生成配置，手机扫码/粘贴后地址正确
 - [ ] 测连失败时「跳过测连」仍能进入聊天
 
@@ -22,12 +23,14 @@
 
 - [ ] 发送文字，出现用户气泡并入库（杀进程重进仍在）
 - [ ] Agent 在线时流式回复可见；断线时有未连接提示
-- [ ] 顶栏可切换 / 添加第二个 Agent
+- [ ] 顶栏可切换 / 添加 / **编辑**第二个 Agent（点编辑应进入配置页，不卡在聊天）
+- [ ] 顶栏「新建对话」清空气泡；长对话变慢时可再点一次恢复响应
+- [ ] 助手气泡可长按选中复制
 
 ## D. 快捷指令与输入偏好
 
 - [ ] 快捷指令可插入或发送；长按可改顺序
-- [ ] 顶栏「调音」可切换语音优先 / 文字优先 / 混合
+- [ ] 齿轮可切换语音优先 / 文字优先 / 混合
 
 ## E. 工具与语音（可选）
 
@@ -40,17 +43,20 @@
 | 现象 | 原因 | 处理 |
 |------|------|------|
 | 测连超时，地址是 `10.0.2.2` | 该地址**仅模拟器**访问宿主机 | 真机改电脑局域网 IP（`ipconfig` 看 IPv4） |
-| 测连失败但 Bridge 已开 | 不在同一 Wi‑Fi / 防火墙拦端口 | 同网；放行 `8765`；或暂时关防火墙试 |
+| 测连失败但 Bridge 已开 | 不在同一 Wi‑Fi / 防火墙拦端口 | 同网；放行端口；或暂时关防火墙试 |
+| HTTP 越聊越慢 / 流式中断 | Hermes 隐式会话上下文膨胀 | 点「新建对话」；App ≥0.1.9 会带 Session-Id 并自动换会话 |
+| 安装提示签名冲突 | debug 包与 release 包证书不同 | **先卸载**再装；同 release 签名可直接覆盖 |
 | 通知「本机暂无语音识别」 | 手机未装系统语音识别引擎 | **正常**；用键盘即可，不阻断验收 |
 | Cursor / 编辑器打不开 `.apk` | APK 不是文档 | 拷到手机安装，或用 `adb install` |
+| 「本机没有可用的时钟应用」 | Android 11+ 未声明 queries，或无系统时钟 | ≥0.1.9 已补 queries + 倒计时/本机通知回退；仍失败则开系统通知权限 |
 | Android Studio `No Devices` | 无模拟器且未开 USB 调试 | 真机开 USB 调试，或直接装 APK |
 | Studio 代理要 `127.0.0.1` 账号 | 本机代理软件干扰 | Cancel；Settings → HTTP Proxy → No proxy |
 
 ## G. 已知可接受限制
 
 - 系统 `SpeechRecognizer` 依赖厂商语音包，缺省不算阻断
-- 自动探测只覆盖常见端口与网关
-- 未配置 `keystore.properties` 时 Release 使用 debug 签名（内测）
+- 自动探测只覆盖局域网常见端口与网关（不扫公网）
+- Release **必须**配置 `keystore.properties` + `hermchat-release.jks`（见 [RELEASE.md](RELEASE.md)）
 - 演示 Bridge 只做回声/简单回复，不是完整 Agent
 
 ## 记录

@@ -69,7 +69,7 @@ App 弹出确认卡；用户点「允许」后执行，并回传：
 }
 ```
 
-`kind` 可选：`WEBSOCKET` / `HTTP_COMPAT` / `CUSTOM`（亦接受旧值 `HERMES` / `OPENCLAW`）。
+`kind` 可选：`WEBSOCKET` / `HERMES` / `HTTP_COMPAT` / `CUSTOM`（旧值 `OPENCLAW`→HTTP；旧扫码 `HERMES`+`ws://` 仍按 WebSocket 解析）。
 
 深链等价写法：
 

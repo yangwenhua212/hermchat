@@ -15,8 +15,15 @@
 | `kind` | 适用 |
 |--------|------|
 | `WEBSOCKET` | `ws://` / `wss://` |
+| `HERMES` | Hermes HTTP：endpoint 可为裸主机 `IP` 或完整 `http(s)://…` |
 | `HTTP_COMPAT` | OpenAI 兼容 `http(s)://` |
 | `CUSTOM` | 其它 |
+
+Hermes 示例：
+
+```json
+{"v":1,"kind":"HERMES","endpoint":"47.250.124.133","apiKey":"你的Key","name":"云 Hermes"}
+```
 
 深链等价：
 

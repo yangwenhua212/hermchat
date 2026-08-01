@@ -29,8 +29,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
@@ -45,7 +48,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -54,14 +59,19 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.local.InputMode
 import com.eraherm.hermchat.data.local.ShortcutAction
 import com.eraherm.hermchat.data.local.ShortcutDef
 import com.eraherm.hermchat.data.model.AgentProfile
+import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.service.VoiceEvent
 import com.eraherm.hermchat.data.local.WakeEngineKind
 import com.eraherm.hermchat.service.WakeWordService
@@ -71,8 +81,11 @@ import com.eraherm.hermchat.ui.components.ConfirmCard
 import com.eraherm.hermchat.ui.components.ConnectionStatus
 import com.eraherm.hermchat.ui.components.MessageBubble
 import com.eraherm.hermchat.ui.components.ShortcutBar
+import com.eraherm.hermchat.ui.components.TypingBubble
 import com.eraherm.hermchat.ui.theme.SoftGray
 import com.eraherm.hermchat.viewmodel.ChatViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
 @Composable
@@ -101,6 +114,8 @@ fun ChatScreen(
     var draft by remember { mutableStateOf("") }
     var voiceStatus by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    var stickToBottom by remember { mutableStateOf(true) }
     val textFocus = remember { FocusRequester() }
     val busy = uiState.isSending || uiState.isStreaming
     val canSend = draft.isNotBlank() && agent != null && !busy
@@ -113,6 +128,28 @@ fun ChatScreen(
         targetValue = if (canSend) 1f else 0.92f,
         label = "sendScale",
     )
+    val displayMessages = remember(uiState.messages) { uiState.messages.asReversed() }
+    val streamingId = remember(uiState.messages, uiState.isStreaming) {
+        if (!uiState.isStreaming) null
+        else uiState.messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
+    }
+    val showTyping = uiState.isSending && !uiState.isStreaming
+
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }.distinctUntilChanged().collect { (index, offset) ->
+            // reverseLayout：贴底 ≈ index 0 且 offset 很小
+            stickToBottom = index <= 0 && offset <= 24
+        }
+    }
+
+    fun scrollToLatest(animated: Boolean = false) {
+        scope.launch {
+            if (displayMessages.isEmpty() && !showTyping) return@launch
+            if (animated) listState.animateScrollToItem(0) else listState.scrollToItem(0)
+        }
+    }
 
     val pttPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -156,7 +193,9 @@ fun ChatScreen(
             ShortcutAction.SEND -> {
                 if (!shortcutsEnabled) return
                 draft = ""
+                stickToBottom = true
                 viewModel.sendMessage(shortcut.text)
+                scrollToLatest(animated = true)
             }
         }
     }
@@ -171,8 +210,10 @@ fun ChatScreen(
                 is VoiceEvent.Transcript -> {
                     voiceStatus = null
                     if (event.autoSend) {
+                        // VoiceCloudBridge 统一发给云端，避免双发
                         draft = ""
-                        viewModel.sendMessage(event.text)
+                        stickToBottom = true
+                        voiceStatus = "正在问助手…"
                     } else {
                         draft = event.text
                     }
@@ -191,15 +232,26 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(uiState.messages.size, uiState.messages.lastOrNull()?.content, uiState.isStreaming) {
-        if (uiState.messages.isNotEmpty()) {
-            listState.animateScrollToItem(uiState.messages.lastIndex)
+    LaunchedEffect(uiState.messages.size, showTyping) {
+        if (stickToBottom) scrollToLatest(animated = true)
+    }
+
+    LaunchedEffect(uiState.messages.lastOrNull()?.content, uiState.isStreaming) {
+        if (uiState.isStreaming && stickToBottom) {
+            scrollToLatest(animated = false)
         }
     }
 
     LaunchedEffect(chatPrefs.inputMode) {
         if (chatPrefs.inputMode == InputMode.TEXT_FIRST) {
             runCatching { textFocus.requestFocus() }
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.onForeground()
         }
     }
 
@@ -226,6 +278,16 @@ fun ChatScreen(
                     modifier = Modifier.weight(1f),
                 )
                 ConnectionStatus(connected = uiState.connected)
+                IconButton(
+                    onClick = { viewModel.startNewChat() },
+                    enabled = !busy,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AddComment,
+                        contentDescription = "新建对话",
+                        tint = SoftGray,
+                    )
+                }
                 IconButton(onClick = onOpenWakeSetup) {
                     Icon(
                         imageVector = Icons.Filled.RecordVoiceOver,
@@ -271,17 +333,24 @@ fun ChatScreen(
 
             LazyColumn(
                 state = listState,
+                reverseLayout = true,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(uiState.messages, key = { it.id }) { message ->
+                if (showTyping) {
+                    item(key = "typing") {
+                        TypingBubble(bubbleStyle = chatPrefs.bubbleStyle)
+                    }
+                }
+                items(displayMessages, key = { it.id }) { message ->
                     MessageBubble(
                         message = message,
                         themeStyle = chatPrefs.themeStyle,
                         bubbleStyle = chatPrefs.bubbleStyle,
+                        isStreaming = message.id == streamingId,
                     )
                 }
             }
@@ -314,7 +383,9 @@ fun ChatScreen(
                     onSend = {
                         val text = draft
                         draft = ""
+                        stickToBottom = true
                         viewModel.sendMessage(text)
+                        scrollToLatest(animated = true)
                     },
                 )
             }
@@ -420,6 +491,10 @@ private fun DoubaoComposer(
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     maxLines = 5,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(
+                        onSend = { if (canSend) onSend() },
+                    ),
                 )
             }
 

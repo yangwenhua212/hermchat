@@ -21,6 +21,7 @@
 | 14 | 离线短指令 ASR | ✅ 并入 Step 12：喊一声 → 说指令 → Transcript 自动发送 |
 | 15 | 安全与稳定性收口 | ✅ 加密 Agent 存储、WS 重连、关键单测；见 [SECURITY.md](SECURITY.md) |
 | 16 | 发版隐患收口 | ✅ release 长期签名、本地 LLM 内存门槛、关于页 AGPL、工具强制确认 |
+| 17 | Hermes 会话 + 聊天体验 | ✅ HTTP `X-Hermes-Session-Id`；新建对话 / ≥20 条自动换会话；气泡可复制；修复编辑 Agent 跳转 |
 
 产品原则见 [PRODUCT.md](PRODUCT.md)（三种模式 + 分阶段；品牌表述 B）。实现备忘见 [NEXT_IMPL.md](NEXT_IMPL.md)。UI 文案见 [UI.md](UI.md)。安全见 [SECURITY.md](SECURITY.md)。
 
@@ -34,8 +35,8 @@
 
 唤醒说明：Step 5 系统 `SpeechRecognizer`；Step 12 增加离线 sherpa-onnx KWS，经同一 `VoiceEngine` / `VoiceEventBus` 切换。
 
-工具说明：`PhoneTool` + `ToolRegistry`；日历已接入，Step 11 扩展闹钟。协议见 [BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)。
+工具说明：`PhoneTool` + `ToolRegistry`；日历已接入；闹钟优先系统 SET_TIMER/SET_ALARM，失败回退本机通知（见 Step 17 后续补强）。协议见 [BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)。
 
-聊天定制说明：齿轮进入设置（主题色 / 气泡 / 输入 / 快捷指令）；Agent 管理在顶栏下拉。
+聊天定制说明：齿轮进入设置（主题色 / 气泡 / 输入 / 快捷指令）；Agent 管理在顶栏下拉；「新建对话」换服务端 Session。
 
 配置进阶说明：`EndpointProbe` + 竖屏扫码 + 粘贴导入。

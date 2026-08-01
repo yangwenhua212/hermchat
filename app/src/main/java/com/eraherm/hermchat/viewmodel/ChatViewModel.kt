@@ -3,8 +3,10 @@ package com.eraherm.hermchat.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.local.AgentStore
 import com.eraherm.hermchat.data.local.MessageRepository
+import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.data.model.Message
 import com.eraherm.hermchat.data.model.MessageRole
@@ -12,6 +14,7 @@ import com.eraherm.hermchat.data.model.ToolCall
 import com.eraherm.hermchat.data.network.AIClientFactory
 import com.eraherm.hermchat.data.network.paceForDisplay
 import com.eraherm.hermchat.data.network.StreamingChatClient
+import com.eraherm.hermchat.service.VoiceEvent
 import com.eraherm.hermchat.tools.LocalToolPlanner
 import com.eraherm.hermchat.tools.ToolCallParser
 import com.eraherm.hermchat.tools.ToolRegistry
@@ -53,6 +56,7 @@ class ChatViewModel(
     private var sendJob: Job? = null
     private var agentJob: Job? = null
     private var currentAgentId: String? = null
+    private val voiceSendHandler: (String) -> Unit = { text -> sendMessage(text) }
 
     val uiState: StateFlow<ChatUiState> = combine(
         combine(
@@ -85,6 +89,7 @@ class ChatViewModel(
     )
 
     init {
+        (appContext as? HermChatApp)?.voiceCloudBridge?.bindForegroundSender(voiceSendHandler)
         viewModelScope.launch { ensureWelcomeMessage() }
         agentJob = viewModelScope.launch {
             combine(agentStore.agents, agentStore.currentId) { agents, currentId ->
@@ -151,7 +156,7 @@ class ChatViewModel(
                 )
 
                 val buffer = StringBuilder()
-                chatClient.streamChat(content).paceForDisplay(charDelayMs = 28L).collect { token ->
+                chatClient.streamChat(content).paceForDisplay().collect { token ->
                     buffer.append(token)
                     streamingMessage.value = streamingMessage.value?.copy(content = buffer.toString())
                 }
@@ -178,8 +183,14 @@ class ChatViewModel(
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
+                (appContext as? HermChatApp)?.voiceEventBus?.emit(
+                    VoiceEvent.Status(finalText.take(48).ifBlank { "已回复" }),
+                )
             } catch (e: Exception) {
                 busy.update { it.copy(error = e.message ?: "发送失败") }
+                (appContext as? HermChatApp)?.voiceEventBus?.emit(
+                    VoiceEvent.Error(e.message ?: "发送失败"),
+                )
                 if (streamingMessage.value != null) {
                     val partial = streamingMessage.value?.content.orEmpty()
                     if (partial.isNotBlank()) {
@@ -254,9 +265,36 @@ class ChatViewModel(
     }
 
     /**
-     * 新建对话：清空本地消息 + 强制换服务端会话。
-     * 调用后下一次发送消息会走全新的 session（上下文归零，秒回）。
-     * UI 入口暂未绑定，先作为公共接口暴露。
+     * 从后台回到前台：尽量续上连接，不清空聊天、不主动换 Session。
+     * HTTP 复用同一 client（保留 X-Hermes-Session-Id）；WS 则 ensureConnected / 软重绑。
+     */
+    fun onForeground() {
+        viewModelScope.launch {
+            val agent = activeAgent.value ?: return@launch
+            val existing = client
+            when {
+                existing == null -> softRebind(agent)
+                isHttpStyle(agent) -> {
+                    // 无长连接；同一 client 上的 Session-Id 仍有效
+                    bridgeConnected.value = true
+                }
+                else -> {
+                    runCatching {
+                        existing.ensureConnected()
+                        bridgeConnected.value = existing.connected.value
+                    }.onFailure {
+                        softRebind(agent)
+                    }
+                    if (client?.connected?.value != true) {
+                        softRebind(agent)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 新建对话：清空本地消息 + 强制换服务端会话（HTTP Session-Id / WS session）。
      */
     fun startNewChat() {
         if (busy.value.isSending || busy.value.isStreaming) return
@@ -267,11 +305,14 @@ class ChatViewModel(
 
     private suspend fun startNewChatInternal() {
         messageRepository.clear()
-        // 断开并丢弃当前 client：HermesBridgeClient.close() 会清掉 sessionId，
-        // 置 null 后下次 sendMessage 重新 create → 新的 WebSocket + session.create。
+        streamingMessage.value = null
+        pendingToolCall.value = null
+        // 先换会话 id，再断开：下次发送走全新服务端上下文。
+        client?.resetConversation()
         client?.close()
         client = null
         bridgeConnected.value = false
+        ensureWelcomeMessage()
     }
 
     fun permissionsForPendingTool(): Array<String> {
@@ -281,6 +322,7 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        (appContext as? HermChatApp)?.voiceCloudBridge?.unbindForegroundSender(voiceSendHandler)
         sendJob?.cancel()
         agentJob?.cancel()
         client?.close()
@@ -293,6 +335,7 @@ class ChatViewModel(
         if (agent?.id != currentAgentId) {
             currentAgentId = agent?.id
             messageRepository.clear()
+            client?.resetConversation()
         }
         client?.close()
         client = null
@@ -302,13 +345,40 @@ class ChatViewModel(
             val created = AIClientFactory.create(agent, appContext)
             created.ensureConnected()
             client = created
-            bridgeConnected.value = created.connected.value
+            bridgeConnected.value = created.connected.value || isHttpStyle(agent)
+            ensureWelcomeMessage()
         }.onFailure { err ->
             bridgeConnected.value = false
             busy.update {
                 it.copy(error = "未能连接 ${agent.name}：${err.message ?: "未知错误"}")
             }
         }
+    }
+
+    /** 重绑连接但不清消息、不 resetConversation（后台回来用）。 */
+    private suspend fun softRebind(agent: AgentProfile) {
+        client?.close()
+        client = null
+        bridgeConnected.value = false
+        runCatching {
+            val created = AIClientFactory.create(agent, appContext)
+            created.ensureConnected()
+            client = created
+            bridgeConnected.value = created.connected.value || isHttpStyle(agent)
+        }.onFailure { err ->
+            bridgeConnected.value = false
+            busy.update {
+                it.copy(error = "连接已断开，请再试：${err.message ?: "未知错误"}")
+            }
+        }
+    }
+
+    private fun isHttpStyle(agent: AgentProfile): Boolean {
+        val ep = agent.endpoint.trim()
+        return agent.kind == AgentKind.HERMES ||
+            agent.kind == AgentKind.HTTP_COMPAT ||
+            ep.startsWith("http://", ignoreCase = true) ||
+            ep.startsWith("https://", ignoreCase = true)
     }
 
     private fun mergeStreaming(

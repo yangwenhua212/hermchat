@@ -12,6 +12,7 @@ import java.net.URLDecoder
  * 1) JSON：`{"v":1,"kind":"WEBSOCKET","endpoint":"ws://…","name":"…"}`
  * 2) 深链：`hxsync://agent?kind=WEBSOCKET&endpoint=…&name=…`
  * 3) 纯地址：`ws://…` / `http://…`
+ * 4) Hermes：`kind=HERMES` + 主机（可无 scheme）
  */
 data class ImportedAgentConfig(
     val kind: AgentKind?,
@@ -41,13 +42,14 @@ object AgentConfigImport {
 
     private fun parseJson(text: String): ImportedAgentConfig {
         val obj = JSONObject(text)
-        val endpoint = obj.optString("endpoint").trim()
+        val rawEndpoint = obj.optString("endpoint").trim()
             .ifEmpty { obj.optString("url").trim() }
-        require(endpoint.isNotEmpty()) { "JSON 缺少 endpoint" }
-        require(looksLikeEndpoint(endpoint)) { "endpoint 格式不正确" }
-        val kind = obj.optString("kind").takeIf { it.isNotBlank() }
-            ?.let { AgentKind.fromStored(it) }
-            ?: inferKind(endpoint)
+        require(rawEndpoint.isNotEmpty()) { "JSON 缺少 endpoint" }
+        val kindHint = obj.optString("kind").takeIf { it.isNotBlank() }
+        val kind = kindHint?.let { AgentKind.resolve(it, rawEndpoint) }
+            ?: inferKind(rawEndpoint)
+        val endpoint = normalizeImportedEndpoint(kind, rawEndpoint)
+        require(looksLikeEndpoint(endpoint) || kind == AgentKind.HERMES) { "endpoint 格式不正确" }
         val name = obj.optString("name").takeIf { it.isNotBlank() }
         val apiKey = obj.optString("apiKey").takeIf { it.isNotBlank() }
             ?: obj.optString("api_key").takeIf { it.isNotBlank() }
@@ -73,13 +75,14 @@ object AgentConfigImport {
                     URLDecoder.decode(part.substring(idx + 1), Charsets.UTF_8.name())
             }
         }
-        val endpoint = params["endpoint"]?.trim().orEmpty()
+        val rawEndpoint = params["endpoint"]?.trim().orEmpty()
             .ifEmpty { params["url"]?.trim().orEmpty() }
-        require(endpoint.isNotEmpty()) { "深链缺少 endpoint" }
-        require(looksLikeEndpoint(endpoint)) { "endpoint 格式不正确" }
-        val kind = params["kind"]?.takeIf { it.isNotBlank() }
-            ?.let { AgentKind.fromStored(it) }
-            ?: inferKind(endpoint)
+        require(rawEndpoint.isNotEmpty()) { "深链缺少 endpoint" }
+        val kindHint = params["kind"]?.takeIf { it.isNotBlank() }
+        val kind = kindHint?.let { AgentKind.resolve(it, rawEndpoint) }
+            ?: inferKind(rawEndpoint)
+        val endpoint = normalizeImportedEndpoint(kind, rawEndpoint)
+        require(looksLikeEndpoint(endpoint) || kind == AgentKind.HERMES) { "endpoint 格式不正确" }
         val name = params["name"]?.takeIf { it.isNotBlank() }
         val apiKey = params["apiKey"]?.takeIf { it.isNotBlank() }
             ?: params["api_key"]?.takeIf { it.isNotBlank() }
@@ -91,6 +94,14 @@ object AgentConfigImport {
             apiKey = apiKey,
             model = model,
         )
+    }
+
+    private fun normalizeImportedEndpoint(kind: AgentKind, raw: String): String {
+        return if (kind == AgentKind.HERMES) {
+            HermesEndpoint.normalize(raw)
+        } else {
+            raw.trim()
+        }
     }
 
     private fun looksLikeEndpoint(value: String): Boolean {

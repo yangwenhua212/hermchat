@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -166,10 +167,25 @@ class WakeWordService : Service() {
                         vibrate()
                         updateNotification("请说指令")
                     }
-                    is VoiceEvent.Status -> updateNotification(event.message)
                     is VoiceEvent.Transcript -> {
-                        val phrase = app.wakeSettingsStore.settings.value.phrase
-                        updateNotification("正在听「$phrase」")
+                        if (event.autoSend) {
+                            updateNotification("正在问助手…")
+                        } else {
+                            val phrase = app.wakeSettingsStore.settings.value.phrase
+                            updateNotification("正在听「$phrase」")
+                        }
+                    }
+                    is VoiceEvent.Status -> {
+                        updateNotification(event.message)
+                        if (!event.message.startsWith("正在")) {
+                            scope.launch {
+                                delay(2_800)
+                                val settings = app.wakeSettingsStore.settings.value
+                                if (settings.enabled) {
+                                    updateNotification("正在听「${settings.phrase}」")
+                                }
+                            }
+                        }
                     }
                     is VoiceEvent.Error -> updateNotification(event.message)
                 }

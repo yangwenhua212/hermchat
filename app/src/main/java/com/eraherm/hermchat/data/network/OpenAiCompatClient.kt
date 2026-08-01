@@ -13,10 +13,15 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * OpenAI-compatible chat completions (SSE) for HTTP Agents.
+ *
+ * Hermes HTTP API：不带 [HEADER_SESSION] 时会用「首条用户消息 hash」隐式绑死会话，
+ * 上下文只增不减。此处每次对话持有独立 UUID，新建对话时 [resetConversation] 换新。
  */
 class OpenAiCompatClient(
     baseUrl: String,
@@ -26,6 +31,7 @@ class OpenAiCompatClient(
 ) : StreamingChatClient {
 
     private val root = baseUrl.trim().trimEnd('/')
+    private val sessionId = AtomicReference(newSessionId())
     private val _connected = MutableStateFlow(false)
     override val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
@@ -33,12 +39,18 @@ class OpenAiCompatClient(
         // Connectivity is proven on the first successful stream response.
     }
 
+    override fun resetConversation() {
+        sessionId.set(newSessionId())
+    }
+
     override fun streamChat(prompt: String): Flow<String> = flow {
-        val url = if (root.endsWith("/v1/chat/completions")) {
-            root
-        } else {
-            "$root/v1/chat/completions"
+        val url = when {
+            root.endsWith("/v1/chat/completions", ignoreCase = true) -> root
+            root.endsWith("/v1", ignoreCase = true) -> "$root/chat/completions"
+            else -> "$root/v1/chat/completions"
         }
+        // 仅发本轮 user：Hermes 用 Session-Id 在服务端延续上下文。
+        // 勿把本地全量历史塞进 body，否则会与服务端会话双重堆叠。
         val bodyJson = JSONObject()
             .put("model", model.ifBlank { "default" })
             .put("stream", true)
@@ -52,6 +64,7 @@ class OpenAiCompatClient(
             .url(url)
             .post(bodyJson.toString().toRequestBody(JSON_MEDIA))
             .header("Accept", "text/event-stream")
+            .header(HEADER_SESSION, sessionId.get())
         if (apiKey.isNotBlank()) {
             requestBuilder.header("Authorization", "Bearer ${ConnectionTester.sanitizeKey(apiKey)}")
         }
@@ -94,7 +107,10 @@ class OpenAiCompatClient(
     }
 
     companion object {
+        const val HEADER_SESSION = "X-Hermes-Session-Id"
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+
+        fun newSessionId(): String = UUID.randomUUID().toString()
 
         private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)

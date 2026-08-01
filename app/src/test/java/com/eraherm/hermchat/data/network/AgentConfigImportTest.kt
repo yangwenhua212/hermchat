@@ -46,6 +46,27 @@ class AgentConfigImportTest {
     }
 
     @Test
+    fun parseJson_hermesHostOnly() {
+        val raw = """
+            {"kind":"HERMES","endpoint":"47.250.124.133","apiKey":"sk-x","name":"云"}
+        """.trimIndent()
+        val cfg = AgentConfigImport.parse(raw).getOrThrow()
+        assertEquals(AgentKind.HERMES, cfg.kind)
+        assertEquals("http://47.250.124.133", cfg.endpoint)
+        assertEquals("sk-x", cfg.apiKey)
+    }
+
+    @Test
+    fun parseJson_legacyHermesWsMapsToWebsocket() {
+        val raw = """
+            {"kind":"HERMES","endpoint":"ws://192.168.1.8:8765/ws","name":"旧"}
+        """.trimIndent()
+        val cfg = AgentConfigImport.parse(raw).getOrThrow()
+        assertEquals(AgentKind.WEBSOCKET, cfg.kind)
+        assertEquals("ws://192.168.1.8:8765/ws", cfg.endpoint)
+    }
+
+    @Test
     fun parseEmptyFails() {
         val result = AgentConfigImport.parse("   ")
         assertTrue(result.isFailure)

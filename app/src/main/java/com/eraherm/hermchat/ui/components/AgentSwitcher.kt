@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,7 @@ import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.ui.theme.Danger
 import com.eraherm.hermchat.ui.theme.Live
 import com.eraherm.hermchat.ui.theme.SoftGray
+import kotlinx.coroutines.yield
 
 @Composable
 fun AgentSwitcher(
@@ -48,10 +50,21 @@ fun AgentSwitcher(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // 下拉关闭同一帧里直接 navigate，Compose 常会吃掉回调 → 仍停在聊天页。
+    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val arrowRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         label = "switcherArrow",
     )
+
+    LaunchedEffect(expanded, pendingAction) {
+        if (!expanded) {
+            val action = pendingAction ?: return@LaunchedEffect
+            pendingAction = null
+            yield()
+            action()
+        }
+    }
 
     Box(modifier = modifier) {
         Column(
@@ -138,7 +151,7 @@ fun AgentSwitcher(
                     },
                     onClick = {
                         expanded = false
-                        if (!selected) onSelect(agent)
+                        if (!selected) pendingAction = { onSelect(agent) }
                     },
                 )
             }
@@ -167,7 +180,7 @@ fun AgentSwitcher(
                     },
                     onClick = {
                         expanded = false
-                        onEditCurrent()
+                        pendingAction = onEditCurrent
                     },
                 )
             }
@@ -192,7 +205,7 @@ fun AgentSwitcher(
                 },
                 onClick = {
                     expanded = false
-                    onAdd()
+                    pendingAction = onAdd
                 },
             )
         }

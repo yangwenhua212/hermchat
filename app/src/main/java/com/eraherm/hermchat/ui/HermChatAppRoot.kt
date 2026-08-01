@@ -13,9 +13,11 @@ import com.eraherm.hermchat.ui.screens.AboutScreen
 import com.eraherm.hermchat.ui.screens.AgentSetupScreen
 import com.eraherm.hermchat.ui.screens.ChatPrefsScreen
 import com.eraherm.hermchat.ui.screens.ChatScreen
+import com.eraherm.hermchat.ui.screens.SetupAssistScreen
 import com.eraherm.hermchat.ui.screens.WakeWordSetupScreen
 
 private sealed interface AppDestination {
+    data object SetupAssist : AppDestination
     data object Setup : AppDestination
     data object Chat : AppDestination
     data object WakeSetup : AppDestination
@@ -31,13 +33,37 @@ fun HermChatAppRoot() {
 
     var destination by remember {
         mutableStateOf<AppDestination>(
-            if (app.agentStore.hasAgent()) AppDestination.Chat else AppDestination.Setup,
+            if (app.agentStore.hasAgent()) AppDestination.Chat else AppDestination.SetupAssist,
         )
     }
     var editing by remember { mutableStateOf<AgentProfile?>(null) }
     var setupIsNew by remember { mutableStateOf(!app.agentStore.hasAgent()) }
 
     when (destination) {
+        AppDestination.SetupAssist -> {
+            SetupAssistScreen(
+                onFinished = {
+                    editing = null
+                    setupIsNew = false
+                    destination = AppDestination.Chat
+                },
+                onManualSetup = {
+                    editing = null
+                    setupIsNew = true
+                    destination = AppDestination.Setup
+                },
+                onCancel = if (agents.isNotEmpty()) {
+                    {
+                        editing = null
+                        setupIsNew = false
+                        destination = AppDestination.Chat
+                    }
+                } else {
+                    null
+                },
+            )
+        }
+
         AppDestination.Setup -> {
             AgentSetupScreen(
                 editing = if (setupIsNew) null else editing,
@@ -53,7 +79,9 @@ fun HermChatAppRoot() {
                         destination = AppDestination.Chat
                     }
                 } else {
-                    null
+                    {
+                        destination = AppDestination.SetupAssist
+                    }
                 },
             )
         }
@@ -88,10 +116,11 @@ fun HermChatAppRoot() {
                 onAddAgent = {
                     editing = null
                     setupIsNew = true
-                    destination = AppDestination.Setup
+                    destination = AppDestination.SetupAssist
                 },
                 onConfigureAgent = {
-                    editing = current
+                    val target = agents.find { it.id == currentId } ?: current
+                    editing = target
                     setupIsNew = false
                     destination = AppDestination.Setup
                 },

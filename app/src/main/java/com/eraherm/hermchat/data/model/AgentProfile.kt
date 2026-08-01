@@ -10,6 +10,11 @@ enum class AgentKind(
         defaultEndpoint = "ws://10.0.2.2:8765/ws",
         defaultName = "我的助手",
     ),
+    HERMES(
+        label = "Hermes",
+        defaultEndpoint = "",
+        defaultName = "Hermes",
+    ),
     HTTP_COMPAT(
         label = "HTTP 兼容",
         defaultEndpoint = "http://10.0.2.2:5000",
@@ -29,11 +34,26 @@ enum class AgentKind(
 
     companion object {
         fun fromStored(raw: String): AgentKind = when (raw.trim().uppercase()) {
-            "HERMES", "WEBSOCKET", "WS" -> WEBSOCKET
+            "WEBSOCKET", "WS" -> WEBSOCKET
+            "HERMES" -> HERMES
             "OPENCLAW", "HTTP_COMPAT", "HTTP", "OPENAI" -> HTTP_COMPAT
             "LOCAL", "ONDEVICE", "ON_DEVICE" -> LOCAL
             "CUSTOM" -> CUSTOM
             else -> runCatching { valueOf(raw.trim().uppercase()) }.getOrDefault(CUSTOM)
+        }
+
+        /**
+         * 旧扫码若写 kind=HERMES 但 endpoint 是 ws://，按地址兜底为 WebSocket。
+         */
+        fun resolve(raw: String, endpoint: String): AgentKind {
+            val kind = fromStored(raw)
+            val ep = endpoint.trim()
+            if (raw.trim().equals("HERMES", ignoreCase = true) &&
+                (ep.startsWith("ws://", ignoreCase = true) || ep.startsWith("wss://", ignoreCase = true))
+            ) {
+                return WEBSOCKET
+            }
+            return kind
         }
     }
 }

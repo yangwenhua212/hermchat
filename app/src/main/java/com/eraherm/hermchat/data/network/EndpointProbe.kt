@@ -60,6 +60,16 @@ class EndpointProbe(
                     "ws://$host:3000/ws",
                 )
             }
+            AgentKind.HERMES -> hosts.flatMap { host ->
+                listOf(
+                    "http://$host",
+                    "http://$host:80",
+                    "http://$host:5000",
+                    "http://$host:8000",
+                    "http://$host:8080",
+                    "http://$host:3000",
+                )
+            }
             AgentKind.HTTP_COMPAT -> hosts.flatMap { host ->
                 listOf(
                     "http://$host:5000",
@@ -67,10 +77,13 @@ class EndpointProbe(
                     "http://$host:11434",
                     "http://$host:3000",
                     "http://$host:8080",
+                    "http://$host",
                 )
             }
             AgentKind.CUSTOM -> (
-                candidates(AgentKind.WEBSOCKET) + candidates(AgentKind.HTTP_COMPAT)
+                candidates(AgentKind.WEBSOCKET) +
+                    candidates(AgentKind.HERMES) +
+                    candidates(AgentKind.HTTP_COMPAT)
                 ).distinct()
 
             AgentKind.LOCAL -> emptyList()

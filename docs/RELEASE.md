@@ -1,6 +1,6 @@
 # Release 构建与签名
 
-当前版本：`versionName` **0.1.8** / `versionCode` **9**。
+当前版本：`versionName` **0.1.9** / `versionCode` **10**。
 
 > **阶段**：开发预览。给自己试用 / 协作者测；**不是** 1.0 正式对外分发。
 
@@ -22,7 +22,17 @@ Release **必须**使用长期有效的 `hermchat-release.jks`（约 10000 天�
 
 产物：`app/build/outputs/apk/release/app-release.apk`
 
-从旧 debug 包升级：**必须先卸载**再装 release 签名包。
+也可发布到 GitHub Releases，供协作者下载同签名预览包。
+
+## 升级安装（要不要先卸载）
+
+| 情况 | 做法 |
+|------|------|
+| 已装包与新包均为同一 `hermchat-release.jks` 签名（含 GitHub 预览包互升） | **直接覆盖安装**，不必先删 |
+| 已装包是 **debug** 签名，或曾换过密钥 / 证书不一致 | **先卸载**再装，否则系统拒绝覆盖 |
+| 丢失 `hermchat-release.jks` 后重新生成密钥 | 与旧用户无法覆盖升级，只能卸载重装（数据丢失） |
+
+从旧 debug 包升级到正式 release：**必须先卸载**。
 
 ## 若需重新生成密钥
 

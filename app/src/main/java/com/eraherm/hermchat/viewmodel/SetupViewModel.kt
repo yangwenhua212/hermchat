@@ -11,6 +11,7 @@ import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.data.network.AgentConfigImport
 import com.eraherm.hermchat.data.network.ConnectionTester
 import com.eraherm.hermchat.data.network.EndpointProbe
+import com.eraherm.hermchat.data.network.HermesEndpoint
 import com.eraherm.hermchat.data.network.ProbeHit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -238,8 +239,19 @@ class SetupViewModel(
                 }
                 return@launch
             }
+            val endpoint = runCatching { resolveEndpoint(state) }.getOrElse { err ->
+                _uiState.update {
+                    it.copy(
+                        testing = false,
+                        testPassed = false,
+                        testMessage = err.message ?: "地址无效",
+                        error = err.message ?: "地址无效",
+                    )
+                }
+                return@launch
+            }
             val result = connectionTester.test(
-                endpoint = state.endpoint,
+                endpoint = endpoint,
                 apiKey = state.apiKey,
                 model = state.model,
             )
@@ -317,10 +329,15 @@ class SetupViewModel(
     fun finish() {
         val state = _uiState.value
         val name = state.name.trim().ifEmpty { state.kind.defaultName }
-        val endpoint = if (state.kind == AgentKind.LOCAL) {
-            AgentKind.LOCAL.defaultEndpoint
-        } else {
-            state.endpoint.trim()
+        val endpoint = runCatching {
+            if (state.kind == AgentKind.LOCAL) {
+                AgentKind.LOCAL.defaultEndpoint
+            } else {
+                resolveEndpoint(state)
+            }
+        }.getOrElse { err ->
+            _uiState.update { it.copy(error = err.message ?: "地址不能为空") }
+            return
         }
         if (endpoint.isBlank()) {
             _uiState.update { it.copy(error = "地址不能为空") }
@@ -348,15 +365,30 @@ class SetupViewModel(
 
     private fun goToNameStep(requireTest: Boolean) {
         val state = _uiState.value
-        if (state.kind != AgentKind.LOCAL && state.endpoint.isBlank()) {
-            _uiState.update { it.copy(error = "请先填写地址") }
-            return
+        if (state.kind != AgentKind.LOCAL) {
+            val ok = runCatching { resolveEndpoint(state) }.isSuccess
+            if (!ok || state.endpoint.isBlank()) {
+                _uiState.update {
+                    it.copy(
+                        error = if (state.kind == AgentKind.HERMES) "请先填写主机" else "请先填写地址",
+                    )
+                }
+                return
+            }
         }
         if (requireTest && !state.testPassed) {
             _uiState.update { it.copy(error = "请先点「测试」确认连通，或选择跳过") }
             return
         }
         _uiState.update { it.copy(step = 3, error = null) }
+    }
+
+    private fun resolveEndpoint(state: SetupUiState): String {
+        return if (state.kind == AgentKind.HERMES) {
+            HermesEndpoint.normalize(state.endpoint)
+        } else {
+            state.endpoint.trim().also { require(it.isNotEmpty()) { "地址不能为空" } }
+        }
     }
 
     companion object {

@@ -467,6 +467,111 @@ private fun StepEndpoint(
         return
     }
 
+    if (kind == AgentKind.HERMES) {
+        Text(
+            text = "连接 Hermes",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        ImportActions(onScan = onScan, onPaste = onPaste)
+        OutlinedTextField(
+            value = endpoint,
+            onValueChange = onEndpointChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("主机") },
+            placeholder = { Text("IP 或域名") },
+            shape = RoundedCornerShape(16.dp),
+        )
+        OutlinedTextField(
+            value = apiKey,
+            onValueChange = onApiKeyChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("API Key") },
+            shape = RoundedCornerShape(16.dp),
+        )
+        OutlinedTextField(
+            value = model,
+            onValueChange = onModelChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("模型名") },
+            shape = RoundedCornerShape(16.dp),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = onProbe,
+                enabled = !probing && !testing,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (probing) "探测中…" else "自动探测")
+            }
+            Button(
+                onClick = onTest,
+                enabled = endpoint.isNotBlank() && !testing && !probing,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (testing) "测试中…" else "测试")
+            }
+        }
+        if (probeHits.isEmpty() && !probeMessage.isNullOrBlank() && !probing) {
+            Text(
+                text = "未发现端点",
+                color = SoftGray,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        probeHits.forEach { hit ->
+            val selected = hit.endpoint == endpoint
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = selected,
+                        onClick = { onUseHit(hit) },
+                        role = Role.RadioButton,
+                    ),
+                shape = RoundedCornerShape(14.dp),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+                border = BorderStroke(
+                    1.dp,
+                    if (selected) MaterialTheme.colorScheme.primary else Line,
+                ),
+            ) {
+                Text(
+                    text = hit.endpoint,
+                    modifier = Modifier.padding(14.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+        }
+        when {
+            testPassed -> Text(
+                text = "测连成功",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            !testMessage.isNullOrBlank() -> Text(
+                text = testMessage,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (!testPassed) {
+            TextButton(onClick = onSkipTest) {
+                Text("跳过测连")
+            }
+        }
+        return
+    }
+
     val showHttpFields = kind == AgentKind.HTTP_COMPAT ||
         endpoint.startsWith("http://", ignoreCase = true) ||
         endpoint.startsWith("https://", ignoreCase = true)
