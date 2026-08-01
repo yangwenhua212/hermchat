@@ -44,6 +44,8 @@ data class ChatPrefs(
     val inputMode: InputMode = InputMode.MIXED,
     val themeStyle: ChatThemeStyle = ChatThemeStyle.FOREST,
     val bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
+    /** 助手回复完成后自动朗读（系统 TTS） */
+    val autoSpeakReplies: Boolean = false,
     val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
 ) {
     companion object {
@@ -83,6 +85,10 @@ class ChatPrefsStore(
         update { it.copy(bubbleStyle = style) }
     }
 
+    fun setAutoSpeakReplies(enabled: Boolean) {
+        update { it.copy(autoSpeakReplies = enabled) }
+    }
+
     fun moveShortcut(id: String, offset: Int) {
         update { current ->
             val list = current.shortcuts.toMutableList()
@@ -115,6 +121,7 @@ class ChatPrefsStore(
             .putString(KEY_INPUT_MODE, value.inputMode.name)
             .putString(KEY_THEME, value.themeStyle.name)
             .putString(KEY_BUBBLE, value.bubbleStyle.name)
+            .putBoolean(KEY_AUTO_SPEAK, value.autoSpeakReplies)
             .putString(KEY_SHORTCUTS, array.toString())
             .apply()
     }
@@ -135,11 +142,13 @@ class ChatPrefsStore(
                 runCatching { BubbleStyle.valueOf(raw) }.getOrDefault(BubbleStyle.ROUND)
             }
             ?: BubbleStyle.ROUND
+        val autoSpeak = prefs.getBoolean(KEY_AUTO_SPEAK, false)
         val shortcuts = loadShortcuts()
         return ChatPrefs(
             inputMode = mode,
             themeStyle = theme,
             bubbleStyle = bubble,
+            autoSpeakReplies = autoSpeak,
             shortcuts = shortcuts,
         )
     }
@@ -172,6 +181,7 @@ class ChatPrefsStore(
         private const val KEY_INPUT_MODE = "input_mode"
         private const val KEY_THEME = "theme_style"
         private const val KEY_BUBBLE = "bubble_style"
+        private const val KEY_AUTO_SPEAK = "auto_speak_replies"
         private const val KEY_SHORTCUTS = "shortcuts"
     }
 }

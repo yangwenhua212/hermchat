@@ -59,7 +59,6 @@ fun AboutScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("HxSync", style = MaterialTheme.typography.headlineSmall)
                 Text(
                     "版本 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                     style = MaterialTheme.typography.bodyLarge,
@@ -72,10 +71,6 @@ fun AboutScreen(
                     SOURCE_URL,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    "开发预览版，未到 1.0 稳定发布。",
-                    style = MaterialTheme.typography.bodyMedium,
                 )
                 Button(
                     onClick = { open(SOURCE_URL) },

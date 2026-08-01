@@ -112,8 +112,10 @@ fun ChatScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val wakeSettings by app.wakeSettingsStore.settings.collectAsStateWithLifecycle()
     val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
+    val speakingMessageId by app.ttsSpeaker.speakingMessageId.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf("") }
     var voiceStatus by remember { mutableStateOf<String?>(null) }
+    var lastAutoSpokenId by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var stickToBottom by remember { mutableStateOf(true) }
@@ -256,6 +258,30 @@ fun ChatScreen(
         }
     }
 
+    // 新回复流式开始时停掉上一句朗读
+    LaunchedEffect(uiState.isStreaming) {
+        if (uiState.isStreaming) app.ttsSpeaker.stop()
+    }
+
+    // 回复完成后自动朗读（设置「朗读回复」）
+    LaunchedEffect(uiState.isStreaming, uiState.messages.lastOrNull()?.id, chatPrefs.autoSpeakReplies) {
+        if (!chatPrefs.autoSpeakReplies || uiState.isStreaming) return@LaunchedEffect
+        val last = uiState.messages.lastOrNull() ?: return@LaunchedEffect
+        if (last.role != MessageRole.ASSISTANT) return@LaunchedEffect
+        if (last.content.isBlank() ||
+            last.id == "welcome-local" ||
+            last.id == lastAutoSpokenId
+        ) {
+            return@LaunchedEffect
+        }
+        lastAutoSpokenId = last.id
+        app.ttsSpeaker.speak(last.content, last.id)
+    }
+
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { app.ttsSpeaker.stop() }
+    }
+
     AtmosphereBackground {
         Column(
             modifier = Modifier
@@ -379,6 +405,14 @@ fun ChatScreen(
                         themeStyle = chatPrefs.themeStyle,
                         bubbleStyle = chatPrefs.bubbleStyle,
                         isStreaming = message.id == streamingId,
+                        isSpeaking = speakingMessageId == message.id,
+                        onSpeakClick = if (message.role == MessageRole.ASSISTANT) {
+                            {
+                                app.ttsSpeaker.toggle(message.content, message.id)
+                            }
+                        } else {
+                            null
+                        },
                     )
                 }
             }

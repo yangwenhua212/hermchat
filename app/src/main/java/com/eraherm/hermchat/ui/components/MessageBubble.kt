@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,6 +19,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +51,8 @@ fun MessageBubble(
     themeStyle: ChatThemeStyle = ChatThemeStyle.FOREST,
     bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
     isStreaming: Boolean = false,
+    isSpeaking: Boolean = false,
+    onSpeakClick: (() -> Unit)? = null,
 ) {
     val userColor = when (themeStyle) {
         ChatThemeStyle.FOREST -> Forest
@@ -75,43 +83,65 @@ fun MessageBubble(
         MessageRole.USER, MessageRole.ASSISTANT -> {
             val isUser = message.role == MessageRole.USER
             val maxBubbleWidth = (LocalConfiguration.current.screenWidthDp * 0.78f).dp
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+                horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
             ) {
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = maxBubbleWidth)
-                        .then(
-                            if (isUser) {
-                                Modifier.background(
-                                    color = userColor,
-                                    shape = bubbleShape(isUser, radius),
-                                )
-                            } else {
-                                Modifier
-                                    .background(
-                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                                        shape = bubbleShape(isUser, radius),
-                                    )
-                                    .border(
-                                        width = 0.5.dp,
-                                        color = Line.copy(alpha = 0.55f),
-                                        shape = bubbleShape(isUser, radius),
-                                    )
-                            },
-                        )
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
                 ) {
-                    SelectionContainer {
-                        Text(
-                            text = if (isStreaming && message.content.isNotEmpty()) {
-                                message.content + "▍"
+                    Box(
+                        modifier = Modifier
+                            .widthIn(max = maxBubbleWidth)
+                            .then(
+                                if (isUser) {
+                                    Modifier.background(
+                                        color = userColor,
+                                        shape = bubbleShape(isUser, radius),
+                                    )
+                                } else {
+                                    Modifier
+                                        .background(
+                                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                                            shape = bubbleShape(isUser, radius),
+                                        )
+                                        .border(
+                                            width = 0.5.dp,
+                                            color = Line.copy(alpha = 0.55f),
+                                            shape = bubbleShape(isUser, radius),
+                                        )
+                                },
+                            )
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    ) {
+                        SelectionContainer {
+                            Text(
+                                text = if (isStreaming && message.content.isNotEmpty()) {
+                                    message.content + "▍"
+                                } else {
+                                    message.content
+                                },
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+                if (!isUser && !isStreaming && onSpeakClick != null && message.content.isNotBlank()) {
+                    IconButton(
+                        onClick = onSpeakClick,
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (isSpeaking) Icons.Filled.Stop else Icons.Filled.VolumeUp,
+                            contentDescription = if (isSpeaking) "停止朗读" else "朗读",
+                            tint = if (isSpeaking) {
+                                MaterialTheme.colorScheme.primary
                             } else {
-                                message.content
+                                SoftGray
                             },
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
