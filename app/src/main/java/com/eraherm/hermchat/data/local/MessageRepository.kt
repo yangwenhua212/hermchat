@@ -21,4 +21,8 @@ class MessageRepository(
     suspend fun count(): Int = dao.count()
 
     suspend fun isEmpty(): Boolean = dao.count() == 0
+
+    /** 最近若干条，按时间正序（旧→新），供 HTTP 兼容客户端带上下文。 */
+    suspend fun recentChronological(limit: Int): List<Message> =
+        dao.recentDesc(limit).asReversed().map { it.toModel() }
 }

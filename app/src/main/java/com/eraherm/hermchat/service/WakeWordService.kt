@@ -60,7 +60,7 @@ class WakeWordService : Service() {
                     stopSelfSafe()
                     return START_NOT_STICKY
                 }
-                promoteForeground("正在听「$phrase」")
+                promoteForeground("准备听「$phrase」…")
                 app.wakeSettingsStore.update { it.copy(enabled = true) }
                 observeEventsOnce(app)
                 ensureSystemEngine()
@@ -68,10 +68,11 @@ class WakeWordService : Service() {
                     ACTION_PTT -> engine?.startPushToTalk()
                     else -> engine?.startListeningLoop()
                 }
+                updateNotification("正在听「$phrase」")
             }
 
             WakeEngineKind.OFFLINE -> {
-                promoteForeground("正在听「$phrase」")
+                promoteForeground("准备唤醒模型…")
                 app.wakeSettingsStore.update { it.copy(enabled = true) }
                 observeEventsOnce(app)
                 when (intent?.action) {
@@ -106,14 +107,20 @@ class WakeWordService : Service() {
                 runCatching {
                     if (!kwsInstaller.isReady()) {
                         app.voiceEventBus.emit(VoiceEvent.Status("正在下载唤醒模型"))
+                        updateNotification("正在下载唤醒模型…")
                         kwsInstaller.ensureInstalled { name ->
-                            app.voiceEventBus.emit(VoiceEvent.Status("下载 $name"))
+                            val line = "下载 $name"
+                            app.voiceEventBus.emit(VoiceEvent.Status(line))
+                            updateNotification(line)
                         }.getOrThrow()
                     }
                     if (!asrInstaller.isReady()) {
                         app.voiceEventBus.emit(VoiceEvent.Status("正在下载指令模型"))
-                        asrInstaller.ensureInstalled { name ->
-                            app.voiceEventBus.emit(VoiceEvent.Status("下载 $name"))
+                        updateNotification("正在下载指令模型…")
+                        asrInstaller.ensureInstalled { progress ->
+                            val line = progress.statusLine()
+                            app.voiceEventBus.emit(VoiceEvent.Status(line))
+                            updateNotification(line)
                         }.getOrThrow()
                     }
                     Pair(kwsInstaller.modelDir(), asrInstaller.modelDir())
@@ -136,6 +143,9 @@ class WakeWordService : Service() {
                 } else {
                     created.startListeningLoop()
                 }
+                val phrase = app.wakeSettingsStore.settings.value.phrase
+                updateNotification("正在听「$phrase」")
+                app.voiceEventBus.emit(VoiceEvent.Status("正在听「$phrase」"))
             }.onFailure { err ->
                 app.voiceEventBus.emit(VoiceEvent.Error(err.message ?: "离线模型下载失败"))
                 app.wakeSettingsStore.update { it.copy(enabled = false) }

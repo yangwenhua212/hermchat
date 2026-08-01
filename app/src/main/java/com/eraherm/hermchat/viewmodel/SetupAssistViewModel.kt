@@ -49,6 +49,21 @@ class SetupAssistViewModel(
     )
     val uiState: StateFlow<SetupAssistUiState> = _uiState.asStateFlow()
 
+    fun prepareFreshSession() {
+        _uiState.value = SetupAssistUiState(
+            messages = listOf(
+                AssistChatMessage(
+                    fromUser = false,
+                    text = "可以说「连电脑上的助手」自动探测 WebSocket，或「连一下 47.x.x.x，密码是 sk-…」配 Hermes。DeepSeek 等可说「http 兼容」。",
+                ),
+            ),
+        )
+    }
+
+    fun consumeCompleted() {
+        _uiState.update { it.copy(completedProfile = null) }
+    }
+
     fun sendUserText(raw: String) {
         val text = raw.trim()
         if (text.isEmpty() || _uiState.value.busy) return
@@ -94,7 +109,9 @@ class SetupAssistViewModel(
             }
 
             val kind = merged.resolvedKind()
-            val needKeyHint = kind == AgentKind.HERMES || kind == AgentKind.HTTP_COMPAT
+            val needKeyHint = kind == AgentKind.HERMES ||
+                kind == AgentKind.HTTP_COMPAT ||
+                kind == AgentKind.GATEWAY
             if (needKeyHint && merged.apiKey.isNullOrBlank()) {
                 append(
                     fromUser = false,
@@ -198,7 +215,7 @@ class SetupAssistViewModel(
         }
         val kind = draft.resolvedKind()
         if (!allowEmptyKey &&
-            (kind == AgentKind.HERMES || kind == AgentKind.HTTP_COMPAT) &&
+            (kind == AgentKind.HERMES || kind == AgentKind.HTTP_COMPAT || kind == AgentKind.GATEWAY) &&
             draft.apiKey.isNullOrBlank()
         ) {
             append(fromUser = false, text = "还需要 API Key；没有就回复「跳过」。")
@@ -217,7 +234,7 @@ class SetupAssistViewModel(
         }
         val kind = draft.resolvedKind()
         if (!allowEmptyKey &&
-            (kind == AgentKind.HERMES || kind == AgentKind.HTTP_COMPAT) &&
+            (kind == AgentKind.HERMES || kind == AgentKind.HTTP_COMPAT || kind == AgentKind.GATEWAY) &&
             draft.apiKey.isNullOrBlank()
         ) {
             append(fromUser = false, text = "还需要 API Key；没有就回复「跳过」。")
@@ -244,7 +261,12 @@ class SetupAssistViewModel(
                     name = name,
                     endpoint = endpoint,
                     apiKey = apiKey,
-                    model = model,
+                    model = when {
+                        model != "default" -> model
+                        kind == AgentKind.GATEWAY -> "deepseek-chat"
+                        else -> model
+                    },
+                    localToolsEnabled = kind != AgentKind.HTTP_COMPAT,
                 )
                 agentStore.saveAgent(profile, setCurrent = true)
                 append(fromUser = false, text = "测连成功（$msg）。已保存「$name」，可以聊天了。")

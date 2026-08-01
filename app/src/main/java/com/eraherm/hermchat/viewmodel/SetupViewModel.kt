@@ -13,6 +13,7 @@ import com.eraherm.hermchat.data.network.ConnectionTester
 import com.eraherm.hermchat.data.network.EndpointProbe
 import com.eraherm.hermchat.data.network.HermesEndpoint
 import com.eraherm.hermchat.data.network.ProbeHit
+import com.eraherm.hermchat.data.network.TransferProgress
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +37,7 @@ data class SetupUiState(
     val saving: Boolean = false,
     val downloadingModel: Boolean = false,
     val downloadProgress: Float = 0f,
+    val downloadDetail: String? = null,
     val modelReady: Boolean = false,
     val error: String? = null,
     val completedProfile: AgentProfile? = null,
@@ -79,12 +81,11 @@ class SetupViewModel(
             it.copy(
                 kind = kind,
                 endpoint = kind.defaultEndpoint,
-                model = if (kind == AgentKind.LOCAL) {
-                    LocalModelStore.DEFAULT_MODEL_ID
-                } else if (LocalModelStore.isKnownModelId(it.model)) {
-                    "default"
-                } else {
-                    it.model
+                model = when {
+                    kind == AgentKind.LOCAL -> LocalModelStore.DEFAULT_MODEL_ID
+                    kind == AgentKind.GATEWAY -> "deepseek-chat"
+                    LocalModelStore.isKnownModelId(it.model) -> "default"
+                    else -> it.model
                 },
                 name = if (it.name == it.kind.defaultName || it.name.isBlank()) {
                     kind.defaultName
@@ -239,6 +240,10 @@ class SetupViewModel(
                 }
                 return@launch
             }
+            if (state.kind == AgentKind.GATEWAY) {
+                val ready = localModelStore.isReady(LocalModelStore.DEFAULT_MODEL_ID)
+                _uiState.update { it.copy(modelReady = ready) }
+            }
             val endpoint = runCatching { resolveEndpoint(state) }.getOrElse { err ->
                 _uiState.update {
                     it.copy(
@@ -287,16 +292,27 @@ class SetupViewModel(
             return
         }
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(downloadingModel = true, downloadProgress = 0f, error = null)
-            }
             val modelId = state.model.ifBlank { LocalModelStore.DEFAULT_MODEL_ID }
+            val approx = localModelStore.expectedBytes(modelId)
+            _uiState.update {
+                it.copy(
+                    downloadingModel = true,
+                    downloadProgress = 0f,
+                    downloadDetail = "约 ${TransferProgress.formatBytes(approx)}",
+                    error = null,
+                )
+            }
             val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 localModelStore.ensureInstalled(
                     modelId = modelId,
                     hfToken = state.apiKey,
                 ) { progress ->
-                    _uiState.update { ui -> ui.copy(downloadProgress = progress) }
+                    _uiState.update { ui ->
+                        ui.copy(
+                            downloadProgress = progress.fraction,
+                            downloadDetail = progress.statusLine(),
+                        )
+                    }
                 }
             }
             _uiState.update { ui ->
@@ -305,6 +321,7 @@ class SetupViewModel(
                         ui.copy(
                             downloadingModel = false,
                             downloadProgress = 1f,
+                            downloadDetail = null,
                             modelReady = true,
                             testPassed = true,
                             testMessage = "本地模型已就绪",
@@ -313,6 +330,7 @@ class SetupViewModel(
                     onFailure = { err ->
                         ui.copy(
                             downloadingModel = false,
+                            downloadDetail = null,
                             modelReady = false,
                             error = err.message ?: "下载失败",
                         )
@@ -320,6 +338,10 @@ class SetupViewModel(
                 )
             }
         }
+    }
+
+    fun consumeCompleted() {
+        _uiState.update { it.copy(completedProfile = null) }
     }
 
     fun skipTestAndContinue() {
@@ -353,8 +375,13 @@ class SetupViewModel(
                 endpoint = endpoint,
                 apiKey = state.apiKey.let { ConnectionTester.sanitizeKey(it) },
                 model = state.model.trim().ifBlank {
-                    if (state.kind == AgentKind.LOCAL) LocalModelStore.DEFAULT_MODEL_ID else "default"
+                    when (state.kind) {
+                        AgentKind.LOCAL -> LocalModelStore.DEFAULT_MODEL_ID
+                        AgentKind.GATEWAY -> "deepseek-chat"
+                        else -> "default"
+                    }
                 },
+                localToolsEnabled = state.kind != AgentKind.HTTP_COMPAT,
             )
             agentStore.saveAgent(profile, setCurrent = true)
             _uiState.update {

@@ -54,9 +54,11 @@ HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent、�
 
 ---
 
-## B. 直连 API（OpenAI 兼容）
+## B. 直连 API（OpenAI 兼容）· 远程大脑 + 本机工具
 
-OpenAI、DeepSeek、Ollama 兼容端口等——**不经 WebSocket**，App 直调 HTTP。需要自己写完整 Base URL 时用 **HTTP 兼容**（不要与上面的 Hermes 快捷项混淆）。
+OpenAI、DeepSeek、Ollama 兼容端口等——**不经 WebSocket**，App 直调 HTTP。大脑在云、闹钟/日历在手机执行，见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)。
+
+需要自己写完整 Base URL 时用 **HTTP 兼容**（不要与上面的 Hermes 快捷项混淆）。
 
 1. 添加 Agent → **HTTP 兼容**  
 2. 地址填 **Base URL**（不要漏端口；若服务在 80 端口可写 `http://主机`）  

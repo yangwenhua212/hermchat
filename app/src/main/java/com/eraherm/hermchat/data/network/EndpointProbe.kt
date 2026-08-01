@@ -84,6 +84,7 @@ class EndpointProbe(
                 "http://$h:8080",
                 "http://$h",
             )
+            AgentKind.GATEWAY -> candidatesForHost(h, AgentKind.HTTP_COMPAT)
             AgentKind.CUSTOM -> (
                 candidatesForHost(h, AgentKind.WEBSOCKET) +
                     candidatesForHost(h, AgentKind.HERMES)

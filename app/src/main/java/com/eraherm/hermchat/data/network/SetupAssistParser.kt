@@ -147,13 +147,23 @@ object SetupAssistParser {
         val model = LABELED_MODEL.find(text)?.groupValues?.getOrNull(1)
         val name = LABELED_NAME.find(text)?.groupValues?.getOrNull(1)
 
+        val kindFinal = resolvedKind ?: kind
+        val endpointFinal = endpoint ?: when (kindFinal) {
+            AgentKind.GATEWAY -> "https://api.deepseek.com"
+            else -> null
+        }
+        val modelFinal = model ?: when (kindFinal) {
+            AgentKind.GATEWAY -> "deepseek-chat"
+            else -> null
+        }
+
         return SetupAssistDraft(
-            kind = resolvedKind ?: kind,
-            endpoint = endpoint,
+            kind = kindFinal,
+            endpoint = endpointFinal,
             apiKey = apiKey,
-            model = model,
+            model = modelFinal,
             name = name,
-            wantsLanProbe = wantsLanProbe && endpoint == null && probeHost == null,
+            wantsLanProbe = wantsLanProbe && endpointFinal == null && probeHost == null,
             probeHost = probeHost,
         )
     }
@@ -180,6 +190,7 @@ object SetupAssistParser {
             AgentKind.HERMES -> "Hermes"
             AgentKind.WEBSOCKET -> "WebSocket"
             AgentKind.HTTP_COMPAT -> "HTTP"
+            AgentKind.GATEWAY -> "端侧网关"
             AgentKind.LOCAL -> "本地"
             AgentKind.CUSTOM -> "自定义"
         }
@@ -211,13 +222,17 @@ object SetupAssistParser {
         return when {
             lower.contains("ws://") || lower.contains("wss://") || lower.contains("websocket") ->
                 AgentKind.WEBSOCKET
-            lower.contains("bridge") || lower.contains("gateway") ||
-                lower.contains("局域网") || lower.contains("连电脑") ||
+            lower.contains("端侧网关") || lower.contains("混合路由") || lower.contains("hybrid") ||
+                lower.contains("平替") && lower.contains("网关") ->
+                AgentKind.GATEWAY
+            lower.contains("bridge") || lower.contains("局域网") || lower.contains("连电脑") ||
                 (lower.contains("电脑") && !lower.contains("http")) ->
                 AgentKind.WEBSOCKET
             lower.contains("本地") || lower.contains("local") -> AgentKind.LOCAL
             lower.contains("hermes") -> AgentKind.HERMES
-            lower.contains("openai") || lower.contains("deepseek") || lower.contains("ollama") ||
+            // DeepSeek + 工具/闹钟 → ④ 网关；纯 deepseek → 仍可用网关（更完整）
+            lower.contains("deepseek") -> AgentKind.GATEWAY
+            lower.contains("openai") || lower.contains("ollama") ||
                 lower.contains("http兼容") || lower.contains("http 兼容") -> AgentKind.HTTP_COMPAT
             lower.contains("http://") || lower.contains("https://") -> AgentKind.HTTP_COMPAT
             lower.contains("连一下") || lower.contains("连上") || lower.contains("连到") ->
@@ -233,6 +248,10 @@ object SetupAssistParser {
             t.startsWith("http://", true) || t.startsWith("https://", true) -> t
             kind == AgentKind.WEBSOCKET -> {
                 if (t.contains(":")) "ws://$t/ws" else "ws://$t:8765/ws"
+            }
+            kind == AgentKind.GATEWAY -> {
+                if (t.contains("deepseek")) "https://api.deepseek.com"
+                else runCatching { HermesEndpoint.normalize(t) }.getOrDefault("https://$t")
             }
             kind == AgentKind.HTTP_COMPAT || kind == AgentKind.HERMES || kind == null ->
                 runCatching { HermesEndpoint.normalize(t) }.getOrDefault(t)

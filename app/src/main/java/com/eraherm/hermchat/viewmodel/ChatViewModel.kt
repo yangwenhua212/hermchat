@@ -12,6 +12,9 @@ import com.eraherm.hermchat.data.model.Message
 import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.data.model.ToolCall
 import com.eraherm.hermchat.data.network.AIClientFactory
+import com.eraherm.hermchat.data.network.AgentFailover
+import com.eraherm.hermchat.data.network.ChatTurn
+import com.eraherm.hermchat.data.network.HybridGatewayClient
 import com.eraherm.hermchat.data.network.paceForDisplay
 import com.eraherm.hermchat.data.network.StreamingChatClient
 import com.eraherm.hermchat.service.VoiceEvent
@@ -107,7 +110,8 @@ class ChatViewModel(
         if (busy.value.isSending || busy.value.isStreaming || busy.value.toolExecuting) return
 
         val agent = activeAgent.value
-        val localPlan = if (enableLocalTools) LocalToolPlanner.plan(content) else null
+        val toolsOn = enableLocalTools && agent?.localToolsEnabled != false
+        val localPlan = if (toolsOn) LocalToolPlanner.plan(content) else null
 
         sendJob?.cancel()
         sendJob = viewModelScope.launch {
@@ -137,15 +141,6 @@ class ChatViewModel(
                     pendingToolCall.value = localPlan
                 }
 
-                val chatClient = client ?: run {
-                    val created = agent?.let { AIClientFactory.create(it, appContext) }
-                        ?: error("请先配置 Agent")
-                    client = created
-                    created
-                }
-                chatClient.ensureConnected()
-                bridgeConnected.value = chatClient.connected.value
-
                 busy.update { it.copy(isSending = false, isStreaming = true) }
                 streamingMessage.value = Message(
                     id = assistantId,
@@ -155,36 +150,40 @@ class ChatViewModel(
                     createdAt = System.currentTimeMillis(),
                 )
 
-                val buffer = StringBuilder()
-                chatClient.streamChat(content).paceForDisplay().collect { token ->
-                    buffer.append(token)
-                    streamingMessage.value = streamingMessage.value?.copy(content = buffer.toString())
-                }
-
-                val raw = buffer.toString()
-                val (displayText, agentTool) = ToolCallParser.extract(raw)
-                if (agentTool != null) {
-                    pendingToolCall.value = agentTool.copy(needConfirm = true)
-                }
-
-                val finalText = displayText.ifBlank {
-                    if (pendingToolCall.value != null) {
-                        "需要你确认后，我才能操作手机。"
-                    } else {
-                        "（空回复）"
+                val outcome = runCatching {
+                    streamTurn(agent = agent, prompt = content, toolsOn = toolsOn)
+                }.recoverCatching { primaryError ->
+                    val failover = AgentFailover.pick(agent, agentStore.agents.value)
+                        ?: throw primaryError
+                    (appContext as? HermChatApp)?.voiceEventBus?.emit(
+                        VoiceEvent.Status("改用 ${failover.name}…"),
+                    )
+                    busy.update {
+                        it.copy(error = null)
                     }
+                    streamTurn(
+                        agent = failover,
+                        prompt = content,
+                        toolsOn = toolsOn && failover.localToolsEnabled,
+                        usePrimaryClient = false,
+                        providerOverride = "备用·${failover.name}",
+                    )
+                }.getOrThrow()
+
+                if (outcome.tool != null) {
+                    pendingToolCall.value = outcome.tool.copy(needConfirm = true)
                 }
                 messageRepository.save(
                     Message(
                         id = assistantId,
                         role = MessageRole.ASSISTANT,
-                        content = finalText,
-                        providerLabel = agent?.kind?.label,
+                        content = outcome.text,
+                        providerLabel = outcome.providerLabel,
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
                 (appContext as? HermChatApp)?.voiceEventBus?.emit(
-                    VoiceEvent.Status(finalText.take(48).ifBlank { "已回复" }),
+                    VoiceEvent.Status(outcome.text.take(48).ifBlank { "已回复" }),
                 )
             } catch (e: Exception) {
                 busy.update { it.copy(error = e.message ?: "发送失败") }
@@ -373,12 +372,102 @@ class ChatViewModel(
         }
     }
 
+    private data class TurnOutcome(
+        val text: String,
+        val tool: ToolCall?,
+        val providerLabel: String?,
+    )
+
+    /**
+     * @param usePrimaryClient true 时复用/写入 [client]；故障转移时 false，用完即关。
+     */
+    private suspend fun streamTurn(
+        agent: AgentProfile?,
+        prompt: String,
+        toolsOn: Boolean,
+        usePrimaryClient: Boolean = true,
+        providerOverride: String? = null,
+    ): TurnOutcome {
+        val chatClient = if (usePrimaryClient) {
+            client ?: run {
+                val created = agent?.let { AIClientFactory.create(it, appContext) }
+                    ?: error("请先配置 Agent")
+                client = created
+                created
+            }
+        } else {
+            agent?.let { AIClientFactory.create(it, appContext) }
+                ?: error("没有备用 Agent")
+        }
+        try {
+            chatClient.ensureConnected()
+            if (usePrimaryClient) {
+                bridgeConnected.value = chatClient.connected.value
+            }
+            val provider = providerOverride ?: agent?.kind?.label
+            streamingMessage.value = streamingMessage.value?.copy(providerLabel = provider)
+
+            val history = buildHttpHistory(agent)
+            val buffer = StringBuilder()
+            chatClient.streamChat(prompt, history).paceForDisplay().collect { token ->
+                buffer.append(token)
+                val route = (chatClient as? HybridGatewayClient)?.lastRouteLabel?.value
+                streamingMessage.value = streamingMessage.value?.copy(
+                    content = buffer.toString(),
+                    providerLabel = providerOverride ?: route ?: provider,
+                )
+            }
+
+            val raw = buffer.toString()
+            val (displayText, agentTool) = if (toolsOn) {
+                ToolCallParser.extract(raw)
+            } else {
+                raw to null
+            }
+            val finalText = displayText.ifBlank {
+                if (agentTool != null || pendingToolCall.value != null) {
+                    "需要你确认后，我才能操作手机。"
+                } else {
+                    "（空回复）"
+                }
+            }
+            val routeLabel = (chatClient as? HybridGatewayClient)?.lastRouteLabel?.value
+            return TurnOutcome(
+                text = finalText,
+                tool = agentTool,
+                providerLabel = providerOverride ?: routeLabel ?: provider,
+            )
+        } finally {
+            if (!usePrimaryClient) {
+                chatClient.close()
+            }
+        }
+    }
+
     private fun isHttpStyle(agent: AgentProfile): Boolean {
         val ep = agent.endpoint.trim()
         return agent.kind == AgentKind.HERMES ||
             agent.kind == AgentKind.HTTP_COMPAT ||
+            agent.kind == AgentKind.GATEWAY ||
             ep.startsWith("http://", ignoreCase = true) ||
             ep.startsWith("https://", ignoreCase = true)
+    }
+
+    /** DeepSeek / 网关等无 Hermes Session 时，把本地短历史塞进 HTTP body。 */
+    private suspend fun buildHttpHistory(agent: AgentProfile?): List<ChatTurn> {
+        if (agent == null) return emptyList()
+        if (agent.kind != AgentKind.HTTP_COMPAT && agent.kind != AgentKind.GATEWAY) {
+            return emptyList()
+        }
+        return messageRepository.recentChronological(16)
+            .filter { it.id != WELCOME_ID }
+            .filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
+            .map { msg ->
+                ChatTurn(
+                    role = if (msg.role == MessageRole.ASSISTANT) "assistant" else "user",
+                    content = msg.content,
+                )
+            }
     }
 
     private fun mergeStreaming(

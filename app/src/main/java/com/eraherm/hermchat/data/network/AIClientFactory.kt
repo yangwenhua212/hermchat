@@ -22,6 +22,19 @@ object AIClientFactory {
             )
         }
 
+        if (agent.kind == AgentKind.GATEWAY) {
+            val appContext = context?.applicationContext
+                ?: error("端侧网关需要 Context")
+            return HybridGatewayClient(
+                context = appContext,
+                apiBaseUrl = agent.endpoint.trim(),
+                apiKey = agent.apiKey,
+                apiModel = agent.model.ifBlank { "deepseek-chat" },
+                localModelId = LocalModelStore.DEFAULT_MODEL_ID,
+                hfToken = agent.apiKey,
+            )
+        }
+
         val endpoint = agent.endpoint.trim()
         return when {
             agent.kind == AgentKind.HERMES ||
@@ -37,6 +50,8 @@ object AIClientFactory {
                     baseUrl = base,
                     apiKey = agent.apiKey,
                     model = agent.model.ifBlank { "default" },
+                    localToolsEnabled = agent.localToolsEnabled,
+                    hermesSessionMode = agent.kind == AgentKind.HERMES,
                 )
             }
 

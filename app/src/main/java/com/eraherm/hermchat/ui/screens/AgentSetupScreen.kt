@@ -61,6 +61,7 @@ import com.journeyapps.barcodescanner.ScanOptions
 
 @Composable
 fun AgentSetupScreen(
+    sessionKey: String = "setup",
     editing: AgentProfile? = null,
     onFinished: (AgentProfile) -> Unit,
     onCancel: (() -> Unit)? = null,
@@ -68,7 +69,7 @@ fun AgentSetupScreen(
     val context = LocalContext.current
     val app = context.applicationContext as HermChatApp
     val viewModel: SetupViewModel = viewModel(
-        key = editing?.id ?: "new-agent",
+        key = sessionKey,
         factory = SetupViewModel.factory(
             agentStore = app.agentStore,
             endpointProbe = EndpointProbe(app),
@@ -128,7 +129,10 @@ fun AgentSetupScreen(
     }
 
     LaunchedEffect(uiState.completedProfile) {
-        uiState.completedProfile?.let(onFinished)
+        uiState.completedProfile?.let { profile ->
+            viewModel.consumeCompleted()
+            onFinished(profile)
+        }
     }
 
     AtmosphereBackground {
@@ -174,6 +178,7 @@ fun AgentSetupScreen(
                             probeMessage = uiState.probeMessage,
                             downloadingModel = uiState.downloadingModel,
                             downloadProgress = uiState.downloadProgress,
+                            downloadDetail = uiState.downloadDetail,
                             modelReady = uiState.modelReady,
                             onEndpointChange = viewModel::updateEndpoint,
                             onApiKeyChange = viewModel::updateApiKey,
@@ -399,6 +404,7 @@ private fun StepEndpoint(
     probeMessage: String?,
     downloadingModel: Boolean,
     downloadProgress: Float,
+    downloadDetail: String?,
     modelReady: Boolean,
     onEndpointChange: (String) -> Unit,
     onApiKeyChange: (String) -> Unit,
@@ -436,6 +442,19 @@ private fun StepEndpoint(
                 },
             )
         }
+        if (downloadingModel) {
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { downloadProgress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            downloadDetail?.let { detail ->
+                Text(
+                    text = detail,
+                    color = SoftGray,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
         Button(
             onClick = onTest,
             enabled = !testing && !downloadingModel,
@@ -452,6 +471,88 @@ private fun StepEndpoint(
             )
             testPassed -> Text(
                 text = "编排已就绪",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            !testMessage.isNullOrBlank() -> Text(
+                text = testMessage,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (!testPassed) {
+            TextButton(onClick = onSkipTest) { Text("跳过测连") }
+        }
+        return
+    }
+
+    if (kind == AgentKind.GATEWAY) {
+        Text("端侧网关", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text = "简单题走本地，难题走 API；闹钟/日历在本机",
+            color = SoftGray,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        OutlinedTextField(
+            value = endpoint,
+            onValueChange = onEndpointChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("API Base URL") },
+            placeholder = { Text("https://api.deepseek.com") },
+            shape = RoundedCornerShape(16.dp),
+        )
+        OutlinedTextField(
+            value = apiKey,
+            onValueChange = onApiKeyChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("API Key（兼作下载令牌）") },
+            shape = RoundedCornerShape(16.dp),
+        )
+        OutlinedTextField(
+            value = model,
+            onValueChange = onModelChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("API 模型") },
+            placeholder = { Text("deepseek-chat") },
+            shape = RoundedCornerShape(16.dp),
+        )
+        Button(
+            onClick = onDownloadModel,
+            enabled = !downloadingModel,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Text(
+                when {
+                    downloadingModel -> "下载本地模型 ${(downloadProgress * 100).toInt()}%"
+                    modelReady -> "重新下载本地模型"
+                    else -> "下载本地兜底模型"
+                },
+            )
+        }
+        if (downloadingModel) {
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { downloadProgress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            downloadDetail?.let { detail ->
+                Text(text = detail, color = SoftGray, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        Button(
+            onClick = onTest,
+            enabled = endpoint.isNotBlank() && !testing && !downloadingModel,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Text(if (testing) "测试中…" else "测试 API")
+        }
+        when {
+            testPassed -> Text(
+                text = testMessage ?: "API 可达",
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.bodyMedium,
             )

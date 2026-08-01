@@ -97,6 +97,8 @@ class AgentStore(
                     .put("endpoint", agent.endpoint)
                     .put("apiKey", agent.apiKey)
                     .put("model", agent.model)
+                    .put("localToolsEnabled", agent.localToolsEnabled)
+                    .put("fallbackAgentId", agent.fallbackAgentId ?: JSONObject.NULL)
                     .put("createdAt", agent.createdAt),
             )
         }
@@ -121,6 +123,12 @@ class AgentStore(
                             endpoint = endpoint,
                             apiKey = obj.optString("apiKey", ""),
                             model = obj.optString("model", "default").ifBlank { "default" },
+                            localToolsEnabled = obj.optBoolean("localToolsEnabled", true),
+                            fallbackAgentId = if (obj.has("fallbackAgentId") && !obj.isNull("fallbackAgentId")) {
+                                obj.optString("fallbackAgentId").takeIf { it.isNotBlank() }
+                            } else {
+                                null
+                            },
                             createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                         ),
                     )

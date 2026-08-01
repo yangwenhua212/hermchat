@@ -37,7 +37,10 @@ class LocalRuntimeClient(
         }
     }
 
-    override fun streamChat(prompt: String): Flow<String> = flow {
+    override fun streamChat(
+        prompt: String,
+        history: List<ChatTurn>,
+    ): Flow<String> = flow {
         val tool = LocalToolPlanner.plan(prompt)
         if (tool != null) {
             emit(orchestratorToolAck())

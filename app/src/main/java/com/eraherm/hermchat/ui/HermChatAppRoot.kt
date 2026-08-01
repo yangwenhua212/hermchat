@@ -2,6 +2,7 @@ package com.eraherm.hermchat.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,10 +39,13 @@ fun HermChatAppRoot() {
     }
     var editing by remember { mutableStateOf<AgentProfile?>(null) }
     var setupIsNew by remember { mutableStateOf(!app.agentStore.hasAgent()) }
+    /** 每次添加 Agent 递增，避免复用已完成的 ViewModel 立刻弹回聊天 */
+    var setupSession by remember { mutableIntStateOf(0) }
 
     when (destination) {
         AppDestination.SetupAssist -> {
             SetupAssistScreen(
+                sessionKey = "assist-$setupSession",
                 onFinished = {
                     editing = null
                     setupIsNew = false
@@ -50,6 +54,7 @@ fun HermChatAppRoot() {
                 onManualSetup = {
                     editing = null
                     setupIsNew = true
+                    setupSession += 1
                     destination = AppDestination.Setup
                 },
                 onCancel = if (agents.isNotEmpty()) {
@@ -66,6 +71,7 @@ fun HermChatAppRoot() {
 
         AppDestination.Setup -> {
             AgentSetupScreen(
+                sessionKey = if (setupIsNew) "new-$setupSession" else editing?.id ?: "edit",
                 editing = if (setupIsNew) null else editing,
                 onFinished = {
                     editing = null
@@ -116,6 +122,7 @@ fun HermChatAppRoot() {
                 onAddAgent = {
                     editing = null
                     setupIsNew = true
+                    setupSession += 1
                     destination = AppDestination.SetupAssist
                 },
                 onConfigureAgent = {

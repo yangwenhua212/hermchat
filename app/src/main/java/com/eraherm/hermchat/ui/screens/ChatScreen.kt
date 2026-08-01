@@ -43,6 +43,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -308,18 +309,45 @@ fun ChatScreen(
                 }
             }
 
+            if (wakeSettings.enabled) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = voiceStatus?.takeIf { it.isNotBlank() } ?: "后台正在听「${wakeSettings.phrase}」",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = {
+                            WakeWordService.stop(context)
+                            voiceStatus = null
+                        },
+                    ) {
+                        Text("停止听")
+                    }
+                }
+            }
+
             AnimatedVisibility(
-                visible = voiceStatus != null || uiState.error != null,
+                visible = (!wakeSettings.enabled && voiceStatus != null) || uiState.error != null,
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
                 Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) {
-                    voiceStatus?.let { status ->
-                        Text(
-                            text = status,
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                    if (!wakeSettings.enabled) {
+                        voiceStatus?.let { status ->
+                            Text(
+                                text = status,
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                     uiState.error?.let { error ->
                         Text(

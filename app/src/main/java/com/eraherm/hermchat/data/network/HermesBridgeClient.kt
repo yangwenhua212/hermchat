@@ -71,7 +71,10 @@ class HermesBridgeClient(
         }
     }
 
-    override fun streamChat(prompt: String): Flow<String> = callbackFlow {
+    override fun streamChat(
+        prompt: String,
+        history: List<ChatTurn>,
+    ): Flow<String> = callbackFlow {
         ensureConnected()
         if (protocol == WsProtocol.JSON_RPC && sessionId.isNullOrBlank()) {
             runCatching { bootstrapSession() }.onFailure {

@@ -53,6 +53,7 @@ import com.eraherm.hermchat.viewmodel.SetupAssistViewModel
 
 @Composable
 fun SetupAssistScreen(
+    sessionKey: String = "assist",
     onFinished: (AgentProfile) -> Unit,
     onManualSetup: () -> Unit,
     onCancel: (() -> Unit)? = null,
@@ -60,6 +61,7 @@ fun SetupAssistScreen(
     val context = LocalContext.current
     val app = context.applicationContext as HermChatApp
     val viewModel: SetupAssistViewModel = viewModel(
+        key = sessionKey,
         factory = SetupAssistViewModel.factory(
             app.agentStore,
             EndpointProbe(app),
@@ -69,8 +71,15 @@ fun SetupAssistScreen(
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
+    LaunchedEffect(sessionKey) {
+        viewModel.prepareFreshSession()
+    }
+
     LaunchedEffect(uiState.completedProfile) {
-        uiState.completedProfile?.let(onFinished)
+        uiState.completedProfile?.let { profile ->
+            viewModel.consumeCompleted()
+            onFinished(profile)
+        }
     }
 
     LaunchedEffect(uiState.messages.size, uiState.pendingConfirm) {

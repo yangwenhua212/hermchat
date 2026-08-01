@@ -30,4 +30,7 @@ interface MessageDao {
 
     @Query("SELECT COUNT(*) FROM messages")
     suspend fun count(): Int
+
+    @Query("SELECT * FROM messages ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun recentDesc(limit: Int): List<MessageEntity>
 }

@@ -1,6 +1,7 @@
 package com.eraherm.hermchat.data.local
 
 import android.content.Context
+import com.eraherm.hermchat.data.network.TransferProgress
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -20,10 +21,13 @@ class LocalModelStore(
         return file.exists() && file.length() >= minBytes
     }
 
+    fun expectedBytes(modelId: String = DEFAULT_MODEL_ID): Long =
+        catalog[modelId]?.approxBytes ?: 0L
+
     fun ensureInstalled(
         modelId: String = DEFAULT_MODEL_ID,
         hfToken: String = "",
-        onProgress: (Float) -> Unit = {},
+        onProgress: (TransferProgress) -> Unit = {},
     ): Result<File> = runCatching {
         if (isReady(modelId)) return@runCatching modelFile(modelId)
         val entry = catalog[modelId] ?: error("未知模型")
@@ -31,7 +35,7 @@ class LocalModelStore(
         val dest = modelFile(modelId)
         val tmp = File(dest.parentFile, "${dest.name}.part")
         tmp.delete()
-        downloadWithRedirects(entry.url, hfToken.trim(), tmp, onProgress)
+        downloadWithRedirects(entry.url, hfToken.trim(), entry.label, entry.approxBytes, tmp, onProgress)
         if (tmp.length() < entry.minBytes) {
             tmp.delete()
             error("模型文件不完整")
@@ -52,8 +56,10 @@ class LocalModelStore(
     private fun downloadWithRedirects(
         startUrl: String,
         hfToken: String,
+        label: String,
+        approxBytes: Long,
         dest: File,
-        onProgress: (Float) -> Unit,
+        onProgress: (TransferProgress) -> Unit,
     ) {
         var current = startUrl
         repeat(8) {
@@ -76,23 +82,42 @@ class LocalModelStore(
                     connection.disconnect()
                 }
                 in 200..299 -> {
-                    val total = connection.contentLengthLong.takeIf { it > 0 } ?: -1L
+                    val total = connection.contentLengthLong.takeIf { it > 0 } ?: approxBytes
+                    val started = System.nanoTime()
                     connection.inputStream.use { input ->
                         dest.outputStream().use { output ->
                             val buf = ByteArray(DEFAULT_BUFFER_SIZE)
                             var read: Int
                             var written = 0L
+                            var lastEmit = 0L
                             while (input.read(buf).also { read = it } >= 0) {
                                 output.write(buf, 0, read)
                                 written += read
-                                if (total > 0) {
-                                    onProgress((written.toFloat() / total).coerceIn(0f, 1f))
+                                val now = System.nanoTime()
+                                if (now - lastEmit >= 200_000_000L || written == total) {
+                                    lastEmit = now
+                                    val elapsedSec = ((now - started) / 1_000_000_000.0).coerceAtLeast(0.001)
+                                    onProgress(
+                                        TransferProgress(
+                                            label = label,
+                                            bytesRead = written,
+                                            totalBytes = total,
+                                            bytesPerSec = (written / elapsedSec).toLong(),
+                                        ),
+                                    )
                                 }
                             }
                         }
                     }
                     connection.disconnect()
-                    onProgress(1f)
+                    onProgress(
+                        TransferProgress(
+                            label = label,
+                            bytesRead = dest.length(),
+                            totalBytes = total.coerceAtLeast(dest.length()),
+                            bytesPerSec = 0L,
+                        ),
+                    )
                     return
                 }
                 else -> {
@@ -110,6 +135,7 @@ class LocalModelStore(
         val fileName: String,
         val url: String,
         val minBytes: Long,
+        val approxBytes: Long,
     )
 
     companion object {
@@ -126,10 +152,11 @@ class LocalModelStore(
         val catalog: Map<String, ModelEntry> = mapOf(
             DEFAULT_MODEL_ID to ModelEntry(
                 id = DEFAULT_MODEL_ID,
-                label = "Gemma 3 270M（轻量）",
+                label = "Gemma 3 270M",
                 fileName = DEFAULT_FILE,
                 url = "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.task",
                 minBytes = MIN_BYTES_LIGHT,
+                approxBytes = 318L * 1024L * 1024L,
             ),
             MODEL_1B_ID to ModelEntry(
                 id = MODEL_1B_ID,
@@ -137,6 +164,7 @@ class LocalModelStore(
                 fileName = "gemma3-1b-it-int4.task",
                 url = "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task",
                 minBytes = MIN_BYTES_1B,
+                approxBytes = 550L * 1024L * 1024L,
             ),
         )
     }

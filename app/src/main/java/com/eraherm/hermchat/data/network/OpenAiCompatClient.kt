@@ -18,15 +18,19 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * OpenAI-compatible chat completions (SSE) for HTTP Agents.
+ * OpenAI-compatible chat completions (SSE).
  *
- * Hermes HTTP API：不带 [HEADER_SESSION] 时会用「首条用户消息 hash」隐式绑死会话，
- * 上下文只增不减。此处每次对话持有独立 UUID，新建对话时 [resetConversation] 换新。
+ * - Hermes HTTP：靠 [HEADER_SESSION] 续上下文，body 只发本轮（+可选工具 system）
+ * - DeepSeek 等 HTTP 兼容：可带本地短历史，避免无记忆
+ * - [localToolsEnabled]：注入本机工具协议，模型吐 JSON → 手机执行
  */
 class OpenAiCompatClient(
     baseUrl: String,
     private val apiKey: String = "",
     private val model: String = "default",
+    private val localToolsEnabled: Boolean = true,
+    /** true=Hermes 会话模式（少塞历史）；false=客户端带短历史（DeepSeek 等） */
+    private val hermesSessionMode: Boolean = true,
     private val client: OkHttpClient = defaultClient(),
 ) : StreamingChatClient {
 
@@ -43,23 +47,48 @@ class OpenAiCompatClient(
         sessionId.set(newSessionId())
     }
 
-    override fun streamChat(prompt: String): Flow<String> = flow {
+    override fun streamChat(
+        prompt: String,
+        history: List<ChatTurn>,
+    ): Flow<String> = flow {
         val url = when {
             root.endsWith("/v1/chat/completions", ignoreCase = true) -> root
             root.endsWith("/v1", ignoreCase = true) -> "$root/chat/completions"
             else -> "$root/v1/chat/completions"
         }
-        // 仅发本轮 user：Hermes 用 Session-Id 在服务端延续上下文。
-        // 勿把本地全量历史塞进 body，否则会与服务端会话双重堆叠。
+        val messages = JSONArray()
+        if (localToolsEnabled) {
+            messages.put(
+                JSONObject()
+                    .put("role", "system")
+                    .put("content", com.eraherm.hermchat.tools.LocalToolsPrompt.SYSTEM),
+            )
+        }
+        if (!hermesSessionMode) {
+            history.takeLast(16).forEach { turn ->
+                val role = when (turn.role.lowercase()) {
+                    "assistant" -> "assistant"
+                    "system" -> "system"
+                    else -> "user"
+                }
+                if (turn.content.isNotBlank()) {
+                    messages.put(
+                        JSONObject().put("role", role).put("content", turn.content),
+                    )
+                }
+            }
+        }
+        val userContent = if (localToolsEnabled) {
+            com.eraherm.hermchat.tools.LocalToolsPrompt.userPrefix() + prompt
+        } else {
+            prompt
+        }
+        messages.put(JSONObject().put("role", "user").put("content", userContent))
+
         val bodyJson = JSONObject()
             .put("model", model.ifBlank { "default" })
             .put("stream", true)
-            .put(
-                "messages",
-                JSONArray().put(
-                    JSONObject().put("role", "user").put("content", prompt),
-                ),
-            )
+            .put("messages", messages)
         val requestBuilder = Request.Builder()
             .url(url)
             .post(bodyJson.toString().toRequestBody(JSON_MEDIA))
