@@ -17,11 +17,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 class ConnectionTester(
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .writeTimeout(8, TimeUnit.SECONDS)
-        .build(),
+    private val client: OkHttpClient = sharedClient,
 ) {
     suspend fun test(
         endpoint: String,
@@ -117,7 +113,6 @@ class ConnectionTester(
             401, 403 -> error("服务可达，API Key 无效")
             404 -> throw HttpProbeException("路径不存在，请检查地址是否含正确端口")
             422, 400 -> {
-                // Often wrong model name — host is up.
                 if (errBody.contains("model", ignoreCase = true)) {
                     return "服务可达，请检查模型名"
                 }
@@ -157,6 +152,12 @@ class ConnectionTester(
 
     companion object {
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+
+        private val sharedClient: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(12, TimeUnit.SECONDS)
+            .writeTimeout(8, TimeUnit.SECONDS)
+            .build()
 
         fun sanitizeKey(raw: String): String =
             raw.trim().trimStart(')', '(', ' ', '\u00A0')

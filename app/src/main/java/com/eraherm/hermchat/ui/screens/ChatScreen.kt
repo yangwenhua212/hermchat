@@ -141,12 +141,31 @@ fun ChatScreen(
     }
     val showTyping = uiState.isSending && !uiState.isStreaming
 
-    LaunchedEffect(listState) {
-        snapshotFlow {
-            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
-        }.distinctUntilChanged().collect { (index, offset) ->
-            // reverseLayout：贴底 ≈ index 0 且 offset 很小
-            stickToBottom = index <= 0 && offset <= 24
+    // ──────────────────────────────────────────────
+    // 滚动：贴底检测 + 自动追底（3 合 1）
+    // ──────────────────────────────────────────────
+    LaunchedEffect(Unit) {
+        // 1) 贴底检测
+        launch {
+            snapshotFlow {
+                listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+            }.distinctUntilChanged().collect { (index, offset) ->
+                stickToBottom = index <= 0 && offset <= 24
+            }
+        }
+        // 2) 新消息到达时滚动
+        launch {
+            snapshotFlow { uiState.messages.size to showTyping }
+                .distinctUntilChanged()
+                .collect { if (stickToBottom) scrollToLatest(animated = true) }
+        }
+        // 3) 流式内容更新时贴底
+        launch {
+            snapshotFlow { (uiState.messages.lastOrNull()?.content ?: "") to uiState.isStreaming }
+                .distinctUntilChanged()
+                .collect { (_, streaming) ->
+                    if (streaming && stickToBottom) scrollToLatest(animated = false)
+                }
         }
     }
 
@@ -206,51 +225,42 @@ fun ChatScreen(
         }
     }
 
+    // ──────────────────────────────────────────────
+    // 语音事件 + 生命周期（2 合 1）
+    // ──────────────────────────────────────────────
     LaunchedEffect(Unit) {
-        app.voiceEventBus.events.collect { event ->
-            when (event) {
-                is VoiceEvent.WakeDetected -> {
-                    voiceStatus = "请说指令"
-                    draft = ""
-                }
-                is VoiceEvent.Transcript -> {
-                    voiceStatus = null
-                    if (event.autoSend) {
-                        // VoiceCloudBridge 统一发给云端，避免双发
+        // 语音事件收集
+        launch {
+            app.voiceEventBus.events.collect { event ->
+                when (event) {
+                    is VoiceEvent.WakeDetected -> {
+                        voiceStatus = "请说指令"
                         draft = ""
-                        stickToBottom = true
-                        voiceStatus = "正在问助手…"
-                    } else {
-                        draft = event.text
                     }
+                    is VoiceEvent.Transcript -> {
+                        voiceStatus = null
+                        if (event.autoSend) {
+                            draft = ""
+                            stickToBottom = true
+                            voiceStatus = "正在问助手…"
+                        } else {
+                            draft = event.text
+                        }
+                    }
+                    is VoiceEvent.Status -> voiceStatus = event.message
+                    is VoiceEvent.Error -> voiceStatus = event.message
                 }
-                is VoiceEvent.Status -> voiceStatus = event.message
-                is VoiceEvent.Error -> voiceStatus = event.message
             }
         }
-    }
-
-    LaunchedEffect(voiceStatus) {
-        val status = voiceStatus ?: return@LaunchedEffect
-        if (status.contains("语音识别") || status.contains("没有麦克风")) {
-            delay(2800)
-            if (voiceStatus == status) voiceStatus = null
-        }
-    }
-
-    LaunchedEffect(uiState.messages.size, showTyping) {
-        if (stickToBottom) scrollToLatest(animated = true)
-    }
-
-    LaunchedEffect(uiState.messages.lastOrNull()?.content, uiState.isStreaming) {
-        if (uiState.isStreaming && stickToBottom) {
-            scrollToLatest(animated = false)
-        }
-    }
-
-    LaunchedEffect(chatPrefs.inputMode) {
-        if (chatPrefs.inputMode == InputMode.TEXT_FIRST) {
-            runCatching { textFocus.requestFocus() }
+        // 语音状态自动消失
+        launch {
+            snapshotFlow { voiceStatus }.collect { status ->
+                val s = status ?: return@collect
+                if (s.contains("语音识别") || s.contains("没有麦克风")) {
+                    delay(2800)
+                    if (voiceStatus == s) voiceStatus = null
+                }
+            }
         }
     }
 
@@ -258,7 +268,6 @@ fun ChatScreen(
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             viewModel.onForeground()
-            // 聊天页在前台且已开后台监听：免唤醒词，直接听指令
             if (wakeSettings.enabled) {
                 WakeWordService.setInAppDirectListen(context, true)
             }
@@ -283,24 +292,37 @@ fun ChatScreen(
         }
     }
 
-    // 新回复流式开始时停掉上一句朗读
-    LaunchedEffect(uiState.isStreaming) {
-        if (uiState.isStreaming) app.ttsSpeaker.stop()
-    }
-
-    // 回复完成后自动朗读（设置「朗读回复」）
-    LaunchedEffect(uiState.isStreaming, uiState.messages.lastOrNull()?.id, chatPrefs.autoSpeakReplies) {
-        if (!chatPrefs.autoSpeakReplies || uiState.isStreaming) return@LaunchedEffect
-        val last = uiState.messages.lastOrNull() ?: return@LaunchedEffect
-        if (last.role != MessageRole.ASSISTANT) return@LaunchedEffect
-        if (last.content.isBlank() ||
-            last.id == "welcome-local" ||
-            last.id == lastAutoSpokenId
-        ) {
-            return@LaunchedEffect
+    // ──────────────────────────────────────────────
+    // TTS 朗读 + 键盘焦点（3 合 1）
+    // ──────────────────────────────────────────────
+    LaunchedEffect(chatPrefs.inputMode, chatPrefs.autoSpeakReplies) {
+        // 键盘自动聚焦
+        if (chatPrefs.inputMode == InputMode.TEXT_FIRST) {
+            runCatching { textFocus.requestFocus() }
         }
-        lastAutoSpokenId = last.id
-        app.ttsSpeaker.speak(last.content, last.id)
+        // 流式开始停朗读
+        launch {
+            snapshotFlow { uiState.isStreaming }.collect { streaming ->
+                if (streaming) app.ttsSpeaker.stop()
+            }
+        }
+        // 回复完成后自动朗读
+        if (chatPrefs.autoSpeakReplies) {
+            launch {
+                snapshotFlow {
+                    Triple(uiState.isStreaming, uiState.messages.lastOrNull()?.id, uiState.messages.lastOrNull())
+                }.distinctUntilChanged().collect { (streaming, _, last) ->
+                    if (streaming || last == null) return@collect
+                    if (last.role != MessageRole.ASSISTANT) return@collect
+                    if (last.content.isBlank() ||
+                        last.id == "welcome-local" ||
+                        last.id == lastAutoSpokenId
+                    ) return@collect
+                    lastAutoSpokenId = last.id
+                    app.ttsSpeaker.speak(last.content, last.id)
+                }
+            }
+        }
     }
 
     DisposableEffect(Unit) {
@@ -361,51 +383,24 @@ fun ChatScreen(
                 }
             }
 
-            if (wakeSettings.enabled) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = voiceStatus?.takeIf { it.isNotBlank() }
-                            ?: "已开监听 · 在本页直接说指令",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(
-                        onClick = {
-                            WakeWordService.stop(context)
-                            voiceStatus = null
-                        },
-                    ) {
-                        Text("停止听")
-                    }
-                }
-            }
-
+            // 状态提示：错误或语音状态短显，不占常驻空间
             AnimatedVisibility(
-                visible = (!wakeSettings.enabled && voiceStatus != null) || uiState.error != null,
+                visible = uiState.error != null || voiceStatus != null,
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
                 Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) {
-                    if (!wakeSettings.enabled) {
-                        voiceStatus?.let { status ->
-                            Text(
-                                text = status,
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
                     uiState.error?.let { error ->
                         Text(
                             text = error,
                             color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    voiceStatus?.let { status ->
+                        Text(
+                            text = status,
+                            color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -436,6 +431,10 @@ fun ChatScreen(
                         onSpeakClick = if (message.role == MessageRole.ASSISTANT) {
                             {
                                 app.ttsSpeaker.toggle(message.content, message.id)
+                                // TTS 失败时给个提示
+                                app.ttsSpeaker.lastErrorMessage()?.let { err ->
+                                    voiceStatus = err
+                                }
                             }
                         } else {
                             null
@@ -493,7 +492,7 @@ fun ChatScreen(
                     calendarPermissionLauncher.launch(permissions)
                 }
             },
-            onDeny = viewModel::denyPendingTool,
+            onDeny = viewModel.denyPendingTool,
         )
     }
 }

@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.flow
 class HybridGatewayClient(
     context: Context,
     apiBaseUrl: String,
-    apiKey: String,
+    apiKey: String = "",
     apiModel: String,
     localModelId: String = LocalModelStore.DEFAULT_MODEL_ID,
     hfToken: String = "",
@@ -56,7 +56,6 @@ class HybridGatewayClient(
     private val _connected = MutableStateFlow(false)
     override val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
-    /** 上一轮实际走的通道，供气泡 provider 展示。 */
     private val _lastRouteLabel = MutableStateFlow("网关")
     val lastRouteLabel: StateFlow<String> = _lastRouteLabel.asStateFlow()
 
@@ -93,8 +92,10 @@ class HybridGatewayClient(
             GatewayRouter.Route.LOCAL -> {
                 _lastRouteLabel.value = "网关·本地"
                 val buffer = StringBuilder()
+                // 边流式输出边收集，用户即时看到本地回复，不用等全部生成完
                 local.streamChat(prompt, history).collect { piece ->
                     buffer.append(piece)
+                    emit(piece)
                 }
                 val localText = buffer.toString()
                 // 仅自动模式：本地弱回复再 escalate；手选本地不擅自改走云端
@@ -104,8 +105,6 @@ class HybridGatewayClient(
                 ) {
                     _lastRouteLabel.value = "网关·API"
                     api.streamChat(prompt, history).collect { emit(it) }
-                } else {
-                    if (localText.isNotEmpty()) emit(localText)
                 }
             }
         }

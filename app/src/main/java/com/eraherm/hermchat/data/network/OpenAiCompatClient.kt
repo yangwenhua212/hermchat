@@ -2,6 +2,7 @@ package com.eraherm.hermchat.data.network
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,6 +14,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -51,6 +55,27 @@ class OpenAiCompatClient(
         prompt: String,
         history: List<ChatTurn>,
     ): Flow<String> = flow {
+        var lastException: Exception? = null
+        for (attempt in 0 until MAX_RETRIES) {
+            try {
+                streamOnce(prompt, history)
+                return@flow
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < MAX_RETRIES - 1 && isRetryable(e)) {
+                    sessionId.set(newSessionId())
+                    continue
+                }
+                throw e
+            }
+        }
+        throw lastException ?: IOException("请求失败")
+    }.flowOn(Dispatchers.IO)
+
+    private suspend fun FlowCollector<String>.streamOnce(
+        prompt: String,
+        history: List<ChatTurn>,
+    ) {
         val url = when {
             root.endsWith("/v1/chat/completions", ignoreCase = true) -> root
             root.endsWith("/v1", ignoreCase = true) -> "$root/chat/completions"
@@ -101,8 +126,14 @@ class OpenAiCompatClient(
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
+                val code = response.code
                 val errBody = response.body?.string().orEmpty().take(240)
-                error("HTTP ${response.code}: ${response.message}${if (errBody.isBlank()) "" else " · $errBody"}")
+                val msg = "HTTP $code: ${response.message}${if (errBody.isBlank()) "" else " · $errBody"}"
+                if (code in 400..499) {
+                    // 客户端错误不重试
+                    error(msg)
+                }
+                throw IOException(msg)
             }
             _connected.value = true
             val source = response.body?.source() ?: error("空响应")
@@ -116,7 +147,7 @@ class OpenAiCompatClient(
                 if (piece.isNotEmpty()) emit(piece)
             }
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
     override fun close() {
         _connected.value = false
@@ -135,7 +166,14 @@ class OpenAiCompatClient(
         return message?.optString("content")?.takeIf { it.isNotEmpty() }
     }
 
+    private fun isRetryable(e: Exception): Boolean = when (e) {
+        is IOException -> e !is UnknownHostException
+        is SocketTimeoutException -> true
+        else -> false
+    }
+
     companion object {
+        private const val MAX_RETRIES = 2
         const val HEADER_SESSION = "X-Hermes-Session-Id"
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 

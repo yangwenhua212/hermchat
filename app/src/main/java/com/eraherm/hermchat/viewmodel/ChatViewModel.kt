@@ -50,7 +50,9 @@ class ChatViewModel(
 ) : ViewModel() {
 
     private val busy = MutableStateFlow(BusyFlags())
-    private val streamingMessage = MutableStateFlow<Message?>(null)
+    // 拆分：用两个轻量 String Flow 代替 Message Flow，避免每次 token 都 copy() 建对象
+    private val streamingContent = MutableStateFlow("")
+    private val streamingProvider = MutableStateFlow<String?>(null)
     private val bridgeConnected = MutableStateFlow(false)
     private val activeAgent = MutableStateFlow<AgentProfile?>(null)
     private val pendingToolCall = MutableStateFlow<ToolCall?>(null)
@@ -65,18 +67,19 @@ class ChatViewModel(
         combine(
             messageRepository.observeMessages(),
             busy,
-            streamingMessage,
-        ) { messages, flags, streaming ->
-            Triple(messages, flags, streaming)
+            streamingContent,
+            streamingProvider,
+        ) { messages, flags, content, provider ->
+            Quad(messages, flags, content, provider)
         },
         combine(bridgeConnected, activeAgent, pendingToolCall) { connected, agent, pending ->
             Triple(connected, agent, pending)
         },
-    ) { msgTriple, agentTriple ->
-        val (messages, flags, streaming) = msgTriple
+    ) { quad, agentTriple ->
+        val (messages, flags, content, provider) = quad
         val (connected, agent, pending) = agentTriple
         ChatUiState(
-            messages = mergeStreaming(messages, streaming),
+            messages = mergeStreaming(messages, content, provider),
             isSending = flags.isSending,
             isStreaming = flags.isStreaming,
             error = flags.error,
@@ -115,10 +118,6 @@ class ChatViewModel(
 
         sendJob?.cancel()
         sendJob = viewModelScope.launch {
-            // ── 长对话自动开新会话 ──
-            // Hermes bridge 的 session 常驻服务端，上下文只增不减会越聊越慢。
-            // 超过阈值后强制换新 session：清空本地历史 + 断开重建连接，
-            // 下次发送会 session.create 一个新会话，上下文立刻归零。
             if (messageRepository.count() >= AUTO_NEW_CHAT_THRESHOLD) {
                 startNewChatInternal()
             }
@@ -136,19 +135,13 @@ class ChatViewModel(
                     ),
                 )
 
-                // Show confirm card early for clear schedule intents.
                 if (localPlan != null) {
                     pendingToolCall.value = localPlan
                 }
 
                 busy.update { it.copy(isSending = false, isStreaming = true) }
-                streamingMessage.value = Message(
-                    id = assistantId,
-                    role = MessageRole.ASSISTANT,
-                    content = "",
-                    providerLabel = agent?.kind?.label,
-                    createdAt = System.currentTimeMillis(),
-                )
+                streamingContent.value = ""
+                streamingProvider.value = agent?.kind?.label
 
                 val outcome = runCatching {
                     streamTurn(agent = agent, prompt = content, toolsOn = toolsOn)
@@ -158,9 +151,7 @@ class ChatViewModel(
                     (appContext as? HermChatApp)?.voiceEventBus?.emit(
                         VoiceEvent.Status("改用 ${failover.name}…"),
                     )
-                    busy.update {
-                        it.copy(error = null)
-                    }
+                    busy.update { it.copy(error = null) }
                     streamTurn(
                         agent = failover,
                         prompt = content,
@@ -190,22 +181,21 @@ class ChatViewModel(
                 (appContext as? HermChatApp)?.voiceEventBus?.emit(
                     VoiceEvent.Error(e.message ?: "发送失败"),
                 )
-                if (streamingMessage.value != null) {
-                    val partial = streamingMessage.value?.content.orEmpty()
-                    if (partial.isNotBlank()) {
-                        messageRepository.save(
-                            Message(
-                                id = assistantId,
-                                role = MessageRole.ASSISTANT,
-                                content = partial + "\n\n⚠️ ${e.message ?: "中断"}",
-                                providerLabel = agent?.kind?.label,
-                                createdAt = System.currentTimeMillis(),
-                            ),
-                        )
-                    }
+                val partial = streamingContent.value
+                if (partial.isNotBlank()) {
+                    messageRepository.save(
+                        Message(
+                            id = assistantId,
+                            role = MessageRole.ASSISTANT,
+                            content = partial + "\n\n⚠️ ${e.message ?: "中断"}",
+                            providerLabel = agent?.kind?.label,
+                            createdAt = System.currentTimeMillis(),
+                        ),
+                    )
                 }
             } finally {
-                streamingMessage.value = null
+                streamingContent.value = ""
+                streamingProvider.value = null
                 busy.update { it.copy(isSending = false, isStreaming = false) }
                 bridgeConnected.value = client?.connected?.value == true
             }
@@ -263,10 +253,6 @@ class ChatViewModel(
         busy.update { it.copy(error = null) }
     }
 
-    /**
-     * 从后台回到前台：尽量续上连接，不清空聊天、不主动换 Session。
-     * HTTP 复用同一 client（保留 X-Hermes-Session-Id）；WS 则 ensureConnected / 软重绑。
-     */
     fun onForeground() {
         viewModelScope.launch {
             val agent = activeAgent.value ?: return@launch
@@ -274,7 +260,6 @@ class ChatViewModel(
             when {
                 existing == null -> softRebind(agent)
                 isHttpStyle(agent) -> {
-                    // 无长连接；同一 client 上的 Session-Id 仍有效
                     bridgeConnected.value = true
                 }
                 else -> {
@@ -292,9 +277,6 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * 新建对话：清空本地消息 + 强制换服务端会话（HTTP Session-Id / WS session）。
-     */
     fun startNewChat() {
         if (busy.value.isSending || busy.value.isStreaming) return
         viewModelScope.launch {
@@ -304,9 +286,9 @@ class ChatViewModel(
 
     private suspend fun startNewChatInternal() {
         messageRepository.clear()
-        streamingMessage.value = null
+        streamingContent.value = ""
+        streamingProvider.value = null
         pendingToolCall.value = null
-        // 先换会话 id，再断开：下次发送走全新服务端上下文。
         client?.resetConversation()
         client?.close()
         client = null
@@ -329,8 +311,6 @@ class ChatViewModel(
     }
 
     private suspend fun reconnect(agent: AgentProfile?) {
-        // 切换 agent 时：清空本地消息，避免聊天页还挂着上一个 agent 的历史，
-        // 且新 agent 的服务端 session 是全新的（无旧上下文），旧消息留着会造成错位。
         if (agent?.id != currentAgentId) {
             currentAgentId = agent?.id
             messageRepository.clear()
@@ -354,7 +334,6 @@ class ChatViewModel(
         }
     }
 
-    /** 重绑连接但不清消息、不 resetConversation（后台回来用）。 */
     private suspend fun softRebind(agent: AgentProfile) {
         client?.close()
         client = null
@@ -378,9 +357,6 @@ class ChatViewModel(
         val providerLabel: String?,
     )
 
-    /**
-     * @param usePrimaryClient true 时复用/写入 [client]；故障转移时 false，用完即关。
-     */
     private suspend fun streamTurn(
         agent: AgentProfile?,
         prompt: String,
@@ -405,17 +381,15 @@ class ChatViewModel(
                 bridgeConnected.value = chatClient.connected.value
             }
             val provider = providerOverride ?: agent?.kind?.label
-            streamingMessage.value = streamingMessage.value?.copy(providerLabel = provider)
+            streamingProvider.value = provider
 
             val history = buildHttpHistory(agent)
             val buffer = StringBuilder()
             chatClient.streamChat(prompt, history).paceForDisplay().collect { token ->
                 buffer.append(token)
+                streamingContent.value = buffer.toString()
                 val route = (chatClient as? HybridGatewayClient)?.lastRouteLabel?.value
-                streamingMessage.value = streamingMessage.value?.copy(
-                    content = buffer.toString(),
-                    providerLabel = providerOverride ?: route ?: provider,
-                )
+                if (route != null) streamingProvider.value = providerOverride ?: route ?: provider
             }
 
             val raw = buffer.toString()
@@ -453,7 +427,6 @@ class ChatViewModel(
             ep.startsWith("https://", ignoreCase = true)
     }
 
-    /** DeepSeek / 网关等无 Hermes Session 时，把本地短历史塞进 HTTP body。 */
     private suspend fun buildHttpHistory(agent: AgentProfile?): List<ChatTurn> {
         if (agent == null) return emptyList()
         if (agent.kind != AgentKind.HTTP_COMPAT && agent.kind != AgentKind.GATEWAY) {
@@ -470,12 +443,21 @@ class ChatViewModel(
             }
     }
 
+    /** 只有流式中有内容时才拼装临时 Message，避免每次 token 都 new 对象。 */
     private fun mergeStreaming(
         messages: List<Message>,
-        streaming: Message?,
+        content: String,
+        provider: String?,
     ): List<Message> {
-        if (streaming == null) return messages
-        return messages + streaming
+        if (content.isEmpty()) return messages
+        val streamingMsg = Message(
+            id = "streaming-tmp",
+            role = MessageRole.ASSISTANT,
+            content = content,
+            providerLabel = provider,
+            createdAt = System.currentTimeMillis(),
+        )
+        return messages + streamingMsg
     }
 
     private suspend fun ensureWelcomeMessage() {
@@ -498,13 +480,16 @@ class ChatViewModel(
         val error: String? = null,
     )
 
+    /** 4 元组，避免嵌套 combine 时的 Pair/Triple 装箱。 */
+    private data class Quad<A, B, C, D>(
+        val first: A,
+        val second: B,
+        val third: C,
+        val fourth: D,
+    )
+
     companion object {
         private const val WELCOME_ID = "welcome-local"
-
-        /**
-         * 超过该条数的本地消息后，下一次发送会自动开新会话
-         * （清历史 + 换服务端 session，避免上下文无限膨胀越聊越慢）。
-         */
         private const val AUTO_NEW_CHAT_THRESHOLD = 20
 
         fun factory(
