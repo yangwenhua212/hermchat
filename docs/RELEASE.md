@@ -24,6 +24,10 @@ Release **必须**使用长期有效的 `hermchat-release.jks`（约 10000 天�
 
 也可发布到 GitHub Releases，供协作者下载同签名预览包。
 
+> **Windows 注意**：`gh release create/edit` 的 `--notes` 在 PowerShell 下容易把中文弄成乱码。请用 UTF-8 文件：
+> `gh release edit vX.Y.Z --notes-file path/to/notes.md`。
+> 已用 `--notes-file` 重写乱码版本：v0.1.10 / v0.1.11 / v0.1.12；0.1.13+ 与 0.1.20+ 短备注经 API 核对正常。
+
 ## 升级安装（要不要先卸载）
 
 | 情况 | 做法 |
