@@ -7,20 +7,32 @@ import com.eraherm.hermchat.data.local.AgentStore
 import com.eraherm.hermchat.data.local.ChatPrefsStore
 import com.eraherm.hermchat.data.local.SpeakEngine
 import com.eraherm.hermchat.data.model.AgentKind
+import com.eraherm.hermchat.util.UserFacingError
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 统一朗读入口：系统 TTS 和/或 Agent 云端 `/v1/audio/speech`。
+ * 统一朗读入口。
+ *
+ * - [SpeakEngine.EDGE]：微软 Edge TTS（与 Hermes `tts.provider: edge` 同路，默认小艺）
+ * - [SpeakEngine.REMOTE]：自填 OpenAI 兼容 TTS 基址
+ * - [SpeakEngine.AUTO]：自定义地址 → Edge → 系统
+ * - [SpeakEngine.SYSTEM]：手机系统 TTS
+ *
+ * Hermes 聊天 API 本身通常不提供 `/v1/audio/speech`；Edge 由手机直连微软，不必经 Hermes。
  */
 class ReplySpeaker(
     context: Context,
@@ -28,15 +40,20 @@ class ReplySpeaker(
     private val agentStore: AgentStore,
     private val chatPrefsStore: ChatPrefsStore,
     private val remote: RemoteTtsClient = RemoteTtsClient(),
+    private val edge: EdgeTtsClient = EdgeTtsClient(),
 ) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var remoteJob: Job? = null
     private var mediaPlayer: MediaPlayer? = null
     private var lastError: String? = null
+    private val remoteUnsupported = ConcurrentHashMap.newKeySet<String>()
 
     private val _speakingMessageId = MutableStateFlow<String?>(null)
     val speakingMessageId: StateFlow<String?> = _speakingMessageId.asStateFlow()
+
+    private val _userErrors = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val userErrors: SharedFlow<String> = _userErrors.asSharedFlow()
 
     init {
         scope.launch {
@@ -49,17 +66,29 @@ class ReplySpeaker(
     }
 
     fun speak(text: String, messageId: String? = null) {
-        val engine = chatPrefsStore.prefsFlow.value.speakEngine
-        when (engine) {
+        lastError = null
+        when (chatPrefsStore.prefsFlow.value.speakEngine) {
             SpeakEngine.SYSTEM -> {
                 stopRemote()
-                local.speak(text, messageId)
+                speakLocal(text, messageId, reportError = true)
             }
-            SpeakEngine.REMOTE -> scope.launch {
-                speakRemoteOrFail(text, messageId, fallbackLocal = false)
+            SpeakEngine.EDGE -> {
+                remoteJob?.cancel()
+                remoteJob = scope.launch {
+                    speakEdge(text, messageId, fallbackLocal = false)
+                }
             }
-            SpeakEngine.AUTO -> scope.launch {
-                speakRemoteOrFail(text, messageId, fallbackLocal = true)
+            SpeakEngine.REMOTE -> {
+                remoteJob?.cancel()
+                remoteJob = scope.launch {
+                    speakCustomOrAgent(text, messageId, fallbackLocal = false)
+                }
+            }
+            SpeakEngine.AUTO -> {
+                remoteJob?.cancel()
+                remoteJob = scope.launch {
+                    speakAuto(text, messageId)
+                }
             }
         }
     }
@@ -82,21 +111,107 @@ class ReplySpeaker(
 
     fun openSystemTtsSettings(): Boolean = local.openSystemTtsSettings()
 
-    private suspend fun speakRemoteOrFail(
+    private fun speakLocal(text: String, messageId: String?, reportError: Boolean) {
+        local.speak(text, messageId)
+        if (reportError) {
+            local.lastErrorMessage()?.let { emitError(it) }
+        }
+    }
+
+    private suspend fun speakAuto(text: String, messageId: String?) {
+        val prefs = chatPrefsStore.prefsFlow.value
+        if (prefs.ttsEndpoint.isNotBlank()) {
+            val ok = synthesizeCustom(
+                endpoint = prefs.ttsEndpoint.trim(),
+                apiKey = prefs.ttsApiKey,
+                model = prefs.ttsModel.ifBlank { "tts-1" },
+                voice = prefs.ttsVoice.ifBlank { "alloy" },
+                text = text,
+                messageId = messageId,
+            )
+            if (ok) return
+        }
+        if (speakEdge(text, messageId, fallbackLocal = false)) return
+        speakLocal(text, messageId, reportError = true)
+    }
+
+    /** @return true 若已成功开播 */
+    private suspend fun speakEdge(
+        text: String,
+        messageId: String?,
+        fallbackLocal: Boolean,
+    ): Boolean {
+        stopRemote()
+        local.stop()
+        val voice = chatPrefsStore.prefsFlow.value.ttsVoice
+            .ifBlank { EdgeTtsClient.DEFAULT_VOICE }
+        val dest = File(appContext.cacheDir, "tts_edge.mp3")
+        _speakingMessageId.value = messageId
+        val result = withContext(Dispatchers.IO) {
+            edge.synthesizeToFile(text = text, dest = dest, voice = voice)
+        }
+        return result.fold(
+            onSuccess = { file ->
+                lastError = null
+                playFile(file, messageId)
+                true
+            },
+            onFailure = { err ->
+                stopRemotePlayer()
+                _speakingMessageId.value = null
+                if (fallbackLocal) {
+                    lastError = null
+                    speakLocal(text, messageId, reportError = true)
+                } else if (chatPrefsStore.prefsFlow.value.speakEngine == SpeakEngine.AUTO) {
+                    // AUTO 上层会再回退系统
+                    lastError = null
+                } else {
+                    emitError(UserFacingError.of(err, "Edge 朗读失败"))
+                }
+                false
+            },
+        )
+    }
+
+    private suspend fun speakCustomOrAgent(
         text: String,
         messageId: String?,
         fallbackLocal: Boolean,
     ) {
         stopRemote()
         local.stop()
+        val prefs = chatPrefsStore.prefsFlow.value
+        val customEndpoint = prefs.ttsEndpoint.trim()
+        if (customEndpoint.isNotBlank()) {
+            val ok = synthesizeCustom(
+                endpoint = customEndpoint,
+                apiKey = prefs.ttsApiKey,
+                model = prefs.ttsModel.ifBlank { "tts-1" },
+                voice = prefs.ttsVoice.ifBlank { "alloy" },
+                text = text,
+                messageId = messageId,
+            )
+            if (ok) return
+            if (fallbackLocal) {
+                speakLocal(text, messageId, reportError = true)
+            } else {
+                emitError("自定义 TTS 失败，请检查地址与 Key")
+            }
+            return
+        }
+
         val agent = currentAgent()
         if (agent == null) {
-            if (fallbackLocal) {
-                lastError = null
-                local.speak(text, messageId)
-            } else {
-                lastError = "还没有配置 Agent"
-            }
+            if (fallbackLocal) speakLocal(text, messageId, reportError = true)
+            else emitError("请选 Edge 小艺，或填写自定义 TTS 地址")
+            return
+        }
+        if (agent.kind == AgentKind.LOCAL ||
+            agent.kind == AgentKind.WEBSOCKET ||
+            remoteUnsupported.contains(agent.id)
+        ) {
+            if (fallbackLocal) speakLocal(text, messageId, reportError = true)
+            else emitError("请选 Edge 小艺（与 Hermes edge 同路），或填写自定义 TTS 地址")
             return
         }
         val endpoint = agent.endpoint.trim()
@@ -108,43 +223,61 @@ class ReplySpeaker(
                     endpoint.startsWith("http", ignoreCase = true)
                 )
         if (!canRemote) {
-            if (fallbackLocal) {
-                lastError = null
-                local.speak(text, messageId)
-            } else {
-                lastError = "当前 Agent 不支持云端朗读，请改用系统朗读"
-            }
+            if (fallbackLocal) speakLocal(text, messageId, reportError = true)
+            else emitError("请选 Edge 小艺，或填写自定义 TTS 地址")
             return
         }
-        val apiKey = agent.apiKey
-        remoteJob = scope.launch {
-            _speakingMessageId.value = messageId
-            val dest = File(appContext.cacheDir, "tts_reply.mp3")
-            val result = withContext(Dispatchers.IO) {
-                remote.synthesizeToFile(
-                    endpoint = endpoint,
-                    apiKey = apiKey,
-                    text = text,
-                    dest = dest,
-                )
-            }
-            result.fold(
-                onSuccess = { file ->
-                    lastError = null
-                    playFile(file, messageId)
-                },
-                onFailure = { err ->
-                    stopRemotePlayer()
-                    _speakingMessageId.value = null
-                    if (fallbackLocal) {
-                        lastError = null
-                        local.speak(text, messageId)
-                    } else {
-                        lastError = com.eraherm.hermchat.util.UserFacingError.of(err, "云端朗读失败")
-                    }
-                },
+        val ok = synthesizeCustom(
+            endpoint = endpoint,
+            apiKey = agent.apiKey,
+            model = prefs.ttsModel.ifBlank { "tts-1" },
+            voice = prefs.ttsVoice.ifBlank { "alloy" },
+            text = text,
+            messageId = messageId,
+            markUnsupportedKey = agent.id,
+        )
+        if (!ok) {
+            if (fallbackLocal) speakLocal(text, messageId, reportError = true)
+            else emitError("聊天地址没有朗读接口。Hermes 的 Edge 请在设置里选「Edge 小艺」")
+        }
+    }
+
+    private suspend fun synthesizeCustom(
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        voice: String,
+        text: String,
+        messageId: String?,
+        markUnsupportedKey: String? = null,
+    ): Boolean {
+        _speakingMessageId.value = messageId
+        val dest = File(appContext.cacheDir, "tts_reply.mp3")
+        val result = withContext(Dispatchers.IO) {
+            remote.synthesizeToFile(
+                endpoint = endpoint,
+                apiKey = apiKey,
+                text = text,
+                dest = dest,
+                model = model,
+                voice = voice,
             )
         }
+        return result.fold(
+            onSuccess = { file ->
+                lastError = null
+                playFile(file, messageId)
+                true
+            },
+            onFailure = { err ->
+                stopRemotePlayer()
+                _speakingMessageId.value = null
+                if (markUnsupportedKey != null && isUnsupportedRemote(err)) {
+                    remoteUnsupported.add(markUnsupportedKey)
+                }
+                false
+            },
+        )
     }
 
     private fun playFile(file: File, messageId: String?) {
@@ -166,7 +299,7 @@ class ReplySpeaker(
                 }
             }
             player.setOnErrorListener { _, _, _ ->
-                lastError = "音频播放失败"
+                emitError("音频播放失败")
                 stopRemotePlayer()
                 _speakingMessageId.value = null
                 true
@@ -175,7 +308,7 @@ class ReplySpeaker(
             player.start()
             _speakingMessageId.value = messageId
         } catch (e: Exception) {
-            lastError = com.eraherm.hermchat.util.UserFacingError.of(e, "音频播放失败")
+            emitError(UserFacingError.of(e, "音频播放失败"))
             stopRemotePlayer()
             _speakingMessageId.value = null
         }
@@ -193,6 +326,19 @@ class ReplySpeaker(
             mediaPlayer?.release()
         }
         mediaPlayer = null
+    }
+
+    private fun emitError(message: String) {
+        lastError = message
+        _userErrors.tryEmit(message)
+    }
+
+    private fun isUnsupportedRemote(err: Throwable): Boolean {
+        val msg = err.message.orEmpty()
+        return msg.contains("404") ||
+            msg.contains("405") ||
+            msg.contains("501") ||
+            msg.contains("不可用")
     }
 
     private suspend fun currentAgent() =

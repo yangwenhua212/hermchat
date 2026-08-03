@@ -20,7 +20,26 @@ HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent、�
 
 **聊天页：** 顶栏下拉管理 Agent；历史列表**只列当前 Agent 的会话**；「新建对话」换本地会话 + 服务端 Session；齿轮改主题/朗读/输入/快捷指令；气泡喇叭可朗读。连接/发送失败显示中文短提示（如「找不到服务器」），不展示英文异常原文。
 
-**朗读：** 设置 → 朗读。引擎可选 **系统** / **云端** / **自动**（默认）。云端走当前 Agent 的 `POST /v1/audio/speech`（OpenAI 兼容）；Hermes 若未开放该接口会回退系统 TTS。系统侧需装中文语音包（设置里可跳转）。Hermes 电脑本机出声不会自动传到手机，需手机侧系统或云端接口。
+**朗读：** 设置 → 朗读。引擎可选 **系统** / **Edge 小艺**（默认） / **自定义 TTS** / **自动**。
+
+| 方式 | 行为 |
+|------|------|
+| Edge 小艺 | 手机直连微软 Edge TTS（与 Hermes `tts.provider: edge` 同协议）；默认音色 `zh-CN-XiaoyiNeural`（小艺），可在「音色」改 |
+| 系统 | 手机系统 TTS（需中文语音包） |
+| 自定义 TTS | `POST {TTS基址}/v1/audio/speech`（OpenAI / Fish 等）；需自填地址与 Key |
+| 自动 | 有自定义地址则先试 → 再 Edge → 再系统 |
+
+**和 Hermes 配置的关系：**
+
+```yaml
+# ~/.hermes/config.yaml（电脑上 Hermes 自用）
+tts:
+  provider: edge
+  edge:
+    voice: zh-CN-XiaoyiNeural   # 小艺
+```
+
+Hermes 这段是 **电脑侧** 自己调 Edge；聊天 API **不会**把 speech 转给手机。HxSync 要对齐小艺：设置 → 朗读选 **Edge 小艺**（音色留空即小艺，或填 `zh-CN-XiaoyiNeural`）。不必填 Hermes 主机当地址。若 Hermes 改用 elevenlabs / openai，手机需在「自定义 TTS」填对应 HTTP 基址，或继续用 Edge/系统。
 
 **智能配置：** 首次安装或「添加 Agent」默认进入**配置助手**对话。  
 - Hermes HTTP：`连一下 47.x.x.x` → 再直接粘贴 Key（不必写 `Key:`）→ 回显确认 → 测连保存  

@@ -193,6 +193,7 @@ private fun PrefsRoot(
             append(if (prefs.autoSpeakReplies) "自动开" else "自动关")
             append(" · ")
             append(prefs.speakEngine.label)
+            if (prefs.ttsEndpoint.isNotBlank()) append(" · TTS已填")
         },
         onClick = onOpenSpeak,
     )
@@ -273,6 +274,46 @@ private fun PrefsSpeakDetail(
             onClick = { store.setSpeakEngine(engine) },
         )
     }
+    Text(
+        "自定义 TTS / 音色",
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(top = 8.dp),
+    )
+    OutlinedTextField(
+        value = prefs.ttsEndpoint,
+        onValueChange = store::setTtsEndpoint,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text("TTS 地址") },
+        placeholder = { Text("https://api.example.com/v1") },
+        shape = RoundedCornerShape(14.dp),
+    )
+    OutlinedTextField(
+        value = prefs.ttsApiKey,
+        onValueChange = store::setTtsApiKey,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text("TTS Key") },
+        shape = RoundedCornerShape(14.dp),
+    )
+    OutlinedTextField(
+        value = prefs.ttsModel,
+        onValueChange = store::setTtsModel,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text("模型") },
+        placeholder = { Text("tts-1") },
+        shape = RoundedCornerShape(14.dp),
+    )
+    OutlinedTextField(
+        value = prefs.ttsVoice,
+        onValueChange = store::setTtsVoice,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text("音色") },
+        placeholder = { Text("zh-CN-XiaoyiNeural") },
+        shape = RoundedCornerShape(14.dp),
+    )
     TextButton(
         onClick = onOpenSystemTts,
         modifier = Modifier.fillMaxWidth(),

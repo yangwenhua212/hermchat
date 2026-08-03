@@ -54,7 +54,10 @@ enum class ChatBackgroundMode(val label: String) {
 /** 助手回复朗读引擎。 */
 enum class SpeakEngine(val label: String) {
     SYSTEM("系统朗读"),
-    REMOTE("云端朗读"),
+    /** 微软 Edge TTS，与 Hermes `tts.provider: edge` 同路（默认小艺） */
+    EDGE("Edge 小艺"),
+    /** OpenAI 兼容 `/v1/audio/speech`，需自填 TTS 地址 */
+    REMOTE("自定义 TTS"),
     AUTO("自动"),
 }
 
@@ -75,7 +78,17 @@ data class ChatPrefs(
     val backgroundPresetId: String? = null,
     /** 助手回复完成后自动朗读 */
     val autoSpeakReplies: Boolean = false,
-    val speakEngine: SpeakEngine = SpeakEngine.AUTO,
+    /** 默认 Edge 小艺，与常见 Hermes `tts.provider: edge` 对齐 */
+    val speakEngine: SpeakEngine = SpeakEngine.EDGE,
+    /**
+     * OpenAI 兼容 TTS 基址（如 `https://api.openai.com/v1` 或 Fish Audio）。
+     * 有值时云端/自动朗读走这里，而不是 Agent 聊天地址。
+     * Hermes 聊天 API 通常不提供 `/v1/audio/speech`。
+     */
+    val ttsEndpoint: String = "",
+    val ttsApiKey: String = "",
+    val ttsModel: String = "",
+    val ttsVoice: String = "",
     /** 仅对端侧网关 Agent 生效 */
     val gatewayRouteMode: GatewayRouteMode = GatewayRouteMode.AUTO,
     val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
@@ -165,6 +178,22 @@ class ChatPrefsStore(
         update { it.copy(speakEngine = engine) }
     }
 
+    fun setTtsEndpoint(value: String) {
+        update { it.copy(ttsEndpoint = value.trim()) }
+    }
+
+    fun setTtsApiKey(value: String) {
+        update { it.copy(ttsApiKey = value.trim()) }
+    }
+
+    fun setTtsModel(value: String) {
+        update { it.copy(ttsModel = value.trim()) }
+    }
+
+    fun setTtsVoice(value: String) {
+        update { it.copy(ttsVoice = value.trim()) }
+    }
+
     fun setGatewayRouteMode(mode: GatewayRouteMode) {
         update { it.copy(gatewayRouteMode = mode) }
     }
@@ -206,6 +235,10 @@ class ChatPrefsStore(
             .putString(KEY_BG_PRESET, value.backgroundPresetId)
             .putBoolean(KEY_AUTO_SPEAK, value.autoSpeakReplies)
             .putString(KEY_SPEAK_ENGINE, value.speakEngine.name)
+            .putString(KEY_TTS_ENDPOINT, value.ttsEndpoint)
+            .putString(KEY_TTS_API_KEY, value.ttsApiKey)
+            .putString(KEY_TTS_MODEL, value.ttsModel)
+            .putString(KEY_TTS_VOICE, value.ttsVoice)
             .putString(KEY_GATEWAY_ROUTE, value.gatewayRouteMode.name)
             .putString(KEY_SHORTCUTS, array.toString())
             .apply()
@@ -236,11 +269,15 @@ class ChatPrefsStore(
         val bgPath = prefs.getString(KEY_BG_PATH, null)?.takeIf { it.isNotBlank() }
         val bgPreset = prefs.getString(KEY_BG_PRESET, null)?.takeIf { it.isNotBlank() }
         val autoSpeak = prefs.getBoolean(KEY_AUTO_SPEAK, false)
-        val speakEngine = prefs.getString(KEY_SPEAK_ENGINE, SpeakEngine.AUTO.name)
+        val speakEngine = prefs.getString(KEY_SPEAK_ENGINE, SpeakEngine.EDGE.name)
             ?.let { raw ->
-                runCatching { SpeakEngine.valueOf(raw) }.getOrDefault(SpeakEngine.AUTO)
+                runCatching { SpeakEngine.valueOf(raw) }.getOrDefault(SpeakEngine.EDGE)
             }
-            ?: SpeakEngine.AUTO
+            ?: SpeakEngine.EDGE
+        val ttsEndpoint = prefs.getString(KEY_TTS_ENDPOINT, "") ?: ""
+        val ttsApiKey = prefs.getString(KEY_TTS_API_KEY, "") ?: ""
+        val ttsModel = prefs.getString(KEY_TTS_MODEL, "") ?: ""
+        val ttsVoice = prefs.getString(KEY_TTS_VOICE, "") ?: ""
         val gatewayRoute = prefs.getString(KEY_GATEWAY_ROUTE, GatewayRouteMode.AUTO.name)
             ?.let { raw ->
                 runCatching { GatewayRouteMode.valueOf(raw) }.getOrDefault(GatewayRouteMode.AUTO)
@@ -256,6 +293,10 @@ class ChatPrefsStore(
             backgroundPresetId = bgPreset,
             autoSpeakReplies = autoSpeak,
             speakEngine = speakEngine,
+            ttsEndpoint = ttsEndpoint,
+            ttsApiKey = ttsApiKey,
+            ttsModel = ttsModel,
+            ttsVoice = ttsVoice,
             gatewayRouteMode = gatewayRoute,
             shortcuts = shortcuts,
         )
@@ -294,6 +335,10 @@ class ChatPrefsStore(
         private const val KEY_BG_PRESET = "background_preset_id"
         private const val KEY_AUTO_SPEAK = "auto_speak_replies"
         private const val KEY_SPEAK_ENGINE = "speak_engine"
+        private const val KEY_TTS_ENDPOINT = "tts_endpoint"
+        private const val KEY_TTS_API_KEY = "tts_api_key"
+        private const val KEY_TTS_MODEL = "tts_model"
+        private const val KEY_TTS_VOICE = "tts_voice"
         private const val KEY_GATEWAY_ROUTE = "gateway_route_mode"
         private const val KEY_SHORTCUTS = "shortcuts"
     }

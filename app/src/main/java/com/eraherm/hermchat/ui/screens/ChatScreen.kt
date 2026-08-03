@@ -263,6 +263,12 @@ fun ChatScreen(
                 if (voiceStatus == s) voiceStatus = null
             }
         }
+        // 朗读失败（异步）：只收需要展示的事件，避免粘住旧的「云端 404」
+        launch {
+            app.replySpeaker.userErrors.collect { err ->
+                voiceStatus = err
+            }
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -321,9 +327,6 @@ fun ChatScreen(
                     ) return@collect
                     lastAutoSpokenId = last.id
                     app.replySpeaker.speak(last.content, last.id)
-                    app.replySpeaker.lastErrorMessage()?.let { err ->
-                        voiceStatus = err
-                    }
                 }
             }
         }
@@ -449,9 +452,6 @@ fun ChatScreen(
                         onSpeakClick = if (message.role == MessageRole.ASSISTANT) {
                             {
                                 app.replySpeaker.toggle(message.content, message.id)
-                                app.replySpeaker.lastErrorMessage()?.let { err ->
-                                    voiceStatus = err
-                                }
                             }
                         } else {
                             null

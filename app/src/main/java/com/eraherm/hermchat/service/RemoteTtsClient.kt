@@ -49,7 +49,8 @@ class RemoteTtsClient(
         }
         client.newCall(requestBuilder.build()).execute().use { response ->
             if (!response.isSuccessful) {
-                error("云端朗读不可用 HTTP ${response.code}")
+                // 404/405 等：助手未挂 speech 接口；文案由 ReplySpeaker 转成用户提示
+                error("云端朗读不可用 ${response.code}")
             }
             val bytes = response.body?.bytes() ?: error("空音频")
             require(bytes.size > 64) { "音频过短" }
