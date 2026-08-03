@@ -412,31 +412,66 @@ fun ChatScreen(
                 }
             }
 
-            // 状态提示：错误 / Loop 中间态 / 语音状态短显，不占常驻空间
+            // 状态提示：错误 / 超步数一切 / Loop 中间态 / 语音状态短显
             AnimatedVisibility(
                 visible = uiState.error != null ||
+                    uiState.loopEscalate != null ||
                     voiceStatus != null ||
                     (loopLabel != null && hasStreamingText),
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
-                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) {
-                    uiState.error?.let { error ->
-                        Text(
-                            text = error,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)) {
+                    val escalate = uiState.loopEscalate
+                    if (escalate != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = uiState.error ?: "步骤较多",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                onClick = {
+                                    if (escalate.hasTarget) {
+                                        viewModel.switchToLoopEscalateTarget()
+                                    } else {
+                                        viewModel.dismissLoopEscalate()
+                                        onAddAgent()
+                                    }
+                                },
+                            ) {
+                                Text(escalate.actionLabel)
+                            }
+                        }
+                    } else {
+                        uiState.error?.let { error ->
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                            )
+                        }
                     }
-                    if (loopLabel != null && hasStreamingText && uiState.error == null) {
+                    if (loopLabel != null && hasStreamingText && escalate == null && uiState.error == null) {
                         Text(
                             text = loopLabel,
                             color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 8.dp),
                         )
                     }
                     voiceStatus?.let { status ->
@@ -446,6 +481,7 @@ fun ChatScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 8.dp),
                         )
                     }
                 }

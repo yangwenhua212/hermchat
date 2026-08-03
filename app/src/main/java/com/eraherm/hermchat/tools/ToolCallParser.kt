@@ -37,7 +37,8 @@ object ToolCallParser {
             id = obj.optString("id").ifBlank { UUID.randomUUID().toString() },
             name = name,
             arguments = args,
-            needConfirm = true, // Phone tools always require explicit user confirmation.
+            // 未授权；执行前由确认卡 / READ_ONLY 策略置为 true
+            needConfirm = false,
             title = obj.optString("title").ifBlank { humanTitle(name) },
             summary = obj.optString("summary").ifBlank { summarize(name, args) },
         )

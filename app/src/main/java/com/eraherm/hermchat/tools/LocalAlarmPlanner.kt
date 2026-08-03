@@ -47,7 +47,7 @@ object LocalAlarmPlanner {
             id = UUID.randomUUID().toString(),
             name = AlarmTool.NAME,
             arguments = args,
-            needConfirm = true,
+            needConfirm = false,
             title = "设置提醒",
             summary = ToolCallParser.summarize(AlarmTool.NAME, args),
         )

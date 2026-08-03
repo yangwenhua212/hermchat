@@ -40,7 +40,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.UUID
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
+
 
 data class ChatUiState(
     val messages: List<Message> = emptyList(),
@@ -54,6 +58,7 @@ data class ChatUiState(
     val pendingToolCall: ToolCall? = null,
     val toolExecuting: Boolean = false,
     val loopStep: LoopStep = LoopStep.Idle,
+    val loopEscalate: LoopEscalateOffer? = null,
 )
 
 class ChatViewModel(
@@ -81,6 +86,8 @@ class ChatViewModel(
     private var currentAgentId: String? = null
     /** ④ Agent loop：等待确认工具后回灌 API 续跑。 */
     private var gatewayLoop: GatewayLoopState? = null
+    /** 分级确认：挂起中的「允许/取消」回调；取消或换会话时 resume(false)。 */
+    private var toolDecisionCont: Continuation<Boolean>? = null
     private val voiceSendHandler: (String) -> Unit = { text -> sendMessage(text) }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -125,6 +132,7 @@ class ChatViewModel(
             pendingToolCall = stream.pending,
             toolExecuting = flags.toolExecuting,
             loopStep = flags.loopStep,
+            loopEscalate = flags.loopEscalate,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -154,6 +162,7 @@ class ChatViewModel(
         val localPlan = if (toolsOn) LocalToolPlanner.plan(content) else null
 
         sendJob?.cancel()
+        rejectToolConfirmation()
         sendJob = viewModelScope.launch {
             conversationRepository.bootstrap(agent?.id)
             if (messageRepository.count() >= AUTO_NEW_CHAT_THRESHOLD) {
@@ -164,6 +173,7 @@ class ChatViewModel(
                 it.copy(
                     isSending = true,
                     error = null,
+                    loopEscalate = null,
                     loopStep = LoopStep.Planning(),
                 )
             }
@@ -178,10 +188,6 @@ class ChatViewModel(
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
-
-                if (localPlan != null) {
-                    pendingToolCall.value = localPlan
-                }
 
                 busy.update { it.copy(isSending = false, isStreaming = true) }
                 streamingContent.value = ""
@@ -206,27 +212,7 @@ class ChatViewModel(
                     )
                 }.getOrThrow()
 
-                val effectiveTool = outcome.tool ?: pendingToolCall.value
-                if (effectiveTool != null) {
-                    pendingToolCall.value = effectiveTool.copy(needConfirm = true)
-                    val seed = outcome.loopSeed
-                    if (seed != null) {
-                        if (!seed.lastAssistantRaw.contains("\"type\"") &&
-                            !seed.lastAssistantRaw.contains(effectiveTool.name)
-                        ) {
-                            seed.lastAssistantRaw = listOf(
-                                seed.lastAssistantRaw.trim(),
-                                toolCallJson(effectiveTool),
-                            ).filter { it.isNotBlank() }.joinToString("\n")
-                        }
-                        gatewayLoop = seed
-                    }
-                    // 确认卡已承接下一步，中间态收起避免叠文案
-                    setLoopStep(LoopStep.Idle)
-                } else {
-                    gatewayLoop = null
-                    setLoopStep(LoopStep.Finished(outcome.text.take(40)))
-                }
+                val effectiveTool = outcome.tool ?: localPlan
                 messageRepository.save(
                     Message(
                         id = assistantId,
@@ -239,6 +225,28 @@ class ChatViewModel(
                 (appContext as? HermChatApp)?.voiceEventBus?.emit(
                     VoiceEvent.Status(outcome.text.take(48).ifBlank { "已回复" }),
                 )
+
+                if (effectiveTool != null) {
+                    val seed = outcome.loopSeed
+                    if (seed != null) {
+                        if (!seed.lastAssistantRaw.contains("\"type\"") &&
+                            !seed.lastAssistantRaw.contains(effectiveTool.name)
+                        ) {
+                            seed.lastAssistantRaw = listOf(
+                                seed.lastAssistantRaw.trim(),
+                                toolCallJson(effectiveTool),
+                            ).filter { it.isNotBlank() }.joinToString("\n")
+                        }
+                        gatewayLoop = seed
+                    }
+                    streamingContent.value = ""
+                    streamingProvider.value = null
+                    busy.update { it.copy(isSending = false, isStreaming = false) }
+                    runAuthorizedTool(effectiveTool)
+                } else {
+                    gatewayLoop = null
+                    setLoopStep(LoopStep.Finished(outcome.text.take(40)))
+                }
             } catch (e: Exception) {
                 val friendly = UserFacingError.of(e, "发送失败")
                 busy.update { it.copy(error = friendly, loopStep = LoopStep.Error(friendly)) }
@@ -277,60 +285,21 @@ class ChatViewModel(
     }
 
     fun confirmPendingTool() {
-        val call = pendingToolCall.value ?: return
-        viewModelScope.launch {
-            val execDesc = call.title.ifBlank {
-                LoopStep.friendlyToolName(call.name)
-            }
-            busy.update {
-                it.copy(
-                    toolExecuting = true,
-                    error = null,
-                    loopStep = LoopStep.Executing(call.name, execDesc),
-                )
-            }
-            val result = toolRegistry.execute(call)
-            pendingToolCall.value = null
-            busy.update { it.copy(toolExecuting = false) }
-            setLoopStep(LoopStep.Observing(result.message.take(48)))
-
-            messageRepository.save(
-                Message(
-                    id = UUID.randomUUID().toString(),
-                    role = MessageRole.SYSTEM,
-                    content = if (result.success) {
-                        "✅ ${result.message}"
-                    } else {
-                        "⚠️ 操作失败：${result.message}。请手动处理。"
-                    },
-                    providerLabel = "tool",
-                    createdAt = System.currentTimeMillis(),
-                ),
-            )
-
-            runCatching {
-                client?.sendToolResult(result.toolCallId, result.success, result.message)
-            }
-
-            val loop = gatewayLoop
-            val gateway = client as? HybridGatewayClient
-            if (loop != null && gateway != null && gateway.hasApi) {
-                delay(320)
-                continueGatewayLoop(
-                    gateway = gateway,
-                    loop = loop,
-                    toolName = call.name,
-                    success = result.success,
-                    detail = result.message,
-                )
-            } else {
-                gatewayLoop = null
-                setLoopStep(LoopStep.Idle)
-            }
+        val cont = toolDecisionCont
+        if (cont != null) {
+            toolDecisionCont = null
+            cont.resume(true)
+            return
         }
     }
 
     fun denyPendingTool() {
+        val cont = toolDecisionCont
+        if (cont != null) {
+            toolDecisionCont = null
+            cont.resume(false)
+            return
+        }
         val call = pendingToolCall.value ?: return
         pendingToolCall.value = null
         gatewayLoop = null
@@ -351,12 +320,136 @@ class ChatViewModel(
         }
     }
 
+    private fun rejectToolConfirmation() {
+        val cont = toolDecisionCont
+        toolDecisionCont = null
+        pendingToolCall.value = null
+        if (cont != null) {
+            runCatching { cont.resume(false) }
+        }
+    }
+
+    /**
+     * 按 [ToolRisk] 决定是否弹确认卡；写操作挂起协程等待 UI，取消则干净结束 loop。
+     */
+    private suspend fun runAuthorizedTool(call: ToolCall) {
+        val risk = toolRegistry.riskFor(call.name)
+        val allowed = if (risk.requiresUserConfirm) {
+            awaitToolConfirmation(call)
+        } else {
+            true
+        }
+        if (!allowed) {
+            gatewayLoop = null
+            pendingToolCall.value = null
+            setLoopStep(LoopStep.Idle)
+            messageRepository.save(
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    role = MessageRole.SYSTEM,
+                    content = "已取消",
+                    providerLabel = "tool",
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+            runCatching {
+                client?.sendToolResult(call.id, false, "user_denied")
+            }
+            return
+        }
+        pendingToolCall.value = null
+        val execDesc = call.title.ifBlank {
+            LoopStep.friendlyToolName(call.name)
+        }
+        busy.update {
+            it.copy(
+                toolExecuting = true,
+                error = null,
+                loopStep = LoopStep.Executing(call.name, execDesc),
+            )
+        }
+        val result = toolRegistry.execute(call.copy(needConfirm = true))
+        busy.update { it.copy(toolExecuting = false) }
+        setLoopStep(LoopStep.Observing(result.message.take(48)))
+
+        messageRepository.save(
+            Message(
+                id = UUID.randomUUID().toString(),
+                role = MessageRole.SYSTEM,
+                content = if (result.success) {
+                    "✅ ${result.message}"
+                } else {
+                    "⚠️ 操作失败：${result.message}。请手动处理。"
+                },
+                providerLabel = "tool",
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+
+        runCatching {
+            client?.sendToolResult(result.toolCallId, result.success, result.message)
+        }
+
+        val loop = gatewayLoop
+        val gateway = client as? HybridGatewayClient
+        if (loop != null && gateway != null && gateway.hasApi) {
+            delay(320)
+            continueGatewayLoop(
+                gateway = gateway,
+                loop = loop,
+                toolName = call.name,
+                success = result.success,
+                detail = result.message,
+            )
+        } else {
+            gatewayLoop = null
+            setLoopStep(LoopStep.Idle)
+        }
+    }
+
+    private suspend fun awaitToolConfirmation(call: ToolCall): Boolean {
+        // 不 resume 旧回调为 false 再挂起：仅清掉残留 UI，旧 cont 若存在属异常态
+        if (toolDecisionCont != null) {
+            rejectToolConfirmation()
+        }
+        pendingToolCall.value = call
+        setLoopStep(LoopStep.Idle)
+        return suspendCancellableCoroutine { cont ->
+            toolDecisionCont = cont
+            cont.invokeOnCancellation {
+                if (toolDecisionCont === cont) {
+                    toolDecisionCont = null
+                }
+                pendingToolCall.value = null
+            }
+        }
+    }
+
     fun clearError() {
         busy.update {
             it.copy(
                 error = null,
+                loopEscalate = null,
                 loopStep = if (it.loopStep is LoopStep.Error) LoopStep.Idle else it.loopStep,
             )
+        }
+    }
+
+    /** 超步数一键切到已保存的 ③；无目标时返回 false，由 UI 去添加。 */
+    fun switchToLoopEscalateTarget(): Boolean {
+        val offer = busy.value.loopEscalate ?: return false
+        val id = offer.targetAgentId?.takeIf { it.isNotBlank() } ?: return false
+        busy.update {
+            it.copy(error = null, loopEscalate = null, loopStep = LoopStep.Idle)
+        }
+        gatewayLoop = null
+        agentStore.setCurrentId(id)
+        return true
+    }
+
+    fun dismissLoopEscalate() {
+        busy.update {
+            it.copy(error = null, loopEscalate = null, loopStep = LoopStep.Idle)
         }
     }
 
@@ -398,7 +491,7 @@ class ChatViewModel(
             conversationRepository.setActive(id)
             streamingContent.value = ""
             streamingProvider.value = null
-            pendingToolCall.value = null
+            rejectToolConfirmation()
             gatewayLoop = null
             setLoopStep(LoopStep.Idle)
             // 旧会话本地可回看；服务端 Session 不自动恢复，避免串到上一会话
@@ -417,7 +510,8 @@ class ChatViewModel(
             conversationRepository.delete(id, preferAgentId = activeAgent.value?.id)
             streamingContent.value = ""
             streamingProvider.value = null
-            pendingToolCall.value = null
+            rejectToolConfirmation()
+            gatewayLoop = null
             if (conversationRepository.activeId.value == null) {
                 conversationRepository.createNew(activeAgent.value?.id)
                 sessions.client?.resetConversation()
@@ -429,6 +523,7 @@ class ChatViewModel(
     }
 
     private suspend fun startNewChatInternal() {
+        rejectToolConfirmation()
         conversationRepository.createNew(activeAgent.value?.id)
         streamingContent.value = ""
         streamingProvider.value = null
@@ -468,7 +563,7 @@ class ChatViewModel(
             val previous = currentAgentId
             currentAgentId = agent.id
             gatewayLoop = null
-            pendingToolCall.value = null
+            rejectToolConfirmation()
             setLoopStep(LoopStep.Idle)
             if (previous == null) {
                 conversationRepository.claimOrphanConversations(agent.id)
@@ -590,7 +685,7 @@ class ChatViewModel(
                 raw to null
             }
             val finalText = displayText.ifBlank {
-                if (agentTool != null || pendingToolCall.value != null) {
+                if (agentTool != null) {
                     "需要你确认后，我才能操作手机。"
                 } else {
                     "（空回复）"
@@ -633,8 +728,7 @@ class ChatViewModel(
     ) {
         if (loop.step >= GATEWAY_LOOP_MAX_STEPS) {
             gatewayLoop = null
-            val msg = "步骤较多，建议切到远端 Agent 继续"
-            busy.update { it.copy(error = msg, loopStep = LoopStep.Error(msg)) }
+            offerLoopEscalate()
             return
         }
         val assistantId = UUID.randomUUID().toString()
@@ -678,10 +772,12 @@ class ChatViewModel(
                 ),
             )
             if (agentTool != null) {
-                pendingToolCall.value = agentTool.copy(needConfirm = true)
                 loop.lastAssistantRaw = raw.ifBlank { finalText }
                 gatewayLoop = loop
-                setLoopStep(LoopStep.Idle)
+                streamingContent.value = ""
+                streamingProvider.value = null
+                busy.update { it.copy(isStreaming = false) }
+                runAuthorizedTool(agentTool)
             } else {
                 gatewayLoop = null
                 setLoopStep(LoopStep.Finished(finalText.take(40)))
@@ -795,12 +891,45 @@ class ChatViewModel(
         )
     }
 
+    private fun offerLoopEscalate() {
+        val remote = LoopEscalatePicker.pick(activeAgent.value, agentStore.agents.value)
+        val offer = if (remote != null) {
+            LoopEscalateOffer(targetAgentId = remote.id, targetName = remote.name)
+        } else {
+            LoopEscalateOffer(targetAgentId = null, targetName = null)
+        }
+        val msg = if (offer.hasTarget) {
+            "步骤较多，可切换继续"
+        } else {
+            "步骤较多，请添加远端 Agent"
+        }
+        busy.update {
+            it.copy(
+                error = msg,
+                loopEscalate = offer,
+                loopStep = LoopStep.Error(msg),
+            )
+        }
+        viewModelScope.launch {
+            messageRepository.save(
+                Message(
+                    id = UUID.randomUUID().toString(),
+                    role = MessageRole.SYSTEM,
+                    content = msg,
+                    providerLabel = "loop",
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
     private data class BusyFlags(
         val isSending: Boolean = false,
         val isStreaming: Boolean = false,
         val toolExecuting: Boolean = false,
         val error: String? = null,
         val loopStep: LoopStep = LoopStep.Idle,
+        val loopEscalate: LoopEscalateOffer? = null,
     )
 
     private fun setLoopStep(step: LoopStep) {

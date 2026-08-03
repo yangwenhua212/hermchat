@@ -18,7 +18,7 @@ class ToolCallParserTest {
         assertNotNull(call)
         assertEquals("calendar.create", call!!.name)
         assertEquals("开会", call.arguments["title"])
-        assertTrue(call.needConfirm)
+        assertTrue(!call.needConfirm)
         assertTrue(display.contains("好的") || display.isNotBlank())
         assertTrue(!display.contains("tool_call"))
     }

@@ -65,6 +65,9 @@
 | 流式末尾一根死杠 `|` | 文本拼接光标 | ≥本次：思考转圈、吐字/执行键盘图标 |
 | ④ 像纯 API 无 Agent | 单轮 chat、工具结果不回灌 | ≥本次：确认后回灌 DeepSeek 续跑（loop≤8） |
 | ④ Loop 黑盒像死机 | 无阶段反馈 | ≥本次：`LoopStep` 一行中间态（分析/执行/观察） |
+| 确认后 Loop 与 UI 脱节 | 确认在独立协程、取消易留半截 | ≥本次：写工具 `suspend` 等待确认；取消 resume 拒绝并清 loop |
+| 远端 payload 未确认就执行 | needConfirm 展示前已被置 true | ≥本次：解析默认未授权；仅确认后 / READ_ONLY 可执行 |
+| ④ 超步数只能干瞪眼 | 仅错误文案 | ≥本次：一键切已存 ③；无则去添加 |
 | 顶栏 Unable to resolve host… | 异常原文直接展示 | ≥本次：UserFacingError →「找不到服务器…」 |
 | 历史混在一起 | 列表未按 Agent 过滤 | ≥本次：只显示当前 Agent 会话 |
 

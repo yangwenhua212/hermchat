@@ -35,7 +35,7 @@ object LocalCalendarPlanner {
             id = UUID.randomUUID().toString(),
             name = CalendarTool.NAME,
             arguments = args,
-            needConfirm = true,
+            needConfirm = false,
             title = "创建日历事件",
             summary = ToolCallParser.summarize(CalendarTool.NAME, args),
         )
