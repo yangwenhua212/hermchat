@@ -24,6 +24,16 @@ class ToolCallParserTest {
     }
 
     @Test
+    fun extract_clipboardRead() {
+        val text =
+            """{"type":"tool_call","name":"clipboard.read","arguments":{}}"""
+        val (display, call) = ToolCallParser.extract(text)
+        assertNotNull(call)
+        assertEquals("clipboard.read", call!!.name)
+        assertEquals("好的。", display)
+    }
+
+    @Test
     fun extract_alarmToolCall() {
         val text =
             """{"type":"tool_call","name":"alarm.create","arguments":{"message":"喝水","triggerMs":"1710003600000"}}"""

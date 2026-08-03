@@ -14,7 +14,7 @@ object ToolCallParser {
         val cleaned = assistantText.replace(block, "")
             .replace(Regex("\n{3,}"), "\n\n")
             .trim()
-            .ifBlank { "需要你确认后，我才能操作手机。" }
+            .ifBlank { "好的。" }
         return cleaned to call
     }
 
@@ -62,7 +62,9 @@ object ToolCallParser {
                             slice.contains("alarm.create") ||
                             slice.contains("url.open") ||
                             slice.contains("web.search") ||
-                            slice.contains("share.text")
+                            slice.contains("share.text") ||
+                            slice.contains("clipboard.read") ||
+                            slice.contains("clipboard.write")
                         ) {
                             return slice
                         }
@@ -80,6 +82,8 @@ object ToolCallParser {
         OpenUrlTool.NAME -> "打开链接"
         WebSearchTool.NAME -> "打开搜索"
         ShareTextTool.NAME -> "分享文本"
+        ClipboardReadTool.NAME -> "读取剪贴板"
+        ClipboardWriteTool.NAME -> "写入剪贴板"
         else -> "执行工具：$name"
     }
 
@@ -108,6 +112,11 @@ object ToolCallParser {
             ShareTextTool.NAME -> {
                 val text = args["text"].orEmpty()
                 "将分享：${text.take(80)}${if (text.length > 80) "…" else ""}"
+            }
+            ClipboardReadTool.NAME -> "读取当前剪贴板文本"
+            ClipboardWriteTool.NAME -> {
+                val text = args["text"].orEmpty()
+                "将写入剪贴板：${text.take(80)}${if (text.length > 80) "…" else ""}"
             }
             else -> args.entries.joinToString("\n") { "${it.key}=${it.value}" }
         }

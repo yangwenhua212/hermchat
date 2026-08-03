@@ -44,8 +44,9 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 ### 本机闹钟 / 提醒（真机要点）
 
 - 说「N 分钟后提醒我」「明天早上 8 点叫我」等会出确认卡（④ / ① / 开工具的 Hermes）
-- 确认后优先打开**系统倒计时/闹钟**（带 UI，便于确认）；跨日时间走**本机精确通知**
-- Android 13+ 需**通知权限**；精确提醒需系统「允许精确闹钟」（否则会引导设置，不再假成功）
+- 确认后**优先打开系统时钟**的闹钟/倒计时界面（请在时钟 App 里点保存）；成功文案会写「已打开系统闹钟/倒计时」
+- 仅当系统时钟唤不起时，才回退 **HxSync 通知提醒**——通知栏「HxSync 提醒」**不会**出现在系统闹钟列表；文案会写明这一点
+- Android 13+ 回退路径需**通知权限**；精确提醒需系统「允许精确闹钟」
 - **② HTTP 兼容默认不开本机工具**；要 DeepSeek+闹钟请用 **④ 端侧网关**
 
 ## 怎么配
@@ -86,7 +87,7 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 5. 步数上限 8；超限顶栏一键切已保存的 ③（Hermes/WS），没有则「去添加」；取消确认则中止 loop（协程 resume 拒绝，不留半截状态）  
 
 
-本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search` / `share.text`（风险级均为 `WRITE`，须确认）。  
+本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search` / `share.text`（均为 `WRITE`，须确认）；`clipboard.read`（`READ_ONLY`，可静默）；`clipboard.write`（`WRITE`，须确认）。  
 本地路径本身不做完整 loop；续跑始终走 API（需已配 DeepSeek 等）。
 
 ## 仍可加强

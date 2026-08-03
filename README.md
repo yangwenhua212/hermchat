@@ -45,12 +45,12 @@ HxSync 内置四档模式，用户可按场景自由切换：
 - [本地模型](docs/LOCAL_MODEL.md)
 - [端侧网关 + 本机工具](docs/REMOTE_BRAIN_LOCAL_TOOLS.md)
 
-④ Loop 要点（详见上链）：`LoopStep` 阶段上屏；`ToolRisk` 写操作挂起确认；满 8 步顶栏一键切已存 Hermes/WS（无则去添加）。
+④ Loop 要点（详见上链）：`LoopStep` 阶段上屏；`ToolRisk` 写确认 / 读剪贴板静默；满 8 步顶栏一键切已存 Hermes/WS（无则去添加）。
 
 ## 安全与隐私（必读）
 
 - **`ws://` / `http://` 仅限同一 Wi‑Fi 局域网演示。** 公网或传密钥请用 **`wss://` / `https://`**。
-- 本机工具（日历/闹钟）**必须用户点确认**后才执行。闹钟优先系统时钟/倒计时；不支持则回退本机通知。
+- 本机**写操作**（日历/闹钟/开链/分享/写剪贴板等）**必须用户点确认**后才执行；读剪贴板可静默。闹钟优先系统时钟/倒计时；不支持则回退本机通知。
 - API Key 使用 `EncryptedSharedPreferences` 加密存储。
 
 上手：[CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md) · 验收：[ACCEPTANCE.md](docs/ACCEPTANCE.md) · 安全：[SECURITY.md](docs/SECURITY.md)

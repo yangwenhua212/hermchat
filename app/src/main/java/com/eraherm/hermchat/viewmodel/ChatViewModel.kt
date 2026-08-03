@@ -686,7 +686,7 @@ class ChatViewModel(
             }
             val finalText = displayText.ifBlank {
                 if (agentTool != null) {
-                    "需要你确认后，我才能操作手机。"
+                    "好的。"
                 } else {
                     "（空回复）"
                 }
@@ -760,7 +760,7 @@ class ChatViewModel(
             val raw = buffer.toString()
             val (displayText, agentTool) = ToolCallParser.extract(raw)
             val finalText = displayText.ifBlank {
-                if (agentTool != null) "需要你确认后，我才能操作手机。" else "（空回复）"
+                if (agentTool != null) "好的。" else "（空回复）"
             }
             messageRepository.save(
                 Message(

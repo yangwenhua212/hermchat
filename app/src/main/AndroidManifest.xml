@@ -28,6 +28,15 @@
         <intent>
             <action android:name="android.intent.action.SHOW_ALARMS" />
         </intent>
+        <package android:name="com.google.android.deskclock" />
+        <package android:name="com.android.deskclock" />
+        <package android:name="com.sec.android.app.clockpackage" />
+        <package android:name="com.huawei.deskclock" />
+        <package android:name="com.hihonor.deskclock" />
+        <package android:name="com.miui.deskclock" />
+        <package android:name="com.coloros.alarmclock" />
+        <package android:name="com.oplus.alarmclock" />
+        <package android:name="com.vivo.deskclock" />
     </queries>
 
     <uses-feature

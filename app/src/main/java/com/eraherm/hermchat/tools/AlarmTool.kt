@@ -21,7 +21,8 @@ import kotlinx.coroutines.withContext
 import java.util.Calendar
 
 /**
- * 设置提醒：优先系统倒计时/闹钟；不可靠时回退本机精确 AlarmManager + 通知。
+ * 设置提醒：优先唤起**系统时钟**的倒计时/闹钟（会出现在系统闹钟 App 里）；
+ * 仅当系统时钟不可用时，才回退 HxSync 本机通知（不会进系统闹钟列表）。
  */
 class AlarmTool(
     private val context: Context,
@@ -58,34 +59,43 @@ class AlarmTool(
             val hour = cal.get(Calendar.HOUR_OF_DAY)
             val minute = cal.get(Calendar.MINUTE)
             val delaySec = ((triggerAt - System.currentTimeMillis()) / 1000L).toInt().coerceAtLeast(1)
+            val whenText = ToolCallParser.formatTime(triggerAt)
 
-            // 1) ≤24h 相对时间：系统倒计时（先出 UI，OEM 更稳）
+            // 1) 对准「今天/明天该钟点」：优先系统闹钟（会出现在时钟 App）
+            if (isNextOccurrenceOfClock(triggerAt, hour, minute)) {
+                if (trySetAlarm(message, hour, minute)) {
+                    return@withContext ToolResult(
+                        toolCallId = call.id,
+                        name = name,
+                        success = true,
+                        message = "已打开系统闹钟「$message」· $whenText（请在时钟里确认保存）",
+                    )
+                }
+            }
+
+            // 2) ≤24h：系统倒计时
             if (delaySec in 1..(24 * 60 * 60)) {
                 if (trySetTimer(message, delaySec)) {
                     return@withContext ToolResult(
                         toolCallId = call.id,
                         name = name,
                         success = true,
-                        message = "已打开系统倒计时「$message」· ${ToolCallParser.formatTime(triggerAt)}",
+                        message = "已打开系统倒计时「$message」· $whenText（请在时钟里确认）",
                     )
                 }
             }
 
-            // 2) 仅当目标就是「下一次该时刻」时用 SET_ALARM（会丢日期，后天易变成明天）
-            if (isNextOccurrenceOfClock(triggerAt, hour, minute)) {
-                if (trySetAlarm(message, hour, minute, skipUi = false) ||
-                    trySetAlarm(message, hour, minute, skipUi = true)
-                ) {
-                    return@withContext ToolResult(
-                        toolCallId = call.id,
-                        name = name,
-                        success = true,
-                        message = "已打开系统闹钟「$message」· ${ToolCallParser.formatTime(triggerAt)}",
-                    )
-                }
+            // 3) 钟点稍有偏差时再试一次 SET_ALARM（不少机型仍能设）
+            if (delaySec in 1..(36 * 60 * 60) && trySetAlarm(message, hour, minute)) {
+                return@withContext ToolResult(
+                    toolCallId = call.id,
+                    name = name,
+                    success = true,
+                    message = "已打开系统闹钟「$message」· $whenText（请在时钟里确认保存）",
+                )
             }
 
-            // 3) 本机精确提醒（保日期）
+            // 4) 本机通知回退（明确告知：不是系统闹钟）
             return@withContext scheduleLocalReminder(call.id, message, triggerAt)
         } catch (e: SecurityException) {
             ToolResult(
@@ -105,36 +115,54 @@ class AlarmTool(
     }
 
     private fun trySetTimer(message: String, lengthSec: Int): Boolean {
-        val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val base = Intent(AlarmClock.ACTION_SET_TIMER).apply {
             putExtra(AlarmClock.EXTRA_LENGTH, lengthSec)
             putExtra(AlarmClock.EXTRA_MESSAGE, message)
             putExtra(AlarmClock.EXTRA_SKIP_UI, false)
         }
-        return launchIfResolvable(intent) || launchIfResolvable(
-            Intent(intent).apply { putExtra(AlarmClock.EXTRA_SKIP_UI, true) },
-        )
+        return launchClockIntent(base)
     }
 
-    private fun trySetAlarm(message: String, hour: Int, minute: Int, skipUi: Boolean): Boolean {
-        val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    private fun trySetAlarm(message: String, hour: Int, minute: Int): Boolean {
+        val base = Intent(AlarmClock.ACTION_SET_ALARM).apply {
             putExtra(AlarmClock.EXTRA_HOUR, hour)
             putExtra(AlarmClock.EXTRA_MINUTES, minute)
             putExtra(AlarmClock.EXTRA_MESSAGE, message)
-            putExtra(AlarmClock.EXTRA_SKIP_UI, skipUi)
+            putExtra(AlarmClock.EXTRA_SKIP_UI, false)
             putExtra(AlarmClock.EXTRA_VIBRATE, true)
         }
-        return launchIfResolvable(intent)
+        return launchClockIntent(base)
     }
 
-    private fun launchIfResolvable(intent: Intent): Boolean {
+    /** 默认解析 + 常见时钟包名点名，提高国产机命中率。 */
+    private fun launchClockIntent(template: Intent): Boolean {
+        val variants = buildList {
+            add(Intent(template).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            for (pkg in CLOCK_PACKAGES) {
+                add(
+                    Intent(template).apply {
+                        setPackage(pkg)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    },
+                )
+            }
+        }
+        for (intent in variants) {
+            if (!canHandle(intent)) continue
+            val ok = runCatching {
+                context.startActivity(intent)
+                true
+            }.getOrDefault(false)
+            if (ok) return true
+        }
+        return false
+    }
+
+    private fun canHandle(intent: Intent): Boolean {
         val pm = context.packageManager
-        if (intent.resolveActivity(pm) == null) return false
-        return runCatching {
-            context.startActivity(intent)
-            true
-        }.getOrDefault(false)
+        if (intent.resolveActivity(pm) != null) return true
+        val flags = PackageManager.MATCH_DEFAULT_ONLY
+        return pm.queryIntentActivities(intent, flags).isNotEmpty()
     }
 
     private fun isNextOccurrenceOfClock(triggerAt: Long, hour: Int, minute: Int): Boolean {
@@ -147,7 +175,7 @@ class AlarmTool(
                 add(Calendar.DAY_OF_YEAR, 1)
             }
         }
-        return kotlin.math.abs(next.timeInMillis - triggerAt) < 60_000L
+        return kotlin.math.abs(next.timeInMillis - triggerAt) < 90_000L
     }
 
     private fun scheduleLocalReminder(
@@ -165,7 +193,7 @@ class AlarmTool(
                     toolCallId = toolCallId,
                     name = name,
                     success = false,
-                    message = "需要通知权限才能用本机提醒，请在系统设置中开启 HxSync 通知",
+                    message = "系统时钟不可用，且需要通知权限才能用 HxSync 提醒。请开启通知，或安装/启用系统时钟后再试",
                 )
             }
         } else if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
@@ -173,7 +201,7 @@ class AlarmTool(
                 toolCallId = toolCallId,
                 name = name,
                 success = false,
-                message = "通知已关闭，请在系统设置中开启 HxSync 通知",
+                message = "系统时钟不可用，且通知已关闭。请开启 HxSync 通知，或启用系统时钟后再试",
             )
         }
 
@@ -191,7 +219,7 @@ class AlarmTool(
                 toolCallId = toolCallId,
                 name = name,
                 success = false,
-                message = "需要「精确闹钟」权限，请在刚打开的设置页允许后再试一次",
+                message = "需要「精确闹钟」权限才能用 HxSync 通知提醒；系统时钟也未能打开。请在设置里允许后再试",
             )
         }
 
@@ -209,13 +237,15 @@ class AlarmTool(
             if (Build.VERSION.SDK_INT >= 23) {
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending)
             } else {
+                @Suppress("DEPRECATION")
                 alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pending)
             }
             ToolResult(
                 toolCallId = toolCallId,
                 name = name,
                 success = true,
-                message = "已用本机通知设置提醒「$message」· ${ToolCallParser.formatTime(triggerAt)}",
+                message = "未能打开系统时钟，已用 HxSync 通知提醒「$message」· " +
+                    "${ToolCallParser.formatTime(triggerAt)}（不会出现在系统闹钟列表）",
             )
         } catch (e: SecurityException) {
             ToolResult(
@@ -235,7 +265,7 @@ class AlarmTool(
             "提醒",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "HxSync 本机提醒"
+            description = "HxSync 本机提醒（系统时钟不可用时的回退）"
             enableVibration(true)
         }
         manager.createNotificationChannel(channel)
@@ -243,5 +273,21 @@ class AlarmTool(
 
     companion object {
         const val NAME = "alarm.create"
+
+        /** 常见系统/厂商时钟包，用于 SET_ALARM / SET_TIMER 点名唤起。 */
+        private val CLOCK_PACKAGES = listOf(
+            "com.google.android.deskclock",
+            "com.android.deskclock",
+            "com.sec.android.app.clockpackage",
+            "com.huawei.deskclock",
+            "com.hihonor.deskclock",
+            "com.miui.deskclock",
+            "com.android.alarmclock",
+            "com.coloros.alarmclock",
+            "com.oneplus.deskclock",
+            "com.oplus.alarmclock",
+            "com.vivo.deskclock",
+            "com.bbk.timer",
+        )
     }
 }

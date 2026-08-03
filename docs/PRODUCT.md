@@ -112,7 +112,7 @@ HxSync 反向设计：**简单配置 + 界面归属用户 + 四档能力对等�
 
 **v0.3.0 方向（端侧真 Agent）**
 
-- ④：云脑 API 驱动的本机 Agent Loop（已起步）；`LoopStep` 中间态 + `ToolRisk` 分级确认 + 超步数一键切 ③；见 [ROADMAP.md](ROADMAP.md)
+- ④：云脑 API 驱动的本机 Agent Loop；`LoopStep` + `ToolRisk`（含剪贴板静默读）+ 超步数一键切 ③；见 [ROADMAP.md](ROADMAP.md) / [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)
 - ③：Hermes 仍负责重规划；远期手机作 WS「手脚」回传 observation
 - **禁止**用 ① 本地小模型当 Loop Planner
 

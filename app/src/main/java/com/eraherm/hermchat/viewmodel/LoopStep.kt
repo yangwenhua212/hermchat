@@ -40,6 +40,8 @@ sealed class LoopStep {
             "url.open" -> "打开链接"
             "web.search" -> "搜索"
             "share.text" -> "分享"
+            "clipboard.read" -> "读剪贴板"
+            "clipboard.write" -> "写剪贴板"
             else -> name
         }
     }

@@ -13,6 +13,8 @@ class ToolRegistry(
         OpenUrlTool(context.applicationContext),
         WebSearchTool(context.applicationContext),
         ShareTextTool(context.applicationContext),
+        ClipboardReadTool(context.applicationContext),
+        ClipboardWriteTool(context.applicationContext),
     ).associateBy { it.name }
 
     fun get(name: String): PhoneTool? = tools[name]

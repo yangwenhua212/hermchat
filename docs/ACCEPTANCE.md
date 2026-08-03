@@ -47,6 +47,7 @@
 | 网关气泡先弱文案再叠一段 API | 自动 escalate 时本地已 emit | ≥本次：自动模式先缓冲再决定 |
 | HTTP 断线后回复重复一截 | 吐字后仍重试整段流 | ≥本次：已吐字不重试 |
 | 确认闹钟显示成功但不响 | 无通知/精确闹钟权限却假成功 | ≥本次：缺权限明确失败并引导设置 |
+| 通知栏有 HxSync 提醒但系统闹钟没有 | 系统时钟唤起失败后静默回退通知 | ≥本次：优先 SET_ALARM/厂商时钟包；回退文案标明「不进系统闹钟」 |
 | 一退出 App 连接就断 | 连接绑在 Activity ViewModel，onCleared 关 socket | ≥本次：Application 会话 + 保活通知 |
 | 发送后输入框转圈不能打字 | 忙碌态锁死 Composer | ≥本次：思考在机器人气泡，输入框可继续打字 |
 | 顶栏挂一整段回复占空间 | 语音 Status 塞了回复摘要且不消失 | ≥本次：短状态 + 单行 + 自动消失 |
@@ -68,6 +69,7 @@
 | 确认后 Loop 与 UI 脱节 | 确认在独立协程、取消易留半截 | ≥本次：写工具 `suspend` 等待确认；取消 resume 拒绝并清 loop |
 | 远端 payload 未确认就执行 | needConfirm 展示前已被置 true | ≥本次：解析默认未授权；仅确认后 / READ_ONLY 可执行 |
 | ④ 超步数只能干瞪眼 | 仅错误文案 | ≥本次：一键切已存 ③；无则去添加 |
+| 读剪贴板也要确认卡 | 无 READ_ONLY 工具 | ≥本次：`clipboard.read` 静默；`clipboard.write` 仍确认 |
 | 顶栏 Unable to resolve host… | 异常原文直接展示 | ≥本次：UserFacingError →「找不到服务器…」 |
 | 历史混在一起 | 列表未按 Agent 过滤 | ≥本次：只显示当前 Agent 会话 |
 
