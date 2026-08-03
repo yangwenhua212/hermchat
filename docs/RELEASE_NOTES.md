@@ -8,6 +8,7 @@
 - **分级确认**：`ToolRisk`；写工具 `suspend` 等确认卡；取消干净结束 Loop；解析默认未授权
 - **超步数一键切 ③**：满 8 步顶栏「切换到 xxx」或「去添加」
 - **剪贴板**：`clipboard.read`（READ_ONLY 静默）/ `clipboard.write`（须确认）
+- **默认本地模型免令牌**：目录默认改为 Qwen2.5 0.5B / TinyLlama；Gemma 仍可选但需 HF 令牌
 
 ---
 

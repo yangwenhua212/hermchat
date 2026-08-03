@@ -325,18 +325,23 @@ fun ChatScreen(
                 if (streaming) app.replySpeaker.stop()
             }
         }
-        // 回复完成后自动朗读
+        // 仅在「本轮生成刚结束」时自动朗读；切回聊天页不重读旧消息
         if (chatPrefs.autoSpeakReplies) {
             launch {
+                var wasStreaming = uiState.isStreaming
                 snapshotFlow {
-                    Triple(uiState.isStreaming, uiState.messages.lastOrNull()?.id, uiState.messages.lastOrNull())
-                }.distinctUntilChanged().collect { (streaming, _, last) ->
-                    if (streaming || last == null) return@collect
+                    uiState.isStreaming to uiState.messages.lastOrNull()
+                }.distinctUntilChanged().collect { (streaming, last) ->
+                    val justFinished = wasStreaming && !streaming
+                    wasStreaming = streaming
+                    if (!justFinished || last == null) return@collect
                     if (last.role != MessageRole.ASSISTANT) return@collect
                     if (last.content.isBlank() ||
                         last.id.startsWith("welcome-") ||
                         last.id == lastAutoSpokenId
-                    ) return@collect
+                    ) {
+                        return@collect
+                    }
                     lastAutoSpokenId = last.id
                     app.replySpeaker.speak(last.content, last.id)
                 }

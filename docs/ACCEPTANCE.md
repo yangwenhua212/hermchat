@@ -57,7 +57,8 @@
 | 主题只改气泡不改背景 | Atmosphere 未接 theme | ≥本次：主题渐变 + 可图片背景 |
 | 系统返回直接回桌面 | 未接 BackHandler，Activity 直接 finish | ≥本次：与页内「返回」同路径 |
 | 点喇叭没声音 | 中文包/焦点竞态/ASSISTANT 硬拦 | ≥本次：MEDIA 焦点、按 utterance 释放；可云端 speech |
-| 本地模型下载 HTTP 401 | Gemma 门控、未填 HF 令牌或未同意许可 | ≥本次：明确提示填令牌并接受许可 |
+| 本地模型下载 HTTP 401 | Gemma 门控、未填 HF 令牌或未同意许可 | ≥本次：默认改 Qwen/TinyLlama 免令牌；Gemma 仍提示填令牌 |
+
 | 历史会话只能堆不能删 | 列表无删除入口 | ≥本次：历史项旁删除 |
 | 历史一股脑全 Agent | 列表 observeAll | ≥本次：按当前 Agent 过滤；旧无归属会话首次绑定时认领 |
 | 顶栏英文 Unable to resolve host | 直接展示异常 message | ≥本次：UserFacingError 中文短句 |

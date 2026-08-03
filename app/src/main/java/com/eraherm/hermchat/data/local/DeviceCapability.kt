@@ -5,7 +5,7 @@ import android.content.Context
 
 /** Runtime checks before loading on-device LLM weights. */
 object DeviceCapability {
-    /** Floor for Gemma 3 270M-class INT8 on-device inference. */
+    /** Floor for ~0.5B-class INT8 on-device inference. */
     const val MIN_TOTAL_RAM_MB = 3000L
     const val MIN_AVAIL_RAM_MB = 400L
 

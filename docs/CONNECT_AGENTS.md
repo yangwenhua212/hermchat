@@ -11,7 +11,7 @@ HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent、�
 | 远程 Agent（电脑/云） | **WebSocket** | `ws://主机:端口/路径` |
 | **Hermes（推荐少填）** | **Hermes** | **主机**（IP/域名）+ API Key + 模型名 |
 | 直连 API | **HTTP 兼容** | 完整 Base URL + API Key（可选）+ 模型名 |
-| 本地运行时 | **本地** | 下载令牌 → 下载模型 → 测试 |
+| 本地运行时 | **本地** | 选免令牌模型下载 → 测试（Gemma 才需 HF 令牌） |
 | 演示回声 | WebSocket | `python scripts/demo_bridge.py` 打印的地址 |
 
 真机用电脑局域网 IP，**不要用** `10.0.2.2`（模拟器专用）。

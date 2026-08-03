@@ -85,7 +85,7 @@ fun LibraryScreen(
     var progress by remember { mutableStateOf<TransferProgress?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var hfToken by remember { mutableStateOf(app.localModelStore.hfToken()) }
-    var searchQuery by remember { mutableStateOf("gemma") }
+    var searchQuery by remember { mutableStateOf("qwen") }
     var searchResults by remember { mutableStateOf<List<LocalModelStore.ModelEntry>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     var downloadJob by remember { mutableStateOf<Job?>(null) }
@@ -239,7 +239,7 @@ fun LibraryScreen(
 
                         LibraryFolder.Models -> {
                             Text(
-                                text = "下载后的权重在此管理；本地 / 端侧网关 Agent 可选用已装模型。",
+                                text = "默认 Qwen / TinyLlama 可直接下载；Gemma 需上方令牌并在网页接受许可。",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = SoftGray,
                             )
@@ -251,7 +251,7 @@ fun LibraryScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
-                                label = { Text("Hugging Face 令牌") },
+                                label = { Text("Hugging Face 令牌（仅门控模型）") },
                                 visualTransformation = PasswordVisualTransformation(),
                             )
                             statuses.forEach { status ->
@@ -297,7 +297,7 @@ fun LibraryScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
-                                label = { Text("Hugging Face 令牌") },
+                                label = { Text("Hugging Face 令牌（搜索门控模型时）") },
                                 visualTransformation = PasswordVisualTransformation(),
                             )
                             TextButton(

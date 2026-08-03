@@ -16,7 +16,7 @@ object HfModelSearch {
         hfToken: String = "",
         limit: Int = 12,
     ): Result<List<LocalModelStore.ModelEntry>> = runCatching {
-        val q = query.trim().ifBlank { "gemma" }
+        val q = query.trim().ifBlank { "qwen" }
         val encoded = URLEncoder.encode(q, StandardCharsets.UTF_8.name())
         val listUrl =
             "https://huggingface.co/api/models?search=$encoded&author=litert-community&limit=$limit&sort=downloads&direction=-1"

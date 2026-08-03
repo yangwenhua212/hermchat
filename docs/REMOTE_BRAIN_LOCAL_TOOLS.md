@@ -5,7 +5,7 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 ```
 手机（HxSync · AgentKind.GATEWAY）
 ├── HybridGatewayClient
-│   ├── 本地：LocalRuntimeClient（默认 Gemma 270M；AgentProfile.localModelId）
+│   ├── 本地：LocalRuntimeClient（默认 Qwen2.5 0.5B；AgentProfile.localModelId）
 │   └── API：OpenAiCompatClient（DeepSeek 等）+ 短历史
 ├── GatewayRouter：自动判复杂度，或手选优先本地 / 云端
 ├── Agent loop（API 路径）：tool_call → 确认卡 → 执行 → 回灌 → 再推理（最多 8 步）

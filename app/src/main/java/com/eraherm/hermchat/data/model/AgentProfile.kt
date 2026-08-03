@@ -77,7 +77,7 @@ data class AgentProfile(
     /** LOCAL：端侧权重 id；GATEWAY/HTTP：云端 API 模型名。 */
     val model: String = "default",
     /**
-     * GATEWAY 本地兜底权重 id；空则用默认 Gemma 270M。
+     * GATEWAY 本地兜底权重 id；空则用默认 Qwen2.5 0.5B（免令牌目录）。
      * LOCAL 忽略此字段（用 [model]）。
      */
     val localModelId: String = "",

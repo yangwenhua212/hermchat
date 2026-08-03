@@ -77,7 +77,8 @@ class LocalModelStore(
                 partial = !ready && partialBytes > 0L,
             )
         }.sortedWith(
-            compareByDescending<ModelStatus> { it.installed }
+            compareBy<ModelStatus> { it.entry.requiresHfToken }
+                .thenByDescending { it.installed }
                 .thenByDescending { it.partial }
                 .thenBy { it.entry.label },
         )
@@ -344,7 +345,7 @@ class LocalModelStore(
 
     private fun hfAuthError(code: Int, hfToken: String): String {
         return if (hfToken.isBlank()) {
-            "需要 Hugging Face 令牌：上方填写后重试，并在网页接受该模型许可"
+            "该模型需 Hugging Face 令牌：上方填写后重试，并在网页接受许可；或改下「免令牌」目录中的 Qwen / TinyLlama"
         } else {
             "令牌无效或未接受模型许可（HTTP $code）"
         }
@@ -358,6 +359,8 @@ class LocalModelStore(
         val minBytes: Long,
         val approxBytes: Long,
         val source: String = "builtin",
+        /** Gemma 等门控权重为 true；默认 Qwen/TinyLlama 为 false，可直下。 */
+        val requiresHfToken: Boolean = false,
     )
 
     data class ModelStatus(
@@ -368,14 +371,24 @@ class LocalModelStore(
     )
 
     companion object {
-        const val DEFAULT_MODEL_ID = "gemma3-270m-it-q8"
+        /** 默认：公开可下的 Qwen2.5 0.5B（无需 HF 令牌）。 */
+        const val DEFAULT_MODEL_ID = "qwen25-05b-it-q8"
+        const val MODEL_TINYLLAMA_ID = "tinyllama-11b-chat-q8"
+        const val MODEL_GEMMA_270M_ID = "gemma3-270m-it-q8"
         const val MODEL_1B_ID = "gemma3-1b-it-int4"
+        /** @deprecated 旧默认 id，仍保留在目录供已下载用户 */
+        @Deprecated("Use DEFAULT_MODEL_ID", ReplaceWith("DEFAULT_MODEL_ID"))
+        const val LEGACY_DEFAULT_MODEL_ID = MODEL_GEMMA_270M_ID
+
         const val PAUSED_MESSAGE = "已暂停，可继续下载"
 
         private const val PREFS = "hermchat_models"
         private const val KEY_CUSTOM = "custom_catalog_json"
         private const val KEY_HF_TOKEN = "hf_token"
-        private const val DEFAULT_FILE = "gemma3-270m-it-q8.task"
+        private const val DEFAULT_FILE =
+            "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task"
+        private const val MIN_BYTES_QWEN_05 = 400L * 1024L * 1024L
+        private const val MIN_BYTES_TINY = 800L * 1024L * 1024L
         private const val MIN_BYTES_LIGHT = 100L * 1024L * 1024L
         private const val MIN_BYTES_1B = 50L * 1024L * 1024L
         private const val BUFFER_BYTES = 64 * 1024
@@ -383,24 +396,48 @@ class LocalModelStore(
 
         fun isKnownModelId(id: String): Boolean = BUILTIN.containsKey(id)
 
-        val BUILTIN: Map<String, ModelEntry> = mapOf(
+        val BUILTIN: Map<String, ModelEntry> = linkedMapOf(
             DEFAULT_MODEL_ID to ModelEntry(
                 id = DEFAULT_MODEL_ID,
-                label = "Gemma 3 270M",
+                label = "Qwen2.5 0.5B（免令牌）",
                 fileName = DEFAULT_FILE,
+                url = "https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/" +
+                    "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
+                minBytes = MIN_BYTES_QWEN_05,
+                approxBytes = 547L * 1024L * 1024L,
+                source = "builtin",
+                requiresHfToken = false,
+            ),
+            MODEL_TINYLLAMA_ID to ModelEntry(
+                id = MODEL_TINYLLAMA_ID,
+                label = "TinyLlama 1.1B（免令牌）",
+                fileName = "TinyLlama-1.1B-Chat-v1.0_multi-prefill-seq_q8_ekv1280.task",
+                url = "https://huggingface.co/litert-community/TinyLlama-1.1B-Chat-v1.0/resolve/main/" +
+                    "TinyLlama-1.1B-Chat-v1.0_multi-prefill-seq_q8_ekv1280.task",
+                minBytes = MIN_BYTES_TINY,
+                approxBytes = 1148L * 1024L * 1024L,
+                source = "builtin",
+                requiresHfToken = false,
+            ),
+            MODEL_GEMMA_270M_ID to ModelEntry(
+                id = MODEL_GEMMA_270M_ID,
+                label = "Gemma 3 270M（需令牌）",
+                fileName = "gemma3-270m-it-q8.task",
                 url = "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.task",
                 minBytes = MIN_BYTES_LIGHT,
                 approxBytes = 318L * 1024L * 1024L,
                 source = "builtin",
+                requiresHfToken = true,
             ),
             MODEL_1B_ID to ModelEntry(
                 id = MODEL_1B_ID,
-                label = "Gemma 3 1B",
+                label = "Gemma 3 1B（需令牌）",
                 fileName = "gemma3-1b-it-int4.task",
                 url = "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task",
                 minBytes = MIN_BYTES_1B,
                 approxBytes = 550L * 1024L * 1024L,
                 source = "builtin",
+                requiresHfToken = true,
             ),
         )
 
