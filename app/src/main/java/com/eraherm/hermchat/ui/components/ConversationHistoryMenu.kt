@@ -2,6 +2,7 @@ package com.eraherm.hermchat.ui.components
 
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -26,6 +27,7 @@ fun ConversationHistoryMenu(
     activeId: String?,
     enabled: Boolean,
     onOpen: (String) -> Unit,
+    onDelete: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     IconButton(
@@ -41,7 +43,7 @@ fun ConversationHistoryMenu(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = { expanded = false },
-        modifier = Modifier.widthIn(min = 200.dp, max = 280.dp),
+        modifier = Modifier.widthIn(min = 220.dp, max = 300.dp),
     ) {
         if (conversations.isEmpty()) {
             DropdownMenuItem(
@@ -75,6 +77,17 @@ fun ConversationHistoryMenu(
                     onClick = {
                         expanded = false
                         if (!selected) onOpen(conversation.id)
+                    },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { onDelete(conversation.id) },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DeleteOutline,
+                                contentDescription = "删除",
+                                tint = SoftGray,
+                            )
+                        }
                     },
                 )
             }

@@ -15,6 +15,7 @@ object ChatAtmosphere {
         ChatThemeStyle.CLOUD -> Color(0xFF6B7C85)
         ChatThemeStyle.APRICOT -> Color(0xFFC47B4A)
         ChatThemeStyle.INK -> Ink
+        ChatThemeStyle.NIGHT -> Moss
     }
 
     fun gradientBrush(style: ChatThemeStyle): Brush = when (style) {
@@ -41,10 +42,18 @@ object ChatAtmosphere {
         ChatThemeStyle.INK -> Brush.verticalGradient(
             colors = listOf(ForestDeep, Color(0xFF102E28), Color(0xFF0F2823)),
         )
+        ChatThemeStyle.NIGHT -> Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFF0A1210),
+                Color(0xFF0E1C18),
+                Color(0xFF12241F),
+            ),
+        )
     }
 
     fun glowColor(style: ChatThemeStyle): Color = when (style) {
         ChatThemeStyle.INK -> Moss.copy(alpha = 0.16f)
+        ChatThemeStyle.NIGHT -> Moss.copy(alpha = 0.12f)
         ChatThemeStyle.SKY -> Color(0xFF3A7CA5).copy(alpha = 0.10f)
         ChatThemeStyle.AQUA -> Color(0xFF2A9D8F).copy(alpha = 0.10f)
         ChatThemeStyle.CLOUD -> Color(0xFF6B7C85).copy(alpha = 0.08f)
@@ -53,5 +62,6 @@ object ChatAtmosphere {
         ChatThemeStyle.FOREST -> Forest.copy(alpha = 0.08f)
     }
 
-    fun isDark(style: ChatThemeStyle): Boolean = style == ChatThemeStyle.INK
+    fun isDark(style: ChatThemeStyle): Boolean =
+        style == ChatThemeStyle.INK || style == ChatThemeStyle.NIGHT
 }

@@ -166,7 +166,11 @@ class WakeWordService : Service() {
                 updateNotification("正在听「$phrase」")
                 app.voiceEventBus.emit(VoiceEvent.Status("正在听「$phrase」"))
             }.onFailure { err ->
-                app.voiceEventBus.emit(VoiceEvent.Error(err.message ?: "离线模型下载失败"))
+                app.voiceEventBus.emit(
+                    VoiceEvent.Error(
+                        com.eraherm.hermchat.util.UserFacingError.of(err, "离线模型下载失败"),
+                    ),
+                )
                 app.wakeSettingsStore.update { it.copy(enabled = false) }
                 stopSelfSafe()
             }

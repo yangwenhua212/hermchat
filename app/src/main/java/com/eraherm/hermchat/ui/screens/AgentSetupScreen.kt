@@ -3,6 +3,7 @@ package com.eraherm.hermchat.ui.screens
 import android.Manifest
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -85,6 +86,13 @@ fun AgentSetupScreen(
     val modelCatalog = remember(customCatalog) {
         app.localModelStore.allCatalog().values.toList()
             .sortedBy { it.label }
+    }
+    BackHandler(enabled = uiState.step > 1 || onCancel != null) {
+        if (uiState.step > 1) {
+            viewModel.previousStep()
+        } else {
+            onCancel?.invoke()
+        }
     }
     var showPasteDialog by remember { mutableStateOf(false) }
     var pasteDraft by remember { mutableStateOf("") }

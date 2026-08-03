@@ -1,5 +1,6 @@
 package com.eraherm.hermchat.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -104,6 +105,10 @@ fun LibraryScreen(
         statusMessage = LocalModelStore.PAUSED_MESSAGE
     }
 
+    BackHandler {
+        if (folder == LibraryFolder.Root) onBack() else folder = LibraryFolder.Root
+    }
+
     fun startDownload(modelId: String, label: String) {
         downloadJob?.cancel()
         downloadJob = scope.launch {
@@ -135,7 +140,7 @@ fun LibraryScreen(
                     if (err.message == LocalModelStore.PAUSED_MESSAGE) {
                         LocalModelStore.PAUSED_MESSAGE
                     } else {
-                        err.message ?: "下载失败"
+                        com.eraherm.hermchat.util.UserFacingError.of(err, "下载失败")
                     }
                 },
             )
@@ -246,7 +251,7 @@ fun LibraryScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
-                                label = { Text("Hugging Face 令牌（可选）") },
+                                label = { Text("Hugging Face 令牌") },
                                 visualTransformation = PasswordVisualTransformation(),
                             )
                             statuses.forEach { status ->
@@ -292,7 +297,7 @@ fun LibraryScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
-                                label = { Text("Hugging Face 令牌（可选）") },
+                                label = { Text("Hugging Face 令牌") },
                                 visualTransformation = PasswordVisualTransformation(),
                             )
                             TextButton(
@@ -308,7 +313,7 @@ fun LibraryScreen(
                                             searchResults = it
                                             if (it.isEmpty()) statusMessage = "没有找到 .task 模型"
                                         }.onFailure {
-                                            statusMessage = it.message ?: "搜索失败"
+                                            statusMessage = com.eraherm.hermchat.util.UserFacingError.of(it, "搜索失败")
                                         }
                                     }
                                 },

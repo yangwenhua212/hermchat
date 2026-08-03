@@ -20,14 +20,31 @@ class ConversationRepository(
     fun observeConversations(): Flow<List<Conversation>> =
         dao.observeAll().map { list -> list.map { it.toModel() } }
 
+    fun observeForAgent(agentId: String): Flow<List<Conversation>> =
+        dao.observeForAgent(agentId).map { list -> list.map { it.toModel() } }
+
     fun requireActiveId(): String =
         _activeId.value ?: error("没有当前会话")
 
     suspend fun bootstrap(agentId: String?): String {
         val current = _activeId.value
-        if (current != null && dao.get(current) != null) return current
+        if (current != null) {
+            val row = dao.get(current)
+            if (row != null &&
+                (agentId.isNullOrBlank() || row.agentId == null || row.agentId == agentId)
+            ) {
+                return current
+            }
+        }
+        if (!agentId.isNullOrBlank()) {
+            val forAgent = dao.latestForAgent(agentId)
+            if (forAgent != null) {
+                setActive(forAgent.id)
+                return forAgent.id
+            }
+        }
         val latest = dao.latest()
-        if (latest != null) {
+        if (latest != null && (agentId.isNullOrBlank() || latest.agentId == null || latest.agentId == agentId)) {
             setActive(latest.id)
             return latest.id
         }
@@ -68,6 +85,11 @@ class ConversationRepository(
         }
     }
 
+    /** 把尚无归属的旧会话划给该 Agent（仅一次迁移用）。 */
+    suspend fun claimOrphanConversations(agentId: String) {
+        dao.claimOrphans(agentId)
+    }
+
     suspend fun setActive(id: String) {
         if (dao.get(id) == null) return
         prefs.edit().putString(KEY_ACTIVE, id).apply()
@@ -87,10 +109,12 @@ class ConversationRepository(
         dao.touch(id, now)
     }
 
-    suspend fun delete(id: String) {
+    suspend fun delete(id: String, preferAgentId: String? = null) {
+        val ownedAgent = dao.get(id)?.agentId
         dao.delete(id)
         if (_activeId.value == id) {
-            val next = dao.latest()
+            val agentKey = preferAgentId ?: ownedAgent
+            val next = agentKey?.let { dao.latestForAgent(it) } ?: dao.latest()
             if (next != null) {
                 setActive(next.id)
             } else {

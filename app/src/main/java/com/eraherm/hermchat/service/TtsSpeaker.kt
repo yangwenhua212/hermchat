@@ -1,6 +1,7 @@
 package com.eraherm.hermchat.service
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -8,15 +9,17 @@ import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
- * 用系统 TTS 朗读助手回复。
+ * 系统 TTS 朗读。焦点失败仍尝试播放；按 utteranceId 释放焦点，避免 stop 竞态掐声。
  */
 class TtsSpeaker(
     context: Context,
@@ -24,12 +27,19 @@ class TtsSpeaker(
     private val appContext = context.applicationContext
     private var tts: TextToSpeech? = null
     private val ready = AtomicBoolean(false)
+    private val initFinished = AtomicBoolean(false)
     private val pending = MutableStateFlow<PendingSpeak?>(null)
     private var lastError: String? = null
     private var focusRequest: AudioFocusRequest? = null
+    private val activeUtteranceId = AtomicReference<String?>(null)
 
     private val audioManager: AudioManager =
         appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    private val speechAttrs: AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
 
     private val _speaking = MutableStateFlow(false)
     val speaking: StateFlow<Boolean> = _speaking.asStateFlow()
@@ -45,39 +55,41 @@ class TtsSpeaker(
     override fun onInit(status: Int) {
         val engine = tts ?: return
         if (status != TextToSpeech.SUCCESS) {
-            lastError = "TTS 引擎初始化失败 (code=$status)"
+            lastError = "TTS 引擎初始化失败"
             ready.set(false)
+            initFinished.set(true)
             return
         }
 
-        // 按优先级尝试中文，回退到系统默认
-        val lang = listOf(
-            Locale.SIMPLIFIED_CHINESE,
-            Locale.CHINA,
-            Locale.CHINESE,
-            Locale.TAIWAN,
-            Locale.getDefault(),
-        ).firstOrNull {
-            engine.isLanguageAvailable(it) >= TextToSpeech.LANG_AVAILABLE
-        } ?: Locale.getDefault()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                engine.setAudioAttributes(speechAttrs)
+            }
+        } catch (_: Exception) {
+            // 旧机型忽略
+        }
 
-        val availability = engine.isLanguageAvailable(lang)
+        val lang = pickChineseLocale(engine)
         val setResult = engine.setLanguage(lang)
-
         if (setResult == TextToSpeech.LANG_MISSING_DATA ||
-            setResult == TextToSpeech.LANG_NOT_SUPPORTED ||
-            availability == TextToSpeech.LANG_MISSING_DATA
+            setResult == TextToSpeech.LANG_NOT_SUPPORTED
         ) {
-            lastError = "未安装中文语音包，请在系统设置 → 文字转语音中下载"
+            lastError = "未安装中文语音包，请在系统「文字转语音」中下载"
             ready.set(false)
+            initFinished.set(true)
             return
         }
 
-        // 确保语音包已安装（LANG_AVAILABLE 不等于数据已下载）
+        pickChineseVoice(engine)?.let { voice ->
+            runCatching { engine.voice = voice }
+        }
         val voice = engine.voice
-        if (voice != null && voice.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)) {
-            lastError = "语音包未下载，请在系统设置中安装"
+        if (voice != null &&
+            voice.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)
+        ) {
+            lastError = "中文语音包未下载，请在系统设置中安装"
             ready.set(false)
+            initFinished.set(true)
             return
         }
 
@@ -85,39 +97,37 @@ class TtsSpeaker(
         engine.setPitch(1.0f)
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
-                _speaking.value = true
+                if (utteranceId != null && utteranceId == activeUtteranceId.get()) {
+                    _speaking.value = true
+                }
             }
 
             override fun onDone(utteranceId: String?) {
-                _speaking.value = false
-                _speakingMessageId.value = null
-                abandonAudioFocus()
+                finishUtterance(utteranceId, error = null)
             }
 
+            @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
-                lastError = "TTS 播放出错"
-                _speaking.value = false
-                _speakingMessageId.value = null
-                abandonAudioFocus()
+                finishUtterance(utteranceId, error = "TTS 播放出错")
             }
 
             override fun onError(utteranceId: String?, errorCode: Int) {
-                lastError = "TTS 播放出错 (code=$errorCode)"
-                _speaking.value = false
-                _speakingMessageId.value = null
-                abandonAudioFocus()
+                finishUtterance(utteranceId, error = "TTS 播放出错 ($errorCode)")
             }
 
             override fun onStop(utteranceId: String?, interrupted: Boolean) {
-                _speaking.value = false
-                _speakingMessageId.value = null
-                abandonAudioFocus()
+                // 仅清理「当前」这句，避免 stop() 后新 speak 的焦点被误释放
+                if (utteranceId != null && utteranceId == activeUtteranceId.get()) {
+                    finishUtterance(utteranceId, error = null)
+                }
             }
         })
         ready.set(true)
+        initFinished.set(true)
         lastError = null
-        pending.value?.let { speak(it.text, it.messageId) }
+        val queued = pending.value
         pending.value = null
+        queued?.let { speak(it.text, it.messageId) }
     }
 
     fun speak(text: String, messageId: String? = null) {
@@ -128,25 +138,31 @@ class TtsSpeaker(
             return
         }
         if (!ready.get()) {
-            pending.value = PendingSpeak(cleaned, messageId)
+            if (initFinished.get()) {
+                lastError = lastError ?: "系统朗读不可用，请检查中文语音包"
+            } else {
+                pending.value = PendingSpeak(cleaned, messageId)
+            }
             return
         }
         val engine = tts ?: return
-        stop()
-        if (!requestAudioFocus()) {
-            lastError = "无法获取音频焦点"
-            return
-        }
-        _speakingMessageId.value = messageId
+        // 只停引擎，不清 pending / 不抢跑 abandon（由旧 utterance 回调忽略）
+        runCatching { engine.stop() }
+        requestAudioFocus() // 失败也继续播，避免国产机 ASSISTANT/焦点硬拦
         val id = messageId ?: UUID.randomUUID().toString()
+        activeUtteranceId.set(id)
+        _speakingMessageId.value = messageId
+        lastError = null
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, id)
+            putString(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC.toString())
         }
         val result = engine.speak(cleaned, TextToSpeech.QUEUE_FLUSH, params, id)
         if (result != TextToSpeech.SUCCESS) {
-            lastError = "TTS speak 失败 (code=$result)"
+            lastError = "TTS speak 失败 ($result)"
             _speaking.value = false
             _speakingMessageId.value = null
+            activeUtteranceId.compareAndSet(id, null)
             abandonAudioFocus()
         }
     }
@@ -160,10 +176,12 @@ class TtsSpeaker(
     }
 
     fun stop() {
-        tts?.stop()
+        activeUtteranceId.set(null)
+        runCatching { tts?.stop() }
         _speaking.value = false
         _speakingMessageId.value = null
         pending.value = null
+        // 主动 stop 时立刻放焦点；过期 onStop 会被 utterance 校验忽略
         abandonAudioFocus()
     }
 
@@ -172,21 +190,68 @@ class TtsSpeaker(
         tts?.shutdown()
         tts = null
         ready.set(false)
+        initFinished.set(false)
     }
 
-    /** 供外部查询最近一次失败原因。 */
     fun lastErrorMessage(): String? = lastError
+
+    fun isReady(): Boolean = ready.get()
+
+    fun openSystemTtsSettings(): Boolean {
+        return runCatching {
+            val intent = Intent("com.android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            appContext.startActivity(intent)
+            true
+        }.recoverCatching {
+            val intent = Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            appContext.startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun finishUtterance(utteranceId: String?, error: String?) {
+        if (utteranceId == null) return
+        if (!activeUtteranceId.compareAndSet(utteranceId, null)) return
+        if (error != null) lastError = error
+        _speaking.value = false
+        _speakingMessageId.value = null
+        abandonAudioFocus()
+    }
+
+    private fun pickChineseLocale(engine: TextToSpeech): Locale {
+        return listOf(
+            Locale.SIMPLIFIED_CHINESE,
+            Locale.CHINA,
+            Locale.CHINESE,
+            Locale("zh", "CN"),
+            Locale.TAIWAN,
+            Locale.getDefault(),
+        ).firstOrNull {
+            engine.isLanguageAvailable(it) >= TextToSpeech.LANG_AVAILABLE
+        } ?: Locale.getDefault()
+    }
+
+    private fun pickChineseVoice(engine: TextToSpeech): Voice? {
+        val voices = runCatching { engine.voices }.getOrNull() ?: return null
+        return voices
+            .asSequence()
+            .filter { !it.features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) }
+            .filter { it.locale.language.equals("zh", ignoreCase = true) }
+            .sortedByDescending { it.quality }
+            .firstOrNull()
+    }
 
     private fun requestAudioFocus(): Boolean {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                abandonAudioFocus()
-                val attrs = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
+                val existing = focusRequest
+                if (existing != null) {
+                    runCatching { audioManager.abandonAudioFocusRequest(existing) }
+                    focusRequest = null
+                }
                 val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                    .setAudioAttributes(attrs)
+                    .setAudioAttributes(speechAttrs)
                     .setWillPauseWhenDucked(false)
                     .build()
                 focusRequest = request
@@ -200,7 +265,7 @@ class TtsSpeaker(
                 ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
             }
         } catch (_: Exception) {
-            true // 兼容：有些设备可能抛异常，继续尝试播放
+            true
         }
     }
 

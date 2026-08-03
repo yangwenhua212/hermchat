@@ -319,6 +319,11 @@ class LocalModelStore(
                     if (!shouldContinue()) error(PAUSED_MESSAGE)
                     return
                 }
+                401, 403 -> {
+                    activeConnection = null
+                    connection.disconnect()
+                    error(hfAuthError(code, hfToken))
+                }
                 else -> {
                     activeConnection = null
                     connection.disconnect()
@@ -335,6 +340,14 @@ class LocalModelStore(
         val total = match.groupValues[3]
         if (total == "*") return null
         return total.toLongOrNull()
+    }
+
+    private fun hfAuthError(code: Int, hfToken: String): String {
+        return if (hfToken.isBlank()) {
+            "需要 Hugging Face 令牌：上方填写后重试，并在网页接受该模型许可"
+        } else {
+            "令牌无效或未接受模型许可（HTTP $code）"
+        }
     }
 
     data class ModelEntry(

@@ -117,7 +117,7 @@ fun ChatScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val wakeSettings by app.wakeSettingsStore.settings.collectAsStateWithLifecycle()
     val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
-    val speakingMessageId by app.ttsSpeaker.speakingMessageId.collectAsStateWithLifecycle()
+    val speakingMessageId by app.replySpeaker.speakingMessageId.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf("") }
     var voiceStatus by remember { mutableStateOf<String?>(null) }
     var lastAutoSpokenId by remember { mutableStateOf<String?>(null) }
@@ -304,7 +304,7 @@ fun ChatScreen(
         // 流式开始停朗读
         launch {
             snapshotFlow { uiState.isStreaming }.collect { streaming ->
-                if (streaming) app.ttsSpeaker.stop()
+                if (streaming) app.replySpeaker.stop()
             }
         }
         // 回复完成后自动朗读
@@ -320,14 +320,17 @@ fun ChatScreen(
                         last.id == lastAutoSpokenId
                     ) return@collect
                     lastAutoSpokenId = last.id
-                    app.ttsSpeaker.speak(last.content, last.id)
+                    app.replySpeaker.speak(last.content, last.id)
+                    app.replySpeaker.lastErrorMessage()?.let { err ->
+                        voiceStatus = err
+                    }
                 }
             }
         }
     }
 
     DisposableEffect(Unit) {
-        onDispose { app.ttsSpeaker.stop() }
+        onDispose { app.replySpeaker.stop() }
     }
 
     AtmosphereBackground(
@@ -362,6 +365,7 @@ fun ChatScreen(
                     activeId = uiState.activeConversationId,
                     enabled = !busy,
                     onOpen = { viewModel.openConversation(it) },
+                    onDelete = { viewModel.deleteConversation(it) },
                 )
                 IconButton(
                     onClick = { viewModel.startNewChat() },
@@ -444,9 +448,8 @@ fun ChatScreen(
                         isSpeaking = speakingMessageId == message.id,
                         onSpeakClick = if (message.role == MessageRole.ASSISTANT) {
                             {
-                                app.ttsSpeaker.toggle(message.content, message.id)
-                                // TTS 失败时给个提示
-                                app.ttsSpeaker.lastErrorMessage()?.let { err ->
+                                app.replySpeaker.toggle(message.content, message.id)
+                                app.replySpeaker.lastErrorMessage()?.let { err ->
                                     voiceStatus = err
                                 }
                             }

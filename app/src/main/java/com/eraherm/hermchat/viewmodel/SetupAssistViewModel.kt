@@ -275,9 +275,10 @@ class SetupAssistViewModel(
                 }
             },
             onFailure = { err ->
+                val friendly = com.eraherm.hermchat.util.UserFacingError.of(err, "未知错误")
                 append(
                     fromUser = false,
-                    text = "测连失败：${err.message ?: "未知错误"}。改一下再发我，或点手动配置。",
+                    text = "测连失败：$friendly。改一下再发我，或点手动配置。",
                 )
                 _uiState.update { it.copy(busy = false) }
             },

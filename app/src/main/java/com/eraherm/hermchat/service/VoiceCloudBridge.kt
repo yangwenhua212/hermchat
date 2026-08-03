@@ -119,8 +119,9 @@ class VoiceCloudBridge(
                 notifyReply(agent.name, finalText)
             }
         } catch (e: Exception) {
-            app.voiceEventBus.emit(VoiceEvent.Error(e.message ?: "提问失败"))
-            notifyReply(agent.name, "失败：${e.message ?: "未知错误"}")
+            val friendly = com.eraherm.hermchat.util.UserFacingError.of(e, "提问失败")
+            app.voiceEventBus.emit(VoiceEvent.Error(friendly))
+            notifyReply(agent.name, "失败：$friendly")
         } finally {
             client.close()
         }

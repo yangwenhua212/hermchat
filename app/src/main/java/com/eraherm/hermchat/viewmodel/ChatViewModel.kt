@@ -25,11 +25,15 @@ import com.eraherm.hermchat.service.VoiceEvent
 import com.eraherm.hermchat.tools.LocalToolPlanner
 import com.eraherm.hermchat.tools.ToolCallParser
 import com.eraherm.hermchat.tools.ToolRegistry
+import com.eraherm.hermchat.util.UserFacingError
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -73,10 +77,20 @@ class ChatViewModel(
     private var currentAgentId: String? = null
     private val voiceSendHandler: (String) -> Unit = { text -> sendMessage(text) }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val conversationsForAgent = activeAgent.flatMapLatest { agent ->
+        val id = agent?.id
+        if (id.isNullOrBlank()) {
+            flowOf(emptyList())
+        } else {
+            conversationRepository.observeForAgent(id)
+        }
+    }
+
     val uiState: StateFlow<ChatUiState> = combine(
         combine(
             messageRepository.observeMessages(),
-            conversationRepository.observeConversations(),
+            conversationsForAgent,
             conversationRepository.activeId,
             busy,
         ) { messages, conversations, activeId, flags ->
@@ -194,9 +208,10 @@ class ChatViewModel(
                     VoiceEvent.Status(outcome.text.take(48).ifBlank { "已回复" }),
                 )
             } catch (e: Exception) {
-                busy.update { it.copy(error = e.message ?: "发送失败") }
+                val friendly = UserFacingError.of(e, "发送失败")
+                busy.update { it.copy(error = friendly) }
                 (appContext as? HermChatApp)?.voiceEventBus?.emit(
-                    VoiceEvent.Error(e.message ?: "发送失败"),
+                    VoiceEvent.Error(friendly),
                 )
                 val partial = streamingContent.value
                 if (partial.isNotBlank()) {
@@ -204,7 +219,7 @@ class ChatViewModel(
                         Message(
                             id = assistantId,
                             role = MessageRole.ASSISTANT,
-                            content = partial + "\n\n⚠️ ${e.message ?: "中断"}",
+                            content = partial + "\n\n⚠️ $friendly",
                             providerLabel = agent?.kind?.label,
                             createdAt = System.currentTimeMillis(),
                         ),
@@ -317,6 +332,25 @@ class ChatViewModel(
         }
     }
 
+    fun deleteConversation(id: String) {
+        if (busy.value.isSending || busy.value.isStreaming) return
+        viewModelScope.launch {
+            val wasActive = conversationRepository.activeId.value == id
+            messageRepository.deleteConversationMessages(id)
+            conversationRepository.delete(id, preferAgentId = activeAgent.value?.id)
+            streamingContent.value = ""
+            streamingProvider.value = null
+            pendingToolCall.value = null
+            if (conversationRepository.activeId.value == null) {
+                conversationRepository.createNew(activeAgent.value?.id)
+                sessions.client?.resetConversation()
+            } else if (wasActive) {
+                sessions.client?.resetConversation()
+            }
+            ensureWelcomeMessage()
+        }
+    }
+
     private suspend fun startNewChatInternal() {
         conversationRepository.createNew(activeAgent.value?.id)
         streamingContent.value = ""
@@ -355,6 +389,7 @@ class ChatViewModel(
             val previous = currentAgentId
             currentAgentId = agent.id
             if (previous == null) {
+                conversationRepository.claimOrphanConversations(agent.id)
                 conversationRepository.bootstrap(agent.id)
                 conversationRepository.stampActiveAgent(agent.id)
             } else {
@@ -390,7 +425,9 @@ class ChatViewModel(
             bridgeConnected.value = false
             BridgeKeepAliveService.stop(appContext)
             busy.update {
-                it.copy(error = "未能连接 ${agent.name}：${err.message ?: "未知错误"}")
+                it.copy(
+                    error = "未能连接 ${agent.name}：${UserFacingError.of(err, "请检查地址与网络")}",
+                )
             }
         }
     }
@@ -408,7 +445,9 @@ class ChatViewModel(
             bridgeConnected.value = false
             BridgeKeepAliveService.stop(appContext)
             busy.update {
-                it.copy(error = "连接已断开，请再试：${err.message ?: "未知错误"}")
+                it.copy(
+                    error = "连接已断开：${UserFacingError.of(err, "请再试一次")}",
+                )
             }
         }
     }

@@ -270,7 +270,9 @@ class HermesBridgeClient(
         rpcWaiters[requestId] = { result ->
             result.onFailure { err ->
                 streamHandlers.remove(requestId)?.invoke(
-                    BridgeStreamEvent.Error(err.message ?: "RPC 错误"),
+                    BridgeStreamEvent.Error(
+                        com.eraherm.hermchat.util.UserFacingError.of(err, "请求失败"),
+                    ),
                 )
             }
         }
@@ -400,7 +402,7 @@ class HermesBridgeClient(
     }
 
     private fun failAll(error: Throwable) {
-        val message = error.message ?: "连接断开"
+        val message = com.eraherm.hermchat.util.UserFacingError.of(error, "连接断开")
         streamHandlers.keys.toList().forEach { key ->
             streamHandlers.remove(key)?.invoke(BridgeStreamEvent.Error(message))
         }

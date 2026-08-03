@@ -2,6 +2,7 @@ package com.eraherm.hermchat.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +35,7 @@ fun AboutScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    BackHandler(onBack = onBack)
 
     fun open(url: String) {
         runCatching {

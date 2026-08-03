@@ -100,7 +100,11 @@ class SpeechWakeEngine(
         runCatching {
             recognizer?.startListening(intent)
         }.onFailure {
-            bus.emit(VoiceEvent.Error(it.message ?: "无法启动语音识别"))
+            bus.emit(
+                VoiceEvent.Error(
+                    com.eraherm.hermchat.util.UserFacingError.of(it, "无法启动语音识别"),
+                ),
+            )
             scheduleRestart(800)
         }
     }

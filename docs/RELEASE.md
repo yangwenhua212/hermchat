@@ -1,6 +1,6 @@
 # Release 构建与签名
 
-当前版本：`versionName` **0.1.16** / `versionCode` **17**。
+当前版本：`versionName` **0.1.17** / `versionCode` **18**。
 
 > **阶段**：内部自用 / 协作者预览。先打磨主线体验，不急对外分发。
 

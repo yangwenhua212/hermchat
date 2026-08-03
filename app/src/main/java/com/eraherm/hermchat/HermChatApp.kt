@@ -10,6 +10,7 @@ import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.local.WakeSettingsStore
 import com.eraherm.hermchat.data.local.WallpaperStore
 import com.eraherm.hermchat.data.network.AgentSessionHolder
+import com.eraherm.hermchat.service.ReplySpeaker
 import com.eraherm.hermchat.service.TtsSpeaker
 import com.eraherm.hermchat.service.VoiceCloudBridge
 import com.eraherm.hermchat.service.VoiceEventBus
@@ -33,6 +34,14 @@ class HermChatApp : Application() {
     val toolRegistry: ToolRegistry by lazy { ToolRegistry(this) }
     val voiceCloudBridge: VoiceCloudBridge by lazy { VoiceCloudBridge(this) }
     val ttsSpeaker: TtsSpeaker by lazy { TtsSpeaker(this) }
+    val replySpeaker: ReplySpeaker by lazy {
+        ReplySpeaker(
+            context = this,
+            local = ttsSpeaker,
+            agentStore = agentStore,
+            chatPrefsStore = chatPrefsStore,
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()

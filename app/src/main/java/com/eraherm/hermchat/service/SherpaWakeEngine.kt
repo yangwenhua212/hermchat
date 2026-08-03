@@ -140,7 +140,11 @@ class SherpaWakeEngine(
             recreateKwsStream()
             true
         } catch (t: Throwable) {
-            bus.emit(VoiceEvent.Error(t.message ?: "离线引擎启动失败"))
+            bus.emit(
+                VoiceEvent.Error(
+                    com.eraherm.hermchat.util.UserFacingError.of(t, "离线引擎启动失败"),
+                ),
+            )
             false
         }
     }
@@ -179,7 +183,11 @@ class SherpaWakeEngine(
             }
             true
         } catch (t: Throwable) {
-            bus.emit(VoiceEvent.Error(t.message ?: "指令识别模型失败"))
+            bus.emit(
+                VoiceEvent.Error(
+                    com.eraherm.hermchat.util.UserFacingError.of(t, "指令识别模型失败"),
+                ),
+            )
             false
         }
     }

@@ -14,6 +14,7 @@ import com.eraherm.hermchat.data.network.EndpointProbe
 import com.eraherm.hermchat.data.network.HermesEndpoint
 import com.eraherm.hermchat.data.network.ProbeHit
 import com.eraherm.hermchat.data.network.TransferProgress
+import com.eraherm.hermchat.util.UserFacingError
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -200,7 +201,7 @@ class SetupViewModel(
             },
             onFailure = { err ->
                 _uiState.update {
-                    it.copy(error = "导入失败：${err.message ?: "无法识别"}")
+                    it.copy(error = "导入失败：${UserFacingError.of(err, "无法识别")}")
                 }
             },
         )
@@ -289,12 +290,13 @@ class SetupViewModel(
                 _uiState.update { it.copy(modelReady = ready) }
             }
             val endpoint = runCatching { resolveEndpoint(state) }.getOrElse { err ->
+                val msg = UserFacingError.of(err, "地址无效")
                 _uiState.update {
                     it.copy(
                         testing = false,
                         testPassed = false,
-                        testMessage = err.message ?: "地址无效",
-                        error = err.message ?: "地址无效",
+                        testMessage = msg,
+                        error = msg,
                     )
                 }
                 return@launch
@@ -390,7 +392,11 @@ class SetupViewModel(
                             downloadingModel = false,
                             downloadDetail = if (paused) LocalModelStore.PAUSED_MESSAGE else null,
                             modelReady = false,
-                            error = if (paused) null else (err.message ?: "下载失败"),
+                            error = if (paused) {
+                                null
+                            } else {
+                                UserFacingError.of(err, "下载失败")
+                            },
                         )
                     },
                 )
@@ -430,7 +436,7 @@ class SetupViewModel(
                 resolveEndpoint(state)
             }
         }.getOrElse { err ->
-            _uiState.update { it.copy(error = err.message ?: "地址不能为空") }
+            _uiState.update { it.copy(error = UserFacingError.of(err, "地址不能为空")) }
             return
         }
         if (endpoint.isBlank()) {
@@ -520,31 +526,7 @@ class SetupViewModel(
                 }
             }
 
-        private fun friendlyConnectError(err: Throwable): String {
-            val msg = err.message.orEmpty()
-            return when {
-                msg.contains("服务可达") ||
-                    msg.contains("路径不存在") ||
-                    msg.contains("请求被拒绝") ||
-                    msg.contains("模型名") ||
-                    msg.startsWith("HTTP ") -> msg
-
-                err is java.net.SocketTimeoutException ||
-                    msg.contains("timeout", ignoreCase = true) ||
-                    msg.contains("timed out", ignoreCase = true) ->
-                    "连接超时，请检查地址与端口"
-
-                err is java.net.ConnectException ||
-                    msg.contains("Failed to connect", ignoreCase = true) ||
-                    msg.contains("Connection refused", ignoreCase = true) ->
-                    "无法连接，请检查地址与网络"
-
-                msg.contains("CLEARTEXT", ignoreCase = true) ->
-                    "明文 HTTP 被系统拦截"
-
-                msg.isBlank() -> "连接失败"
-                else -> msg.take(120)
-            }
-        }
+        private fun friendlyConnectError(err: Throwable): String =
+            UserFacingError.of(err, "连接失败")
     }
 }

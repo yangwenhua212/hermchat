@@ -1,5 +1,6 @@
 package com.eraherm.hermchat.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -70,6 +71,10 @@ fun SetupAssistScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    BackHandler(enabled = onCancel != null) {
+        onCancel?.invoke()
+    }
 
     LaunchedEffect(sessionKey) {
         viewModel.prepareFreshSession()

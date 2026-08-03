@@ -36,6 +36,8 @@ enum class ChatThemeStyle(val label: String) {
     CLOUD("浅灰白"),
     APRICOT("浅杏"),
     INK("墨黑"),
+    /** 整 App 深色 Material + 夜间背景，适合晚上 */
+    NIGHT("深色夜间"),
 }
 
 enum class BubbleStyle(val label: String) {
@@ -47,6 +49,13 @@ enum class BubbleStyle(val label: String) {
 enum class ChatBackgroundMode(val label: String) {
     THEME("跟随主题色"),
     IMAGE("自定义图片"),
+}
+
+/** 助手回复朗读引擎。 */
+enum class SpeakEngine(val label: String) {
+    SYSTEM("系统朗读"),
+    REMOTE("云端朗读"),
+    AUTO("自动"),
 }
 
 /** ④ 端侧网关路由：自动判复杂度，或手选优先本地 / 云端。 */
@@ -64,8 +73,9 @@ data class ChatPrefs(
     /** 本地背景图绝对路径（相册或下载） */
     val backgroundImagePath: String? = null,
     val backgroundPresetId: String? = null,
-    /** 助手回复完成后自动朗读（系统 TTS） */
+    /** 助手回复完成后自动朗读 */
     val autoSpeakReplies: Boolean = false,
+    val speakEngine: SpeakEngine = SpeakEngine.AUTO,
     /** 仅对端侧网关 Agent 生效 */
     val gatewayRouteMode: GatewayRouteMode = GatewayRouteMode.AUTO,
     val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
@@ -151,6 +161,10 @@ class ChatPrefsStore(
         update { it.copy(autoSpeakReplies = enabled) }
     }
 
+    fun setSpeakEngine(engine: SpeakEngine) {
+        update { it.copy(speakEngine = engine) }
+    }
+
     fun setGatewayRouteMode(mode: GatewayRouteMode) {
         update { it.copy(gatewayRouteMode = mode) }
     }
@@ -191,6 +205,7 @@ class ChatPrefsStore(
             .putString(KEY_BG_PATH, value.backgroundImagePath)
             .putString(KEY_BG_PRESET, value.backgroundPresetId)
             .putBoolean(KEY_AUTO_SPEAK, value.autoSpeakReplies)
+            .putString(KEY_SPEAK_ENGINE, value.speakEngine.name)
             .putString(KEY_GATEWAY_ROUTE, value.gatewayRouteMode.name)
             .putString(KEY_SHORTCUTS, array.toString())
             .apply()
@@ -221,6 +236,11 @@ class ChatPrefsStore(
         val bgPath = prefs.getString(KEY_BG_PATH, null)?.takeIf { it.isNotBlank() }
         val bgPreset = prefs.getString(KEY_BG_PRESET, null)?.takeIf { it.isNotBlank() }
         val autoSpeak = prefs.getBoolean(KEY_AUTO_SPEAK, false)
+        val speakEngine = prefs.getString(KEY_SPEAK_ENGINE, SpeakEngine.AUTO.name)
+            ?.let { raw ->
+                runCatching { SpeakEngine.valueOf(raw) }.getOrDefault(SpeakEngine.AUTO)
+            }
+            ?: SpeakEngine.AUTO
         val gatewayRoute = prefs.getString(KEY_GATEWAY_ROUTE, GatewayRouteMode.AUTO.name)
             ?.let { raw ->
                 runCatching { GatewayRouteMode.valueOf(raw) }.getOrDefault(GatewayRouteMode.AUTO)
@@ -235,6 +255,7 @@ class ChatPrefsStore(
             backgroundImagePath = bgPath,
             backgroundPresetId = bgPreset,
             autoSpeakReplies = autoSpeak,
+            speakEngine = speakEngine,
             gatewayRouteMode = gatewayRoute,
             shortcuts = shortcuts,
         )
@@ -272,6 +293,7 @@ class ChatPrefsStore(
         private const val KEY_BG_PATH = "background_image_path"
         private const val KEY_BG_PRESET = "background_preset_id"
         private const val KEY_AUTO_SPEAK = "auto_speak_replies"
+        private const val KEY_SPEAK_ENGINE = "speak_engine"
         private const val KEY_GATEWAY_ROUTE = "gateway_route_mode"
         private const val KEY_SHORTCUTS = "shortcuts"
     }

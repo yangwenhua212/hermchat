@@ -1,5 +1,6 @@
 package com.eraherm.hermchat.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,6 +55,7 @@ import com.eraherm.hermchat.data.local.ChatPrefsStore
 import com.eraherm.hermchat.data.local.ChatThemeStyle
 import com.eraherm.hermchat.data.local.GatewayRouteMode
 import com.eraherm.hermchat.data.local.InputMode
+import com.eraherm.hermchat.data.local.SpeakEngine
 import com.eraherm.hermchat.data.local.WallpaperEntry
 import com.eraherm.hermchat.data.local.WallpaperStore
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
@@ -69,6 +71,7 @@ private sealed interface PrefsFolder {
     data object Root : PrefsFolder
     data object Input : PrefsFolder
     data object Appearance : PrefsFolder
+    data object Speak : PrefsFolder
     data object Shortcuts : PrefsFolder
     data object Gateway : PrefsFolder
 }
@@ -82,6 +85,10 @@ fun ChatPrefsScreen(
     val app = LocalContext.current.applicationContext as HermChatApp
     val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
     var folder by remember { mutableStateOf<PrefsFolder>(PrefsFolder.Root) }
+
+    BackHandler {
+        if (folder == PrefsFolder.Root) onBack() else folder = PrefsFolder.Root
+    }
 
     AtmosphereBackground(themeStyle = chatPrefs.themeStyle) {
         Column(
@@ -112,6 +119,7 @@ fun ChatPrefsScreen(
                             store = app.chatPrefsStore,
                             onOpenInput = { folder = PrefsFolder.Input },
                             onOpenAppearance = { folder = PrefsFolder.Appearance },
+                            onOpenSpeak = { folder = PrefsFolder.Speak },
                             onOpenShortcuts = { folder = PrefsFolder.Shortcuts },
                             onOpenGateway = { folder = PrefsFolder.Gateway },
                             onOpenLibrary = onOpenLibrary,
@@ -125,6 +133,15 @@ fun ChatPrefsScreen(
                             prefs = chatPrefs,
                             store = app.chatPrefsStore,
                             wallpaperStore = app.wallpaperStore,
+                        )
+                        PrefsFolder.Speak -> PrefsSpeakDetail(
+                            prefs = chatPrefs,
+                            store = app.chatPrefsStore,
+                            onOpenSystemTts = {
+                                if (!app.replySpeaker.openSystemTtsSettings()) {
+                                    // 无设置页可开时忽略
+                                }
+                            },
                         )
                         PrefsFolder.Shortcuts -> PrefsShortcutsDetail(
                             prefs = chatPrefs,
@@ -164,19 +181,20 @@ private fun PrefsRoot(
     store: ChatPrefsStore,
     onOpenInput: () -> Unit,
     onOpenAppearance: () -> Unit,
+    onOpenSpeak: () -> Unit,
     onOpenShortcuts: () -> Unit,
     onOpenGateway: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
-    PrefsLeafRow(
-        title = "朗读回复",
-        trailing = {
-            Switch(
-                checked = prefs.autoSpeakReplies,
-                onCheckedChange = { store.setAutoSpeakReplies(it) },
-            )
+    PrefsFolderRow(
+        title = "朗读",
+        summary = buildString {
+            append(if (prefs.autoSpeakReplies) "自动开" else "自动关")
+            append(" · ")
+            append(prefs.speakEngine.label)
         },
+        onClick = onOpenSpeak,
     )
     PrefsFolderRow(
         title = "端侧网关",
@@ -233,6 +251,37 @@ private fun PrefsInputDetail(
 }
 
 @Composable
+private fun PrefsSpeakDetail(
+    prefs: ChatPrefs,
+    store: ChatPrefsStore,
+    onOpenSystemTts: () -> Unit,
+) {
+    PrefsLeafRow(
+        title = "自动朗读回复",
+        trailing = {
+            Switch(
+                checked = prefs.autoSpeakReplies,
+                onCheckedChange = { store.setAutoSpeakReplies(it) },
+            )
+        },
+    )
+    Text("朗读引擎", style = MaterialTheme.typography.titleMedium)
+    SpeakEngine.entries.forEach { engine ->
+        PrefsOptionRow(
+            title = engine.label,
+            selected = prefs.speakEngine == engine,
+            onClick = { store.setSpeakEngine(engine) },
+        )
+    }
+    TextButton(
+        onClick = onOpenSystemTts,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("打开系统语音包设置")
+    }
+}
+
+@Composable
 private fun PrefsGatewayDetail(
     prefs: ChatPrefs,
     store: ChatPrefsStore,
@@ -274,7 +323,7 @@ private fun PrefsAppearanceDetail(
                 store.setBackgroundImage(file.absolutePath, presetId = null)
                 status = "已使用相册图片"
             }.onFailure {
-                status = it.message ?: "导入失败"
+                status = com.eraherm.hermchat.util.UserFacingError.of(it, "导入失败")
             }
         }
     }
@@ -364,7 +413,7 @@ private fun PrefsAppearanceDetail(
                     results = it
                     if (it.isEmpty()) status = "没有结果"
                 }.onFailure {
-                    status = it.message ?: "搜索失败"
+                    status = com.eraherm.hermchat.util.UserFacingError.of(it, "搜索失败")
                 }
             }
         },
@@ -398,7 +447,7 @@ private fun PrefsAppearanceDetail(
                         store.setBackgroundImage(file.absolutePath, presetId = entry.id)
                         status = "已应用 ${entry.label}"
                     }.onFailure {
-                        status = it.message ?: "下载失败"
+                        status = com.eraherm.hermchat.util.UserFacingError.of(it, "下载失败")
                     }
                 }
             },

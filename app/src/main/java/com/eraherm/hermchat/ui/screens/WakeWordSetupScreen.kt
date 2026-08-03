@@ -3,6 +3,7 @@ package com.eraherm.hermchat.ui.screens
 import android.Manifest
 import android.os.Build
 import android.speech.SpeechRecognizer
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -59,6 +60,7 @@ fun WakeWordSetupScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    BackHandler(onBack = onBack)
     val app = context.applicationContext as HermChatApp
     val settings by app.wakeSettingsStore.settings.collectAsStateWithLifecycle()
     val systemAvailable = remember { SpeechRecognizer.isRecognitionAvailable(context) }
@@ -158,7 +160,10 @@ fun WakeWordSetupScreen(
                                     KwsModelInstaller(context).ensureInstalled()
                                 }
                                 if (kws.isFailure) {
-                                    statusText = kws.exceptionOrNull()?.message ?: "下载失败"
+                                    statusText = com.eraherm.hermchat.util.UserFacingError.of(
+                                        kws.exceptionOrNull(),
+                                        "下载失败",
+                                    )
                                     return@launch
                                 }
                                 val asr = withContext(Dispatchers.IO) {
@@ -168,7 +173,7 @@ fun WakeWordSetupScreen(
                                     modelReady.value = true
                                     statusText = "模型已就绪"
                                 }.onFailure {
-                                    statusText = it.message ?: "下载失败"
+                                    statusText = com.eraherm.hermchat.util.UserFacingError.of(it, "下载失败")
                                 }
                             }
                         },
