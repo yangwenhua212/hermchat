@@ -8,8 +8,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** On-device LLM model files（内置目录 + 用户从开源搜索追加）。 */
 class LocalModelStore(
@@ -22,6 +25,12 @@ class LocalModelStore(
     private val _custom = MutableStateFlow(loadCustom())
     val customCatalog: StateFlow<Map<String, ModelEntry>> = _custom.asStateFlow()
 
+    private val stopFlags = ConcurrentHashMap<String, AtomicBoolean>()
+    @Volatile
+    private var activeConnection: HttpURLConnection? = null
+    @Volatile
+    private var activeModelId: String? = null
+
     fun storageDir(): File = root
 
     fun allCatalog(): Map<String, ModelEntry> = BUILTIN + _custom.value
@@ -29,10 +38,21 @@ class LocalModelStore(
     fun modelFile(modelId: String = DEFAULT_MODEL_ID): File =
         File(root, allCatalog()[modelId]?.fileName ?: DEFAULT_FILE)
 
+    fun partFile(modelId: String = DEFAULT_MODEL_ID): File {
+        val dest = modelFile(modelId)
+        return File(dest.parentFile, "${dest.name}.part")
+    }
+
     fun isReady(modelId: String = DEFAULT_MODEL_ID): Boolean {
         val entry = allCatalog()[modelId] ?: return false
         val file = modelFile(modelId)
         return file.exists() && file.length() >= entry.minBytes
+    }
+
+    fun hasPartial(modelId: String = DEFAULT_MODEL_ID): Boolean {
+        if (isReady(modelId)) return false
+        val part = partFile(modelId)
+        return part.exists() && part.length() > 0L
     }
 
     fun expectedBytes(modelId: String = DEFAULT_MODEL_ID): Long =
@@ -43,14 +63,22 @@ class LocalModelStore(
     fun listStatuses(): List<ModelStatus> {
         return allCatalog().values.map { entry ->
             val file = File(root, entry.fileName)
+            val part = File(root, "${entry.fileName}.part")
             val ready = file.exists() && file.length() >= entry.minBytes
+            val partialBytes = when {
+                ready -> 0L
+                part.exists() -> part.length()
+                else -> 0L
+            }
             ModelStatus(
                 entry = entry,
                 installed = ready,
-                bytesOnDisk = if (file.exists()) file.length() else 0L,
+                bytesOnDisk = if (ready) file.length() else partialBytes,
+                partial = !ready && partialBytes > 0L,
             )
         }.sortedWith(
             compareByDescending<ModelStatus> { it.installed }
+                .thenByDescending { it.partial }
                 .thenBy { it.entry.label },
         )
     }
@@ -62,34 +90,63 @@ class LocalModelStore(
         _custom.value = next
     }
 
+    /** 暂停当前（或指定）下载：断开连接并保留 `.part`，可再点继续。 */
+    fun pauseDownload(modelId: String? = null) {
+        val id = modelId ?: activeModelId
+        if (id != null) {
+            stopFlags[id]?.set(true)
+        }
+        runCatching { activeConnection?.disconnect() }
+    }
+
     fun ensureInstalled(
         modelId: String = DEFAULT_MODEL_ID,
         hfToken: String = "",
+        isActive: () -> Boolean = { true },
         onProgress: (TransferProgress) -> Unit = {},
     ): Result<File> = runCatching {
         if (isReady(modelId)) return@runCatching modelFile(modelId)
         val entry = allCatalog()[modelId] ?: error("未知模型")
         root.mkdirs()
         val dest = modelFile(modelId)
-        val tmp = File(dest.parentFile, "${dest.name}.part")
-        tmp.delete()
-        downloadWithRedirects(entry.url, hfToken.trim(), entry.label, entry.approxBytes, tmp, onProgress)
-        if (tmp.length() < entry.minBytes) {
-            tmp.delete()
-            error("模型文件不完整")
+        val tmp = partFile(modelId)
+        val stop = AtomicBoolean(false)
+        stopFlags[modelId] = stop
+        activeModelId = modelId
+        try {
+            downloadWithRedirects(
+                startUrl = entry.url,
+                hfToken = hfToken.trim(),
+                label = entry.label,
+                approxBytes = entry.approxBytes,
+                dest = tmp,
+                shouldContinue = { isActive() && !stop.get() },
+                onProgress = onProgress,
+            )
+            if (!isActive() || stop.get()) {
+                error(PAUSED_MESSAGE)
+            }
+            if (tmp.length() < entry.minBytes) {
+                tmp.delete()
+                error("模型文件不完整")
+            }
+            if (dest.exists()) dest.delete()
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+            dest
+        } finally {
+            stopFlags.remove(modelId, stop)
+            if (activeModelId == modelId) activeModelId = null
         }
-        if (dest.exists()) dest.delete()
-        if (!tmp.renameTo(dest)) {
-            tmp.copyTo(dest, overwrite = true)
-            tmp.delete()
-        }
-        dest
     }
 
     fun delete(modelId: String = DEFAULT_MODEL_ID) {
+        pauseDownload(modelId)
         val file = modelFile(modelId)
         file.delete()
-        File(file.parentFile, "${file.name}.part").delete()
+        partFile(modelId).delete()
     }
 
     fun uninstallAndForget(modelId: String) {
@@ -156,10 +213,13 @@ class LocalModelStore(
         label: String,
         approxBytes: Long,
         dest: File,
+        shouldContinue: () -> Boolean,
         onProgress: (TransferProgress) -> Unit,
     ) {
         var current = startUrl
         repeat(8) {
+            if (!shouldContinue()) error(PAUSED_MESSAGE)
+            var existing = if (dest.exists()) dest.length() else 0L
             val connection = (URL(current).openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = false
                 connectTimeout = 30_000
@@ -167,46 +227,87 @@ class LocalModelStore(
                 if (hfToken.isNotBlank()) {
                     setRequestProperty("Authorization", "Bearer $hfToken")
                 }
+                if (existing > 0L) {
+                    setRequestProperty("Range", "bytes=$existing-")
+                }
             }
-            val code = connection.responseCode
+            activeConnection = connection
+            val code = try {
+                connection.responseCode
+            } catch (e: Exception) {
+                activeConnection = null
+                connection.disconnect()
+                if (!shouldContinue()) throw IllegalStateException(PAUSED_MESSAGE)
+                throw e
+            }
             when (code) {
                 in 300..399 -> {
                     val next = connection.getHeaderField("Location")
                         ?: error("重定向失败")
-                    current = if (next.startsWith("http")) next else {
+                    current = if (next.startsWith("http")) {
+                        next
+                    } else {
                         URL(URL(current), next).toString()
                     }
+                    activeConnection = null
                     connection.disconnect()
                 }
                 in 200..299 -> {
-                    val total = connection.contentLengthLong.takeIf { it > 0 } ?: approxBytes
+                    val resumed = code == HttpURLConnection.HTTP_PARTIAL && existing > 0L
+                    if (existing > 0L && !resumed) {
+                        // 服务端忽略 Range，整文件重下
+                        dest.delete()
+                        existing = 0L
+                    }
+                    val contentLen = connection.contentLengthLong
+                    val rangeTotal = parseContentRangeTotal(
+                        connection.getHeaderField("Content-Range"),
+                    )
+                    val total = when {
+                        rangeTotal != null && rangeTotal > 0L -> rangeTotal
+                        resumed && contentLen > 0L -> existing + contentLen
+                        contentLen > 0L -> contentLen
+                        else -> approxBytes
+                    }
                     val started = System.nanoTime()
-                    connection.inputStream.use { input ->
-                        dest.outputStream().use { output ->
-                            val buf = ByteArray(DEFAULT_BUFFER_SIZE)
-                            var read: Int
-                            var written = 0L
-                            var lastEmit = 0L
-                            while (input.read(buf).also { read = it } >= 0) {
-                                output.write(buf, 0, read)
-                                written += read
-                                val now = System.nanoTime()
-                                if (now - lastEmit >= 200_000_000L || written == total) {
-                                    lastEmit = now
-                                    val elapsedSec = ((now - started) / 1_000_000_000.0).coerceAtLeast(0.001)
-                                    onProgress(
-                                        TransferProgress(
-                                            label = label,
-                                            bytesRead = written,
-                                            totalBytes = total,
-                                            bytesPerSec = (written / elapsedSec).toLong(),
-                                        ),
-                                    )
+                    var written = existing
+                    try {
+                        connection.inputStream.use { input ->
+                            FileOutputStream(dest, resumed).use { output ->
+                                val buf = ByteArray(BUFFER_BYTES)
+                                var read: Int
+                                var lastEmit = 0L
+                                while (input.read(buf).also { read = it } >= 0) {
+                                    if (!shouldContinue()) {
+                                        error(PAUSED_MESSAGE)
+                                    }
+                                    output.write(buf, 0, read)
+                                    written += read
+                                    val now = System.nanoTime()
+                                    if (now - lastEmit >= 200_000_000L || written >= total) {
+                                        lastEmit = now
+                                        val sessionBytes = (written - existing).coerceAtLeast(0L)
+                                        val elapsedSec =
+                                            ((now - started) / 1_000_000_000.0).coerceAtLeast(0.001)
+                                        onProgress(
+                                            TransferProgress(
+                                                label = label,
+                                                bytesRead = written,
+                                                totalBytes = total,
+                                                bytesPerSec = (sessionBytes / elapsedSec).toLong(),
+                                            ),
+                                        )
+                                    }
                                 }
                             }
                         }
+                    } catch (e: Exception) {
+                        if (!shouldContinue()) error(PAUSED_MESSAGE)
+                        throw e
+                    } finally {
+                        activeConnection = null
+                        connection.disconnect()
                     }
-                    connection.disconnect()
                     onProgress(
                         TransferProgress(
                             label = label,
@@ -215,15 +316,25 @@ class LocalModelStore(
                             bytesPerSec = 0L,
                         ),
                     )
+                    if (!shouldContinue()) error(PAUSED_MESSAGE)
                     return
                 }
                 else -> {
+                    activeConnection = null
                     connection.disconnect()
                     error("下载失败 HTTP $code")
                 }
             }
         }
         error("重定向过多")
+    }
+
+    private fun parseContentRangeTotal(header: String?): Long? {
+        if (header.isNullOrBlank()) return null
+        val match = CONTENT_RANGE.find(header) ?: return null
+        val total = match.groupValues[3]
+        if (total == "*") return null
+        return total.toLongOrNull()
     }
 
     data class ModelEntry(
@@ -240,11 +351,13 @@ class LocalModelStore(
         val entry: ModelEntry,
         val installed: Boolean,
         val bytesOnDisk: Long,
+        val partial: Boolean = false,
     )
 
     companion object {
         const val DEFAULT_MODEL_ID = "gemma3-270m-it-q8"
         const val MODEL_1B_ID = "gemma3-1b-it-int4"
+        const val PAUSED_MESSAGE = "已暂停，可继续下载"
 
         private const val PREFS = "hermchat_models"
         private const val KEY_CUSTOM = "custom_catalog_json"
@@ -252,6 +365,8 @@ class LocalModelStore(
         private const val DEFAULT_FILE = "gemma3-270m-it-q8.task"
         private const val MIN_BYTES_LIGHT = 100L * 1024L * 1024L
         private const val MIN_BYTES_1B = 50L * 1024L * 1024L
+        private const val BUFFER_BYTES = 64 * 1024
+        private val CONTENT_RANGE = Regex("""bytes\s+(\d+)-(\d+)/(\d+|\*)""", RegexOption.IGNORE_CASE)
 
         fun isKnownModelId(id: String): Boolean = BUILTIN.containsKey(id)
 

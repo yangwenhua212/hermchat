@@ -4,6 +4,7 @@ import android.app.Application
 import com.eraherm.hermchat.data.local.AgentStore
 import com.eraherm.hermchat.data.local.AppDatabase
 import com.eraherm.hermchat.data.local.ChatPrefsStore
+import com.eraherm.hermchat.data.local.ConversationRepository
 import com.eraherm.hermchat.data.local.MessageRepository
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.local.WakeSettingsStore
@@ -15,8 +16,11 @@ import com.eraherm.hermchat.tools.ToolRegistry
 
 class HermChatApp : Application() {
     val database: AppDatabase by lazy { AppDatabase.get(this) }
+    val conversationRepository: ConversationRepository by lazy {
+        ConversationRepository(this, database.conversationDao())
+    }
     val messageRepository: MessageRepository by lazy {
-        MessageRepository(database.messageDao())
+        MessageRepository(database.messageDao(), conversationRepository)
     }
     val agentStore: AgentStore by lazy { AgentStore(this) }
     val wakeSettingsStore: WakeSettingsStore by lazy { WakeSettingsStore(this) }

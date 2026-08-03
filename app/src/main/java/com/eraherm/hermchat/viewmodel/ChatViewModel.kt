@@ -5,9 +5,11 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.local.AgentStore
+import com.eraherm.hermchat.data.local.ConversationRepository
 import com.eraherm.hermchat.data.local.MessageRepository
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
+import com.eraherm.hermchat.data.model.Conversation
 import com.eraherm.hermchat.data.model.Message
 import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.data.model.ToolCall
@@ -35,6 +37,8 @@ import java.util.UUID
 
 data class ChatUiState(
     val messages: List<Message> = emptyList(),
+    val conversations: List<Conversation> = emptyList(),
+    val activeConversationId: String? = null,
     val isSending: Boolean = false,
     val isStreaming: Boolean = false,
     val error: String? = null,
@@ -46,6 +50,7 @@ data class ChatUiState(
 
 class ChatViewModel(
     private val messageRepository: MessageRepository,
+    private val conversationRepository: ConversationRepository,
     private val agentStore: AgentStore,
     private val toolRegistry: ToolRegistry,
     private val appContext: android.content.Context,
@@ -71,26 +76,33 @@ class ChatViewModel(
     val uiState: StateFlow<ChatUiState> = combine(
         combine(
             messageRepository.observeMessages(),
+            conversationRepository.observeConversations(),
+            conversationRepository.activeId,
             busy,
+        ) { messages, conversations, activeId, flags ->
+            Quad(messages, conversations, activeId, flags)
+        },
+        combine(
             streamingContent,
             streamingProvider,
-        ) { messages, flags, content, provider ->
-            Quad(messages, flags, content, provider)
+            bridgeConnected,
+            activeAgent,
+            pendingToolCall,
+        ) { content, provider, connected, agent, pending ->
+            StreamingBundle(content, provider, connected, agent, pending)
         },
-        combine(bridgeConnected, activeAgent, pendingToolCall) { connected, agent, pending ->
-            Triple(connected, agent, pending)
-        },
-    ) { quad, agentTriple ->
-        val (messages, flags, content, provider) = quad
-        val (connected, agent, pending) = agentTriple
+    ) { quad, stream ->
+        val (messages, conversations, activeId, flags) = quad
         ChatUiState(
-            messages = mergeStreaming(messages, content, provider),
+            messages = mergeStreaming(messages, stream.content, stream.provider),
+            conversations = conversations,
+            activeConversationId = activeId,
             isSending = flags.isSending,
             isStreaming = flags.isStreaming,
             error = flags.error,
-            connected = connected,
-            agentName = agent?.name,
-            pendingToolCall = pending,
+            connected = stream.connected,
+            agentName = stream.agent?.name,
+            pendingToolCall = stream.pending,
             toolExecuting = flags.toolExecuting,
         )
     }.stateIn(
@@ -101,7 +113,6 @@ class ChatViewModel(
 
     init {
         (appContext as? HermChatApp)?.voiceCloudBridge?.bindForegroundSender(voiceSendHandler)
-        viewModelScope.launch { ensureWelcomeMessage() }
         agentJob = viewModelScope.launch {
             combine(agentStore.agents, agentStore.currentId) { agents, currentId ->
                 agents.find { it.id == currentId } ?: agents.firstOrNull()
@@ -123,6 +134,7 @@ class ChatViewModel(
 
         sendJob?.cancel()
         sendJob = viewModelScope.launch {
+            conversationRepository.bootstrap(agent?.id)
             if (messageRepository.count() >= AUTO_NEW_CHAT_THRESHOLD) {
                 startNewChatInternal()
             }
@@ -289,12 +301,28 @@ class ChatViewModel(
         }
     }
 
+    fun openConversation(id: String) {
+        if (busy.value.isSending || busy.value.isStreaming) return
+        if (id == conversationRepository.activeId.value) return
+        viewModelScope.launch {
+            conversationRepository.setActive(id)
+            streamingContent.value = ""
+            streamingProvider.value = null
+            pendingToolCall.value = null
+            // 旧会话本地可回看；服务端 Session 不自动恢复，避免串到上一会话
+            sessions.client?.resetConversation()
+            bridgeConnected.value = sessions.client != null &&
+                (sessions.client?.connected?.value == true || activeAgent.value?.let { isHttpStyle(it) } == true)
+            ensureWelcomeMessage()
+        }
+    }
+
     private suspend fun startNewChatInternal() {
-        messageRepository.clear()
+        conversationRepository.createNew(activeAgent.value?.id)
         streamingContent.value = ""
         streamingProvider.value = null
         pendingToolCall.value = null
-        // 只换会话，不断开底层连接（后台保活仍有效）
+        // 只换会话，不断开底层连接（后台保活仍有效）；旧消息留在历史列表
         sessions.client?.resetConversation()
         bridgeConnected.value = sessions.client != null &&
             (sessions.client?.connected?.value == true || activeAgent.value?.let { isHttpStyle(it) } == true)
@@ -324,10 +352,16 @@ class ChatViewModel(
             return
         }
         if (agent.id != currentAgentId) {
+            val previous = currentAgentId
             currentAgentId = agent.id
-            messageRepository.clear()
-            if (!sessions.matches(agent)) {
-                sessions.client?.resetConversation()
+            if (previous == null) {
+                conversationRepository.bootstrap(agent.id)
+                conversationRepository.stampActiveAgent(agent.id)
+            } else {
+                conversationRepository.activateForAgent(agent.id)
+                if (!sessions.matches(agent)) {
+                    sessions.client?.resetConversation()
+                }
             }
         }
         // 同一 Agent 且已有连接：复用，避免退出再进反复建连
@@ -462,7 +496,7 @@ class ChatViewModel(
             return emptyList()
         }
         return messageRepository.recentChronological(16)
-            .filter { it.id != WELCOME_ID }
+            .filter { !it.id.startsWith(WELCOME_PREFIX) }
             .filter { it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT }
             .map { msg ->
                 ChatTurn(
@@ -485,19 +519,23 @@ class ChatViewModel(
             content = content,
             providerLabel = provider,
             createdAt = System.currentTimeMillis(),
+            conversationId = conversationRepository.activeId.value.orEmpty(),
         )
         return messages + streamingMsg
     }
 
     private suspend fun ensureWelcomeMessage() {
+        conversationRepository.bootstrap(activeAgent.value?.id)
         if (!messageRepository.isEmpty()) return
+        val conversationId = conversationRepository.activeId.value ?: return
         messageRepository.save(
             Message(
-                id = WELCOME_ID,
+                id = welcomeId(conversationId),
                 role = MessageRole.ASSISTANT,
                 content = "HxSync 已就绪。",
                 providerLabel = "local",
                 createdAt = System.currentTimeMillis(),
+                conversationId = conversationId,
             ),
         )
     }
@@ -517,12 +555,23 @@ class ChatViewModel(
         val fourth: D,
     )
 
+    private data class StreamingBundle(
+        val content: String,
+        val provider: String?,
+        val connected: Boolean,
+        val agent: AgentProfile?,
+        val pending: ToolCall?,
+    )
+
     companion object {
-        private const val WELCOME_ID = "welcome-local"
+        private const val WELCOME_PREFIX = "welcome-"
         private const val AUTO_NEW_CHAT_THRESHOLD = 20
+
+        private fun welcomeId(conversationId: String): String = "$WELCOME_PREFIX$conversationId"
 
         fun factory(
             repository: MessageRepository,
+            conversationRepository: ConversationRepository,
             agentStore: AgentStore,
             toolRegistry: ToolRegistry,
             appContext: android.content.Context,
@@ -533,6 +582,7 @@ class ChatViewModel(
                     if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
                         return ChatViewModel(
                             repository,
+                            conversationRepository,
                             agentStore,
                             toolRegistry,
                             appContext.applicationContext,

@@ -140,9 +140,7 @@ object SetupAssistParser {
             }
         }
 
-        val apiKey = SK_KEY.find(text)?.groupValues?.getOrNull(1)
-            ?: LABELED_KEY.find(text)?.groupValues?.getOrNull(1)
-                ?.let { ConnectionTester.sanitizeKey(it) }
+        val apiKey = extractApiKey(text)
 
         val model = LABELED_MODEL.find(text)?.groupValues?.getOrNull(1)
         val name = LABELED_NAME.find(text)?.groupValues?.getOrNull(1)
@@ -174,6 +172,63 @@ object SetupAssistParser {
         if (k.length <= 6) return "••••"
         return k.take(4) + "…" + k.takeLast(2)
     }
+
+    /**
+     * 识别顺序：`sk-…` →「Key/密码是 …」标签 → 整段粘贴的裸密钥（无需写 Key:）。
+     */
+    internal fun extractApiKey(text: String): String? {
+        SK_KEY.find(text)?.groupValues?.getOrNull(1)?.let {
+            return ConnectionTester.sanitizeKey(it)
+        }
+        LABELED_KEY.find(text)?.groupValues?.getOrNull(1)?.let {
+            return ConnectionTester.sanitizeKey(stripBearer(it))
+        }
+        return bareKeyCandidate(text)?.let { ConnectionTester.sanitizeKey(it) }
+    }
+
+    private fun bareKeyCandidate(text: String): String? {
+        var t = text.trim().trim('"', '\'', '`', '「', '」')
+        t = stripBearer(t)
+        if (t.contains('\n')) {
+            val lines = t.lines().map { it.trim() }.filter { it.isNotEmpty() }
+            if (lines.size != 1) return null
+            t = stripBearer(lines[0].trim('"', '\'', '`', '「', '」'))
+        }
+        // 整句才当裸 Key；夹在说明里的无标签密钥仍靠 sk- / 标签规则
+        if (t.any { it.isWhitespace() }) return null
+        if (!looksLikeBareApiKey(t)) return null
+        return t
+    }
+
+    private fun looksLikeBareApiKey(s: String): Boolean {
+        if (s.startsWith("sk-", ignoreCase = true) && s.length >= 11) return true
+        if (s.length < 20) return false
+        if (s.contains("://")) return false
+        if (IPV4.containsMatchIn(s) && s.matches(Regex("""[\d.:]+"""))) return false
+        // 排除 api.deepseek.com 这类域名
+        if (s.contains('.') && s.matches(Regex("""[A-Za-z0-9.]+"""))) {
+            val tld = s.substringAfterLast('.')
+            if (tld.length in 2..6) return false
+        }
+        if (!s.matches(Regex("""^[A-Za-z0-9._\-+/=]+$"""))) return false
+        val lower = s.lowercase()
+        if (lower in CONFIRM_WORDS) return false
+        // 非 sk-：要求字母+数字，避免把 deepseek-chat 等模型名当成 Key
+        val hasLetter = s.any { it.isLetter() }
+        val hasDigit = s.any { it.isDigit() }
+        return hasLetter && hasDigit
+    }
+
+    private fun stripBearer(raw: String): String =
+        raw.trim()
+            .removePrefix("Bearer ")
+            .removePrefix("bearer ")
+            .removePrefix("BEARER ")
+            .trim()
+
+    private val CONFIRM_WORDS = setOf(
+        "skip", "ok", "yes", "no", "确认", "取消", "跳过", "重新", "好", "是", "否", "对", "行",
+    )
 
     fun summarizeForConfirm(draft: SetupAssistDraft): String {
         val kind = draft.resolvedKind()

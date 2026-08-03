@@ -12,4 +12,5 @@ data class Message(
     val content: String,
     val providerLabel: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    val conversationId: String = "",
 )

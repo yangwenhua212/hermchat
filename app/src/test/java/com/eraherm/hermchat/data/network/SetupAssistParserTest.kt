@@ -71,6 +71,42 @@ class SetupAssistParserTest {
     }
 
     @Test
+    fun parse_bareSkKeyWithoutLabel() {
+        val draft = SetupAssistParser.parse("sk-abc1234567890xyz")
+        assertEquals("sk-abc1234567890xyz", draft.apiKey)
+    }
+
+    @Test
+    fun parse_bareMixedKeyWithoutLabel() {
+        // 非 sk- 前缀：整段粘贴、含字母+数字、足够长
+        val key = "HermesTok9a8b7c6d5e4f3g2h1"
+        val draft = SetupAssistParser.parse(key)
+        assertEquals(key, draft.apiKey)
+    }
+
+    @Test
+    fun parse_bareKey_ignoresModelName() {
+        val draft = SetupAssistParser.parse("deepseek-chat")
+        assertNull(draft.apiKey)
+    }
+
+    @Test
+    fun parse_bareKey_ignoresHostOnly() {
+        val draft = SetupAssistParser.parse("47.250.124.133")
+        assertNull(draft.apiKey)
+        assertEquals("http://47.250.124.133", draft.endpoint)
+    }
+
+    @Test
+    fun merge_bareKeyAfterHost() {
+        val a = SetupAssistParser.parse("连一下 47.250.124.133")
+        val b = SetupAssistParser.parse("sk-nolebel123456789")
+        val m = a.merge(b)
+        assertEquals("http://47.250.124.133", m.endpoint)
+        assertEquals("sk-nolebel123456789", m.apiKey)
+    }
+
+    @Test
     fun summarize_masksKey() {
         val draft = SetupAssistDraft(
             kind = AgentKind.HERMES,

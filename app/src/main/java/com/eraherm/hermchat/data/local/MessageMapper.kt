@@ -5,6 +5,7 @@ import com.eraherm.hermchat.data.model.MessageRole
 
 fun MessageEntity.toModel(): Message = Message(
     id = id,
+    conversationId = conversationId,
     role = runCatching { MessageRole.valueOf(role) }.getOrDefault(MessageRole.ASSISTANT),
     content = content,
     providerLabel = providerLabel,
@@ -13,6 +14,7 @@ fun MessageEntity.toModel(): Message = Message(
 
 fun Message.toEntity(): MessageEntity = MessageEntity(
     id = id,
+    conversationId = conversationId,
     role = role.name,
     content = content,
     providerLabel = providerLabel,

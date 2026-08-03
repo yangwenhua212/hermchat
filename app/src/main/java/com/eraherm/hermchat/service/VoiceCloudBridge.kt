@@ -83,6 +83,7 @@ class VoiceCloudBridge(
         }
 
         app.voiceEventBus.emit(VoiceEvent.Status("正在问 ${agent.name}…"))
+        app.conversationRepository.bootstrap(agent.id)
         val userId = UUID.randomUUID().toString()
         val assistantId = UUID.randomUUID().toString()
         app.messageRepository.save(

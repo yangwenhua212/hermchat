@@ -52,6 +52,8 @@ import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -85,9 +87,59 @@ fun LibraryScreen(
     var searchQuery by remember { mutableStateOf("gemma") }
     var searchResults by remember { mutableStateOf<List<LocalModelStore.ModelEntry>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
+    var downloadJob by remember { mutableStateOf<Job?>(null) }
 
     fun refreshModels() {
         modelTick += 1
+    }
+
+    fun pauseDownload() {
+        val id = busyId
+        if (id != null) app.localModelStore.pauseDownload(id)
+        downloadJob?.cancel()
+        downloadJob = null
+        busyId = null
+        progress = null
+        refreshModels()
+        statusMessage = LocalModelStore.PAUSED_MESSAGE
+    }
+
+    fun startDownload(modelId: String, label: String) {
+        downloadJob?.cancel()
+        downloadJob = scope.launch {
+            busyId = modelId
+            progress = null
+            statusMessage = null
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    app.localModelStore.ensureInstalled(
+                        modelId = modelId,
+                        hfToken = hfToken,
+                        isActive = { isActive },
+                    ) { p ->
+                        scope.launch(Dispatchers.Main.immediate) {
+                            progress = p
+                        }
+                    }
+                }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                Result.failure(IllegalStateException(LocalModelStore.PAUSED_MESSAGE))
+            }
+            busyId = null
+            progress = null
+            downloadJob = null
+            refreshModels()
+            statusMessage = result.fold(
+                onSuccess = { "已下载 $label" },
+                onFailure = { err ->
+                    if (err.message == LocalModelStore.PAUSED_MESSAGE) {
+                        LocalModelStore.PAUSED_MESSAGE
+                    } else {
+                        err.message ?: "下载失败"
+                    }
+                },
+            )
+        }
     }
 
     AtmosphereBackground {
@@ -203,29 +255,9 @@ fun LibraryScreen(
                                     busy = busyId == status.entry.id,
                                     progress = progress.takeIf { busyId == status.entry.id },
                                     onDownload = {
-                                        scope.launch {
-                                            busyId = status.entry.id
-                                            progress = null
-                                            statusMessage = null
-                                            val result = withContext(Dispatchers.IO) {
-                                                app.localModelStore.ensureInstalled(
-                                                    modelId = status.entry.id,
-                                                    hfToken = hfToken,
-                                                ) { p ->
-                                                    scope.launch(Dispatchers.Main.immediate) {
-                                                        progress = p
-                                                    }
-                                                }
-                                            }
-                                            busyId = null
-                                            progress = null
-                                            refreshModels()
-                                            statusMessage = result.fold(
-                                                onSuccess = { "已下载 ${status.entry.label}" },
-                                                onFailure = { it.message ?: "下载失败" },
-                                            )
-                                        }
+                                        startDownload(status.entry.id, status.entry.label)
                                     },
+                                    onPause = { pauseDownload() },
                                     onAssign = {
                                         statusMessage = assignModelToCurrentAgent(
                                             app = app,
@@ -316,34 +348,26 @@ fun LibraryScreen(
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         if (installed) {
                                             Text("已安装", color = MaterialTheme.colorScheme.primary)
+                                        } else if (busyId == entry.id) {
+                                            TextButton(onClick = { pauseDownload() }) {
+                                                Text("暂停")
+                                            }
                                         } else {
                                             TextButton(
                                                 enabled = busyId == null,
                                                 onClick = {
-                                                    scope.launch {
-                                                        app.localModelStore.register(entry)
-                                                        busyId = entry.id
-                                                        progress = null
-                                                        val result = withContext(Dispatchers.IO) {
-                                                            app.localModelStore.ensureInstalled(
-                                                                modelId = entry.id,
-                                                                hfToken = hfToken,
-                                                            ) { p ->
-                                                                scope.launch(Dispatchers.Main.immediate) {
-                                                                    progress = p
-                                                                }
-                                                            }
-                                                        }
-                                                        busyId = null
-                                                        progress = null
-                                                        refreshModels()
-                                                        statusMessage = result.fold(
-                                                            onSuccess = { "已下载 ${entry.label}" },
-                                                            onFailure = { it.message ?: "下载失败" },
-                                                        )
-                                                    }
+                                                    app.localModelStore.register(entry)
+                                                    startDownload(entry.id, entry.label)
                                                 },
-                                            ) { Text("加入并下载") }
+                                            ) {
+                                                Text(
+                                                    if (app.localModelStore.hasPartial(entry.id)) {
+                                                        "继续下载"
+                                                    } else {
+                                                        "加入并下载"
+                                                    },
+                                                )
+                                            }
                                         }
                                         TextButton(onClick = {
                                             app.localModelStore.register(entry)
@@ -405,6 +429,7 @@ private fun ModelStatusCard(
     busy: Boolean,
     progress: TransferProgress?,
     onDownload: () -> Unit,
+    onPause: () -> Unit,
     onAssign: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -412,14 +437,25 @@ private fun ModelStatusCard(
         Text(status.entry.label, style = MaterialTheme.typography.titleMedium)
         Text(
             text = buildString {
-                if (status.installed) {
-                    append("已安装 · ")
-                    append(TransferProgress.formatBytes(status.bytesOnDisk))
-                } else {
-                    append("未下载")
-                    if (status.entry.approxBytes > 0) {
-                        append(" · 约 ")
-                        append(TransferProgress.formatBytes(status.entry.approxBytes))
+                when {
+                    status.installed -> {
+                        append("已安装 · ")
+                        append(TransferProgress.formatBytes(status.bytesOnDisk))
+                    }
+                    status.partial -> {
+                        append("未下完 · ")
+                        append(TransferProgress.formatBytes(status.bytesOnDisk))
+                        if (status.entry.approxBytes > 0) {
+                            append(" / ")
+                            append(TransferProgress.formatBytes(status.entry.approxBytes))
+                        }
+                    }
+                    else -> {
+                        append("未下载")
+                        if (status.entry.approxBytes > 0) {
+                            append(" · 约 ")
+                            append(TransferProgress.formatBytes(status.entry.approxBytes))
+                        }
                     }
                 }
                 append(" · ")
@@ -441,8 +477,12 @@ private fun ModelStatusCard(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (!status.installed) {
-                TextButton(onClick = onDownload, enabled = !busy) {
-                    Text(if (busy) "下载中…" else "下载")
+                if (busy) {
+                    TextButton(onClick = onPause) { Text("暂停") }
+                } else {
+                    TextButton(onClick = onDownload) {
+                        Text(if (status.partial) "继续" else "下载")
+                    }
                 }
             } else {
                 TextButton(onClick = onAssign, enabled = !busy) { Text("选用到当前") }

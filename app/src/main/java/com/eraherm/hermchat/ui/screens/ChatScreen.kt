@@ -82,6 +82,7 @@ import com.eraherm.hermchat.ui.components.AgentSwitcher
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.ConfirmCard
 import com.eraherm.hermchat.ui.components.ConnectionStatus
+import com.eraherm.hermchat.ui.components.ConversationHistoryMenu
 import com.eraherm.hermchat.ui.components.MessageBubble
 import com.eraherm.hermchat.ui.components.ShortcutBar
 import com.eraherm.hermchat.ui.components.TypingBubble
@@ -107,6 +108,7 @@ fun ChatScreen(
     val viewModel: ChatViewModel = viewModel(
         factory = ChatViewModel.factory(
             app.messageRepository,
+            app.conversationRepository,
             app.agentStore,
             app.toolRegistry,
             app,
@@ -314,7 +316,7 @@ fun ChatScreen(
                     if (streaming || last == null) return@collect
                     if (last.role != MessageRole.ASSISTANT) return@collect
                     if (last.content.isBlank() ||
-                        last.id == "welcome-local" ||
+                        last.id.startsWith("welcome-") ||
                         last.id == lastAutoSpokenId
                     ) return@collect
                     lastAutoSpokenId = last.id
@@ -352,6 +354,12 @@ fun ChatScreen(
                     modifier = Modifier.weight(1f),
                 )
                 ConnectionStatus(connected = uiState.connected)
+                ConversationHistoryMenu(
+                    conversations = uiState.conversations,
+                    activeId = uiState.activeConversationId,
+                    enabled = !busy,
+                    onOpen = { viewModel.openConversation(it) },
+                )
                 IconButton(
                     onClick = { viewModel.startNewChat() },
                     enabled = !busy,

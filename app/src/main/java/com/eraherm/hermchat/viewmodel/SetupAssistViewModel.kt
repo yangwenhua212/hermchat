@@ -115,7 +115,7 @@ class SetupAssistViewModel(
             if (needKeyHint && merged.apiKey.isNullOrBlank()) {
                 append(
                     fromUser = false,
-                    text = "已记下 ${merged.endpoint}。把 API Key / 密码发我；没有就回复「跳过」。",
+                    text = "已记下 ${merged.endpoint}。直接粘贴 API Key 即可（不用写 Key:）；没有就回复「跳过」。",
                 )
                 return@launch
             }

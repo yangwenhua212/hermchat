@@ -196,6 +196,7 @@ fun AgentSetupScreen(
                             onLocalModelChange = viewModel::updateLocalModelId,
                             onTest = viewModel::testConnection,
                             onDownloadModel = viewModel::downloadLocalModel,
+                            onPauseDownload = viewModel::pauseLocalModelDownload,
                             onUsePreset = { kind -> viewModel.selectKind(kind) },
                             onSkipTest = viewModel::skipTestAndContinue,
                             onProbe = viewModel::probeEndpoints,
@@ -426,6 +427,7 @@ private fun StepEndpoint(
     onLocalModelChange: (String) -> Unit,
     onTest: () -> Unit,
     onDownloadModel: () -> Unit,
+    onPauseDownload: () -> Unit,
     onUsePreset: (AgentKind) -> Unit,
     onSkipTest: () -> Unit,
     onProbe: () -> Unit,
@@ -449,25 +451,41 @@ private fun StepEndpoint(
             label = { Text("下载令牌") },
             shape = RoundedCornerShape(16.dp),
         )
-        Button(
-            onClick = onDownloadModel,
-            enabled = !downloadingModel,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text(
-                when {
-                    downloadingModel -> "下载中 ${(downloadProgress * 100).toInt()}%"
-                    modelReady -> "重新下载"
-                    else -> "下载模型"
-                },
-            )
-        }
+        val localId = model.ifBlank { LocalModelStore.DEFAULT_MODEL_ID }
+        val hasPartial = !modelReady && modelStore.hasPartial(localId)
         if (downloadingModel) {
+            Button(
+                onClick = onPauseDownload,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text("暂停 ${(downloadProgress * 100).toInt()}%")
+            }
             androidx.compose.material3.LinearProgressIndicator(
                 progress = { downloadProgress.coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
             )
+            downloadDetail?.let { detail ->
+                Text(
+                    text = detail,
+                    color = SoftGray,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        } else {
+            Button(
+                onClick = onDownloadModel,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text(
+                    when {
+                        modelReady -> "重新下载"
+                        hasPartial -> "继续下载"
+                        else -> "下载模型"
+                    },
+                )
+            }
             downloadDetail?.let { detail ->
                 Text(
                     text = detail,
@@ -547,25 +565,37 @@ private fun StepEndpoint(
             modelStore = modelStore,
             onSelect = onLocalModelChange,
         )
-        Button(
-            onClick = onDownloadModel,
-            enabled = !downloadingModel,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text(
-                when {
-                    downloadingModel -> "下载本地模型 ${(downloadProgress * 100).toInt()}%"
-                    modelReady -> "重新下载本地模型"
-                    else -> "下载本地兜底模型"
-                },
-            )
-        }
+        val gatewayLocalId = localModelId.ifBlank { LocalModelStore.DEFAULT_MODEL_ID }
+        val gatewayPartial = !modelReady && modelStore.hasPartial(gatewayLocalId)
         if (downloadingModel) {
+            Button(
+                onClick = onPauseDownload,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text("暂停 ${(downloadProgress * 100).toInt()}%")
+            }
             androidx.compose.material3.LinearProgressIndicator(
                 progress = { downloadProgress.coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
             )
+            downloadDetail?.let { detail ->
+                Text(text = detail, color = SoftGray, style = MaterialTheme.typography.bodyMedium)
+            }
+        } else {
+            Button(
+                onClick = onDownloadModel,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text(
+                    when {
+                        modelReady -> "重新下载本地模型"
+                        gatewayPartial -> "继续下载本地模型"
+                        else -> "下载本地兜底模型"
+                    },
+                )
+            }
             downloadDetail?.let { detail ->
                 Text(text = detail, color = SoftGray, style = MaterialTheme.typography.bodyMedium)
             }

@@ -14,10 +14,12 @@ import com.eraherm.hermchat.data.network.EndpointProbe
 import com.eraherm.hermchat.data.network.HermesEndpoint
 import com.eraherm.hermchat.data.network.ProbeHit
 import com.eraherm.hermchat.data.network.TransferProgress
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class SetupUiState(
@@ -55,6 +57,7 @@ class SetupViewModel(
 ) : ViewModel() {
 
     private val editingId: String? = initial?.id
+    private var downloadJob: Job? = null
 
     private val _uiState = MutableStateFlow(
         if (initial != null) {
@@ -326,36 +329,49 @@ class SetupViewModel(
 
     fun downloadLocalModel() {
         val state = _uiState.value
+        if (state.downloadingModel) return
         if (!DeviceCapability.canRunLocalLlm(appContext)) {
             _uiState.update {
                 it.copy(error = "该设备内存不足，不支持本地大模型")
             }
             return
         }
-        viewModelScope.launch {
+        downloadJob?.cancel()
+        downloadJob = viewModelScope.launch {
             val modelId = onDeviceModelId(state)
             val approx = localModelStore.expectedBytes(modelId)
+            val partial = localModelStore.hasPartial(modelId)
             _uiState.update {
                 it.copy(
                     downloadingModel = true,
                     downloadProgress = 0f,
-                    downloadDetail = "约 ${TransferProgress.formatBytes(approx)}",
+                    downloadDetail = if (partial) {
+                        "继续下载 · 约 ${TransferProgress.formatBytes(approx)}"
+                    } else {
+                        "约 ${TransferProgress.formatBytes(approx)}"
+                    },
                     error = null,
                 )
             }
-            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                localModelStore.ensureInstalled(
-                    modelId = modelId,
-                    hfToken = state.apiKey,
-                ) { progress ->
-                    _uiState.update { ui ->
-                        ui.copy(
-                            downloadProgress = progress.fraction,
-                            downloadDetail = progress.statusLine(),
-                        )
+            val result = try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    localModelStore.ensureInstalled(
+                        modelId = modelId,
+                        hfToken = state.apiKey,
+                        isActive = { isActive },
+                    ) { progress ->
+                        _uiState.update { ui ->
+                            ui.copy(
+                                downloadProgress = progress.fraction,
+                                downloadDetail = progress.statusLine(),
+                            )
+                        }
                     }
                 }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                Result.failure(IllegalStateException(LocalModelStore.PAUSED_MESSAGE))
             }
+            downloadJob = null
             _uiState.update { ui ->
                 result.fold(
                     onSuccess = {
@@ -369,15 +385,30 @@ class SetupViewModel(
                         )
                     },
                     onFailure = { err ->
+                        val paused = err.message == LocalModelStore.PAUSED_MESSAGE
                         ui.copy(
                             downloadingModel = false,
-                            downloadDetail = null,
+                            downloadDetail = if (paused) LocalModelStore.PAUSED_MESSAGE else null,
                             modelReady = false,
-                            error = err.message ?: "下载失败",
+                            error = if (paused) null else (err.message ?: "下载失败"),
                         )
                     },
                 )
             }
+        }
+    }
+
+    fun pauseLocalModelDownload() {
+        val modelId = onDeviceModelId(_uiState.value)
+        localModelStore.pauseDownload(modelId)
+        downloadJob?.cancel()
+        downloadJob = null
+        _uiState.update {
+            it.copy(
+                downloadingModel = false,
+                downloadDetail = LocalModelStore.PAUSED_MESSAGE,
+                error = null,
+            )
         }
     }
 
