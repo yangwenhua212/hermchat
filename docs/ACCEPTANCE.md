@@ -63,7 +63,8 @@
 | 已改系统朗读仍显示云端 404 | lastError 粘住 + 同步读错误 | ≥本次：开读清错误；自动静默回退；错误走 SharedFlow |
 | Hermes 已配 Edge 小艺，手机云端仍 404 | 旧版对着 Hermes 聊天地址打 `/v1/audio/speech` | ≥本次：选「Edge 小艺」直连微软；与 `tts.provider: edge` + `zh-CN-XiaoyiNeural` 对齐 |
 | 流式末尾一根死杠 `|` | 文本拼接光标 | ≥本次：思考转圈、吐字/执行键盘图标 |
-| ④ 像纯 API 无 Agent | 单轮 chat、工具结果不回灌 | ≥本次：确认后回灌 DeepSeek 续跑（loop≤6） |
+| ④ 像纯 API 无 Agent | 单轮 chat、工具结果不回灌 | ≥本次：确认后回灌 DeepSeek 续跑（loop≤8） |
+| ④ Loop 黑盒像死机 | 无阶段反馈 | ≥本次：`LoopStep` 一行中间态（分析/执行/观察） |
 | 顶栏 Unable to resolve host… | 异常原文直接展示 | ≥本次：UserFacingError →「找不到服务器…」 |
 | 历史混在一起 | 列表未按 Agent 过滤 | ≥本次：只显示当前 Agent 会话 |
 

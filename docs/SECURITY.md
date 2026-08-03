@@ -14,8 +14,9 @@
 | 单元测试 | 配置导入、工具解析、协议探测（`./gradlew :app:testDebugUnitTest`） |
 | Release 签名 | 长期 `hermchat-release.jks`（禁止 debug 签名发版） |
 | 本地 LLM | 模型按需下载；内存不足拒绝加载 |
-| AGPL 声明 | App「关于」页含许可与源代码链接 |
+| AGPL 声明 | App「关于」页含许可与源代码链接；附加许可与商用边界见仓库 [COMMERCIAL.md](../COMMERCIAL.md) |
 | 本机工具 | 一律确认卡；解析层强制 `needConfirm=true` |
+| 网络角色 | **出站客户端**：连用户配置的 Agent/API；产品不做公网入站网关（见 COMMERCIAL.md） |
 
 ## 明文通道
 

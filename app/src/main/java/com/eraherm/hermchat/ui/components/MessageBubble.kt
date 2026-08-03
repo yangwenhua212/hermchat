@@ -176,6 +176,7 @@ fun MessageBubble(
 fun TypingBubble(
     bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
     visual: AgentBusyVisual = AgentBusyVisual.THINKING,
+    label: String? = null,
 ) {
     val radius = when (bubbleStyle) {
         BubbleStyle.ROUND -> 18.dp
@@ -199,7 +200,21 @@ fun TypingBubble(
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
-            AgentBusyIndicator(visual = visual, compact = false)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                AgentBusyIndicator(visual = visual, compact = false)
+                if (!label.isNullOrBlank()) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SoftGray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }

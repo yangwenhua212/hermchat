@@ -112,7 +112,7 @@ HxSync 反向设计：**简单配置 + 界面归属用户 + 四档能力对等�
 
 **v0.3.0 方向（端侧真 Agent）**
 
-- ④：云脑 API 驱动的本机 Agent Loop（已起步）；中间态、分级确认、步数熔断见 [ROADMAP.md](ROADMAP.md)
+- ④：云脑 API 驱动的本机 Agent Loop（已起步）；`LoopStep` 中间态已上屏；分级确认、步数熔断见 [ROADMAP.md](ROADMAP.md)
 - ③：Hermes 仍负责重规划；远期手机作 WS「手脚」回传 observation
 - **禁止**用 ① 本地小模型当 Loop Planner
 
@@ -121,7 +121,7 @@ HxSync 反向设计：**简单配置 + 界面归属用户 + 四档能力对等�
 - EraHerm-Memory 同步；更重的多工具链仍以 **③** 为准  
 - 更细的省钱路由  
 - 复杂 Skill Store、GUI 自动化、iOS  
-- **远期**：设备指纹 / 云端订阅（非传统登录）、服务商市场（手动配置永久保留）——见仓库 [README.md](../README.md)「远期规划」  
+- **远期**：无账号订阅（商店凭证 / 可备份 License，不用 device_id 扛恢复）、超时降级加强、服务商市场（手动配置永久保留）——见仓库 [README.md](../README.md)「远期规划」  
 
 ## 成功标准
 

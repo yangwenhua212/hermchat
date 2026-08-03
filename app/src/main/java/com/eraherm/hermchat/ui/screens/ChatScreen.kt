@@ -89,6 +89,7 @@ import com.eraherm.hermchat.ui.components.ShortcutBar
 import com.eraherm.hermchat.ui.components.TypingBubble
 import com.eraherm.hermchat.ui.theme.SoftGray
 import com.eraherm.hermchat.viewmodel.ChatViewModel
+import com.eraherm.hermchat.viewmodel.LoopStep
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -126,7 +127,7 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     var stickToBottom by remember { mutableStateOf(true) }
     val textFocus = remember { FocusRequester() }
-    val busy = uiState.isSending || uiState.isStreaming
+    val busy = uiState.isSending || uiState.isStreaming || uiState.toolExecuting
     // 思考中仍可打字/改草稿；仅发送中禁止连发
     val canSend = draft.isNotBlank() && agent != null && !uiState.isSending && !uiState.isStreaming
     val shortcutsEnabled = agent != null && !uiState.isSending
@@ -148,7 +149,15 @@ fun ChatScreen(
         uiState.messages.lastOrNull()?.let {
             it.role == MessageRole.ASSISTANT && it.content.isNotBlank()
         } == true
-    val showTyping = busy && !hasStreamingText
+    val loopLabel = remember(uiState.loopStep) {
+        when (val step = uiState.loopStep) {
+            LoopStep.Idle, is LoopStep.Error, is LoopStep.Finished -> null
+            else -> step.label()
+        }
+    }
+    val showTyping = (busy || uiState.loopStep is LoopStep.Observing) &&
+        !hasStreamingText &&
+        uiState.pendingToolCall == null
 
     fun scrollToLatest(animated: Boolean = false) {
         scope.launch {
@@ -167,7 +176,9 @@ fun ChatScreen(
             }
         }
         launch {
-            snapshotFlow { uiState.messages.size to showTyping }
+            snapshotFlow {
+                Triple(uiState.messages.size, showTyping, uiState.loopStep)
+            }
                 .distinctUntilChanged()
                 .collect { if (stickToBottom) scrollToLatest(animated = true) }
         }
@@ -401,9 +412,11 @@ fun ChatScreen(
                 }
             }
 
-            // 状态提示：错误或语音状态短显，不占常驻空间
+            // 状态提示：错误 / Loop 中间态 / 语音状态短显，不占常驻空间
             AnimatedVisibility(
-                visible = uiState.error != null || voiceStatus != null,
+                visible = uiState.error != null ||
+                    voiceStatus != null ||
+                    (loopLabel != null && hasStreamingText),
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
@@ -412,6 +425,15 @@ fun ChatScreen(
                         Text(
                             text = error,
                             color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (loopLabel != null && hasStreamingText && uiState.error == null) {
+                        Text(
+                            text = loopLabel,
+                            color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -442,11 +464,16 @@ fun ChatScreen(
                     item(key = "typing") {
                         TypingBubble(
                             bubbleStyle = chatPrefs.bubbleStyle,
-                            visual = if (uiState.toolExecuting) {
+                            visual = if (
+                                uiState.toolExecuting ||
+                                uiState.loopStep is LoopStep.Executing ||
+                                uiState.loopStep is LoopStep.Observing
+                            ) {
                                 AgentBusyVisual.WORKING
                             } else {
                                 AgentBusyVisual.THINKING
                             },
+                            label = loopLabel,
                         )
                     }
                 }

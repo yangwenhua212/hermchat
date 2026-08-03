@@ -79,11 +79,11 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 
 ## Agent loop 行为
 
-1. 用户发话 → 路由到 API（或本地）  
-2. 模型若输出 `tool_call` JSON（或端侧话术命中）→ 确认卡  
-3. 用户允许 → 本机执行 → 系统气泡显示结果  
-4. **回灌**「【本机工具结果】…」给 API → 模型用一两句话收尾；若再要工具则重复 2～4  
-5. 步数上限 8；取消确认则中止 loop  
+1. 用户发话 → 路由到 API（或本地）；立刻上屏 `LoopStep.Planning`  
+2. 模型若输出 `tool_call` JSON（或端侧话术命中）→ 确认卡（中间态收起）  
+3. 用户允许 → `Executing` → 本机执行 → `Observing` → 系统气泡显示结果  
+4. **回灌**「【本机工具结果】…」给 API（`Planning`「第 N 步」）→ 模型用一两句话收尾；若再要工具则重复 2～4  
+5. 步数上限 8；超限提示建议切远端 Agent；取消确认则中止 loop  
 
 本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search` / `share.text`。  
 本地路径本身不做完整 loop；续跑始终走 API（需已配 DeepSeek 等）。

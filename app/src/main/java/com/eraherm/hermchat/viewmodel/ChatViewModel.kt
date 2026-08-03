@@ -30,6 +30,7 @@ import com.eraherm.hermchat.tools.ToolRegistry
 import com.eraherm.hermchat.util.UserFacingError
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +53,7 @@ data class ChatUiState(
     val agentName: String? = null,
     val pendingToolCall: ToolCall? = null,
     val toolExecuting: Boolean = false,
+    val loopStep: LoopStep = LoopStep.Idle,
 )
 
 class ChatViewModel(
@@ -122,6 +124,7 @@ class ChatViewModel(
             agentName = stream.agent?.name,
             pendingToolCall = stream.pending,
             toolExecuting = flags.toolExecuting,
+            loopStep = flags.loopStep,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -157,7 +160,13 @@ class ChatViewModel(
                 startNewChatInternal()
             }
 
-            busy.update { it.copy(isSending = true, error = null) }
+            busy.update {
+                it.copy(
+                    isSending = true,
+                    error = null,
+                    loopStep = LoopStep.Planning(),
+                )
+            }
             val assistantId = UUID.randomUUID().toString()
             try {
                 messageRepository.save(
@@ -187,6 +196,7 @@ class ChatViewModel(
                         VoiceEvent.Status("改用 ${failover.name}…"),
                     )
                     busy.update { it.copy(error = null) }
+                    setLoopStep(LoopStep.Planning("改用 ${failover.name}…"))
                     streamTurn(
                         agent = failover,
                         prompt = content,
@@ -211,8 +221,11 @@ class ChatViewModel(
                         }
                         gatewayLoop = seed
                     }
+                    // 确认卡已承接下一步，中间态收起避免叠文案
+                    setLoopStep(LoopStep.Idle)
                 } else {
                     gatewayLoop = null
+                    setLoopStep(LoopStep.Finished(outcome.text.take(40)))
                 }
                 messageRepository.save(
                     Message(
@@ -228,7 +241,7 @@ class ChatViewModel(
                 )
             } catch (e: Exception) {
                 val friendly = UserFacingError.of(e, "发送失败")
-                busy.update { it.copy(error = friendly) }
+                busy.update { it.copy(error = friendly, loopStep = LoopStep.Error(friendly)) }
                 (appContext as? HermChatApp)?.voiceEventBus?.emit(
                     VoiceEvent.Error(friendly),
                 )
@@ -247,7 +260,17 @@ class ChatViewModel(
             } finally {
                 streamingContent.value = ""
                 streamingProvider.value = null
-                busy.update { it.copy(isSending = false, isStreaming = false) }
+                busy.update {
+                    it.copy(
+                        isSending = false,
+                        isStreaming = false,
+                        loopStep = if (it.loopStep is LoopStep.Error) {
+                            it.loopStep
+                        } else {
+                            LoopStep.Idle
+                        },
+                    )
+                }
                 bridgeConnected.value = client?.connected?.value == true
             }
         }
@@ -256,10 +279,20 @@ class ChatViewModel(
     fun confirmPendingTool() {
         val call = pendingToolCall.value ?: return
         viewModelScope.launch {
-            busy.update { it.copy(toolExecuting = true, error = null) }
+            val execDesc = call.title.ifBlank {
+                LoopStep.friendlyToolName(call.name)
+            }
+            busy.update {
+                it.copy(
+                    toolExecuting = true,
+                    error = null,
+                    loopStep = LoopStep.Executing(call.name, execDesc),
+                )
+            }
             val result = toolRegistry.execute(call)
             pendingToolCall.value = null
             busy.update { it.copy(toolExecuting = false) }
+            setLoopStep(LoopStep.Observing(result.message.take(48)))
 
             messageRepository.save(
                 Message(
@@ -282,6 +315,7 @@ class ChatViewModel(
             val loop = gatewayLoop
             val gateway = client as? HybridGatewayClient
             if (loop != null && gateway != null && gateway.hasApi) {
+                delay(320)
                 continueGatewayLoop(
                     gateway = gateway,
                     loop = loop,
@@ -291,6 +325,7 @@ class ChatViewModel(
                 )
             } else {
                 gatewayLoop = null
+                setLoopStep(LoopStep.Idle)
             }
         }
     }
@@ -299,6 +334,7 @@ class ChatViewModel(
         val call = pendingToolCall.value ?: return
         pendingToolCall.value = null
         gatewayLoop = null
+        setLoopStep(LoopStep.Idle)
         viewModelScope.launch {
             messageRepository.save(
                 Message(
@@ -316,7 +352,12 @@ class ChatViewModel(
     }
 
     fun clearError() {
-        busy.update { it.copy(error = null) }
+        busy.update {
+            it.copy(
+                error = null,
+                loopStep = if (it.loopStep is LoopStep.Error) LoopStep.Idle else it.loopStep,
+            )
+        }
     }
 
     fun onForeground() {
@@ -358,6 +399,8 @@ class ChatViewModel(
             streamingContent.value = ""
             streamingProvider.value = null
             pendingToolCall.value = null
+            gatewayLoop = null
+            setLoopStep(LoopStep.Idle)
             // 旧会话本地可回看；服务端 Session 不自动恢复，避免串到上一会话
             sessions.client?.resetConversation()
             bridgeConnected.value = sessions.client != null &&
@@ -391,6 +434,7 @@ class ChatViewModel(
         streamingProvider.value = null
         pendingToolCall.value = null
         gatewayLoop = null
+        setLoopStep(LoopStep.Idle)
         // 只换会话，不断开底层连接（后台保活仍有效）；旧消息留在历史列表
         sessions.client?.resetConversation()
         bridgeConnected.value = sessions.client != null &&
@@ -425,6 +469,7 @@ class ChatViewModel(
             currentAgentId = agent.id
             gatewayLoop = null
             pendingToolCall.value = null
+            setLoopStep(LoopStep.Idle)
             if (previous == null) {
                 conversationRepository.claimOrphanConversations(agent.id)
                 conversationRepository.bootstrap(agent.id)
@@ -588,11 +633,18 @@ class ChatViewModel(
     ) {
         if (loop.step >= GATEWAY_LOOP_MAX_STEPS) {
             gatewayLoop = null
-            busy.update { it.copy(error = "本轮工具步骤已达上限") }
+            val msg = "步骤较多，建议切到远端 Agent 继续"
+            busy.update { it.copy(error = msg, loopStep = LoopStep.Error(msg)) }
             return
         }
         val assistantId = UUID.randomUUID().toString()
-        busy.update { it.copy(isStreaming = true, error = null) }
+        busy.update {
+            it.copy(
+                isStreaming = true,
+                error = null,
+                loopStep = LoopStep.Planning("第 ${loop.step + 1} 步…"),
+            )
+        }
         streamingContent.value = ""
         streamingProvider.value = "网关·API"
         try {
@@ -629,13 +681,15 @@ class ChatViewModel(
                 pendingToolCall.value = agentTool.copy(needConfirm = true)
                 loop.lastAssistantRaw = raw.ifBlank { finalText }
                 gatewayLoop = loop
+                setLoopStep(LoopStep.Idle)
             } else {
                 gatewayLoop = null
+                setLoopStep(LoopStep.Finished(finalText.take(40)))
             }
         } catch (e: Exception) {
             gatewayLoop = null
             val friendly = UserFacingError.of(e, "继续回复失败")
-            busy.update { it.copy(error = friendly) }
+            busy.update { it.copy(error = friendly, loopStep = LoopStep.Error(friendly)) }
             val partial = streamingContent.value
             if (partial.isNotBlank()) {
                 messageRepository.save(
@@ -651,7 +705,16 @@ class ChatViewModel(
         } finally {
             streamingContent.value = ""
             streamingProvider.value = null
-            busy.update { it.copy(isStreaming = false) }
+            busy.update {
+                it.copy(
+                    isStreaming = false,
+                    loopStep = if (it.loopStep is LoopStep.Error) {
+                        it.loopStep
+                    } else {
+                        LoopStep.Idle
+                    },
+                )
+            }
         }
     }
 
@@ -737,7 +800,12 @@ class ChatViewModel(
         val isStreaming: Boolean = false,
         val toolExecuting: Boolean = false,
         val error: String? = null,
+        val loopStep: LoopStep = LoopStep.Idle,
     )
+
+    private fun setLoopStep(step: LoopStep) {
+        busy.update { it.copy(loopStep = step) }
+    }
 
     /** 4 元组，避免嵌套 combine 时的 Pair/Triple 装箱。 */
     private data class Quad<A, B, C, D>(
