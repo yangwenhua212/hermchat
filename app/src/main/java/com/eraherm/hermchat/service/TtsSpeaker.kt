@@ -26,6 +26,7 @@ class TtsSpeaker(
     private val ready = AtomicBoolean(false)
     private val pending = MutableStateFlow<PendingSpeak?>(null)
     private var lastError: String? = null
+    private var focusRequest: AudioFocusRequest? = null
 
     private val audioManager: AudioManager =
         appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -179,6 +180,7 @@ class TtsSpeaker(
     private fun requestAudioFocus(): Boolean {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                abandonAudioFocus()
                 val attrs = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANT)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -187,6 +189,7 @@ class TtsSpeaker(
                     .setAudioAttributes(attrs)
                     .setWillPauseWhenDucked(false)
                     .build()
+                focusRequest = request
                 audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
             } else {
                 @Suppress("DEPRECATION")
@@ -204,13 +207,14 @@ class TtsSpeaker(
     private fun abandonAudioFocus() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                audioManager.abandonAudioFocusRequest(null as AudioFocusRequest?)
+                focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+                focusRequest = null
             } else {
                 @Suppress("DEPRECATION")
                 audioManager.abandonAudioFocus(null)
             }
         } catch (_: Exception) {
-            // ignore
+            focusRequest = null
         }
     }
 

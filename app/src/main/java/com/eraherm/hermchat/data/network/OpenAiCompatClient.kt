@@ -2,7 +2,6 @@ package com.eraherm.hermchat.data.network
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,13 +56,17 @@ class OpenAiCompatClient(
     ): Flow<String> = flow {
         var lastException: Exception? = null
         for (attempt in 0 until MAX_RETRIES) {
+            var emitted = false
             try {
-                streamOnce(prompt, history)
+                streamOnce(prompt, history) { piece ->
+                    emitted = true
+                    emit(piece)
+                }
                 return@flow
             } catch (e: Exception) {
                 lastException = e
-                if (attempt < MAX_RETRIES - 1 && isRetryable(e)) {
-                    sessionId.set(newSessionId())
+                // 已吐过字再重试会叠重复内容；只对「开流前失败」重试
+                if (attempt < MAX_RETRIES - 1 && !emitted && isRetryable(e)) {
                     continue
                 }
                 throw e
@@ -72,9 +75,10 @@ class OpenAiCompatClient(
         throw lastException ?: IOException("请求失败")
     }.flowOn(Dispatchers.IO)
 
-    private suspend fun FlowCollector<String>.streamOnce(
+    private suspend fun streamOnce(
         prompt: String,
         history: List<ChatTurn>,
+        onPiece: suspend (String) -> Unit,
     ) {
         val url = when {
             root.endsWith("/v1/chat/completions", ignoreCase = true) -> root
@@ -144,7 +148,7 @@ class OpenAiCompatClient(
                 if (data == "[DONE]") break
                 if (data.isEmpty()) continue
                 val piece = parseSseData(data) ?: continue
-                if (piece.isNotEmpty()) emit(piece)
+                if (piece.isNotEmpty()) onPiece(piece)
             }
         }
     }
@@ -166,9 +170,11 @@ class OpenAiCompatClient(
         return message?.optString("content")?.takeIf { it.isNotEmpty() }
     }
 
+    /** 连接/超时等可重试；未知主机不重试（已吐字时由外层禁止重试）。 */
     private fun isRetryable(e: Exception): Boolean = when (e) {
-        is IOException -> e !is UnknownHostException
+        is UnknownHostException -> false
         is SocketTimeoutException -> true
+        is IOException -> true
         else -> false
     }
 

@@ -141,11 +141,15 @@ fun ChatScreen(
     }
     val showTyping = uiState.isSending && !uiState.isStreaming
 
-    // ──────────────────────────────────────────────
-    // 滚动：贴底检测 + 自动追底（3 合 1）
-    // ──────────────────────────────────────────────
+    fun scrollToLatest(animated: Boolean = false) {
+        scope.launch {
+            if (displayMessages.isEmpty() && !showTyping) return@launch
+            if (animated) listState.animateScrollToItem(0) else listState.scrollToItem(0)
+        }
+    }
+
+    // 滚动：贴底检测 + 自动追底
     LaunchedEffect(Unit) {
-        // 1) 贴底检测
         launch {
             snapshotFlow {
                 listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
@@ -153,26 +157,17 @@ fun ChatScreen(
                 stickToBottom = index <= 0 && offset <= 24
             }
         }
-        // 2) 新消息到达时滚动
         launch {
             snapshotFlow { uiState.messages.size to showTyping }
                 .distinctUntilChanged()
                 .collect { if (stickToBottom) scrollToLatest(animated = true) }
         }
-        // 3) 流式内容更新时贴底
         launch {
             snapshotFlow { (uiState.messages.lastOrNull()?.content ?: "") to uiState.isStreaming }
                 .distinctUntilChanged()
                 .collect { (_, streaming) ->
                     if (streaming && stickToBottom) scrollToLatest(animated = false)
                 }
-        }
-    }
-
-    fun scrollToLatest(animated: Boolean = false) {
-        scope.launch {
-            if (displayMessages.isEmpty() && !showTyping) return@launch
-            if (animated) listState.animateScrollToItem(0) else listState.scrollToItem(0)
         }
     }
 
@@ -492,7 +487,7 @@ fun ChatScreen(
                     calendarPermissionLauncher.launch(permissions)
                 }
             },
-            onDeny = viewModel.denyPendingTool,
+            onDeny = { viewModel.denyPendingTool() },
         )
     }
 }

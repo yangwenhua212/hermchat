@@ -9,6 +9,7 @@
 | API Key / Agent 配置落盘 | `EncryptedSharedPreferences`（Android Keystore）；从旧明文 prefs 自动迁移一次 |
 | WebSocket 保活 | OkHttp `pingInterval(30s)` |
 | WebSocket 断线 | 指数退避自动重连（最多约 6 次）；发送前 `ensureConnected` 带短重试 |
+| HTTP / OpenAI 兼容流 | 开流前网络失败最多再试 1 次（共 2 次）；**已吐字不重试**（防叠字）；4xx 不重试；未知主机不重试；**不**因重试更换 Hermes Session-Id |
 | 异步 | Coroutine / Flow；模型下载走 `Dispatchers.IO` |
 | 单元测试 | 配置导入、工具解析、协议探测（`./gradlew :app:testDebugUnitTest`） |
 | Release 签名 | 长期 `hermchat-release.jks`（禁止 debug 签名发版） |

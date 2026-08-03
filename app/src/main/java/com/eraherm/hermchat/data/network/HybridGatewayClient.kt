@@ -92,19 +92,22 @@ class HybridGatewayClient(
             GatewayRouter.Route.LOCAL -> {
                 _lastRouteLabel.value = "网关·本地"
                 val buffer = StringBuilder()
-                // 边流式输出边收集，用户即时看到本地回复，不用等全部生成完
+                // 自动模式可能 escalate：先缓冲，避免弱回复已上屏再叠 API。
+                // 手选本地 / 无 API：边生成边吐字。
+                val liveStream = mode != GatewayRouteMode.AUTO || api == null
                 local.streamChat(prompt, history).collect { piece ->
                     buffer.append(piece)
-                    emit(piece)
+                    if (liveStream) emit(piece)
                 }
                 val localText = buffer.toString()
-                // 仅自动模式：本地弱回复再 escalate；手选本地不擅自改走云端
                 if (mode == GatewayRouteMode.AUTO &&
                     api != null &&
                     GatewayRouter.isWeakLocalReply(localText)
                 ) {
                     _lastRouteLabel.value = "网关·API"
                     api.streamChat(prompt, history).collect { emit(it) }
+                } else if (!liveStream && localText.isNotEmpty()) {
+                    emit(localText)
                 }
             }
         }
