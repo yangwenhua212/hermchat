@@ -113,7 +113,8 @@ class VoiceCloudBridge(
                         createdAt = System.currentTimeMillis(),
                     ),
                 )
-                app.voiceEventBus.emit(VoiceEvent.Status(finalText.take(48)))
+                // 顶栏只留短状态，完整回复在气泡/通知里，避免占聊天区
+                app.voiceEventBus.emit(VoiceEvent.Status("助手已回复"))
                 notifyReply(agent.name, finalText)
             }
         } catch (e: Exception) {

@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +60,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
@@ -124,8 +124,9 @@ fun ChatScreen(
     var stickToBottom by remember { mutableStateOf(true) }
     val textFocus = remember { FocusRequester() }
     val busy = uiState.isSending || uiState.isStreaming
-    val canSend = draft.isNotBlank() && agent != null && !busy
-    val shortcutsEnabled = agent != null && !busy
+    // 思考中仍可打字/改草稿；仅发送中禁止连发
+    val canSend = draft.isNotBlank() && agent != null && !uiState.isSending && !uiState.isStreaming
+    val shortcutsEnabled = agent != null && !uiState.isSending
     val speechAvailable = remember {
         SpeechRecognizer.isRecognitionAvailable(context)
     }
@@ -139,7 +140,12 @@ fun ChatScreen(
         if (!uiState.isStreaming) null
         else uiState.messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
     }
-    val showTyping = uiState.isSending && !uiState.isStreaming
+    // 机器人侧思考中：忙碌且尚未有助手流式正文时显示圆点气泡
+    val hasStreamingText = uiState.isStreaming &&
+        uiState.messages.lastOrNull()?.let {
+            it.role == MessageRole.ASSISTANT && it.content.isNotBlank()
+        } == true
+    val showTyping = busy && !hasStreamingText
 
     fun scrollToLatest(animated: Boolean = false) {
         scope.launch {
@@ -181,14 +187,14 @@ fun ChatScreen(
         }
     }
 
-    val calendarPermissionLauncher = rememberLauncherForActivityResult(
+    val toolPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         val granted = result.values.all { it }
         if (granted) {
             viewModel.confirmPendingTool()
         } else {
-            voiceStatus = "没有日历权限，无法创建日程"
+            voiceStatus = "缺少权限，无法完成操作"
             viewModel.denyPendingTool()
         }
     }
@@ -247,14 +253,12 @@ fun ChatScreen(
                 }
             }
         }
-        // 语音状态自动消失
+        // 顶栏状态一律短显后消失，避免长文案占聊天区
         launch {
             snapshotFlow { voiceStatus }.collect { status ->
                 val s = status ?: return@collect
-                if (s.contains("语音识别") || s.contains("没有麦克风")) {
-                    delay(2800)
-                    if (voiceStatus == s) voiceStatus = null
-                }
+                delay(2200)
+                if (voiceStatus == s) voiceStatus = null
             }
         }
     }
@@ -390,6 +394,8 @@ fun ChatScreen(
                             text = error,
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     voiceStatus?.let { status ->
@@ -397,6 +403,8 @@ fun ChatScreen(
                             text = status,
                             color = MaterialTheme.colorScheme.primary,
                             style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -457,7 +465,6 @@ fun ChatScreen(
                     onDraftChange = { draft = it },
                     inputMode = chatPrefs.inputMode,
                     agentName = agent?.name,
-                    busy = busy,
                     canSend = canSend,
                     sendScale = sendScale,
                     showMic = voiceReady && chatPrefs.inputMode != InputMode.TEXT_FIRST,
@@ -484,7 +491,7 @@ fun ChatScreen(
                 if (permissions.isEmpty()) {
                     viewModel.confirmPendingTool()
                 } else {
-                    calendarPermissionLauncher.launch(permissions)
+                    toolPermissionLauncher.launch(permissions)
                 }
             },
             onDeny = { viewModel.denyPendingTool() },
@@ -499,7 +506,6 @@ private fun DoubaoComposer(
     onDraftChange: (String) -> Unit,
     inputMode: InputMode,
     agentName: String?,
-    busy: Boolean,
     canSend: Boolean,
     sendScale: Float,
     showMic: Boolean,
@@ -568,7 +574,7 @@ private fun DoubaoComposer(
                                 Modifier
                             },
                         ),
-                    enabled = !busy,
+                    enabled = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface,
                     ),
@@ -581,41 +587,31 @@ private fun DoubaoComposer(
                 )
             }
 
-            if (busy) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .padding(10.dp)
-                        .size(22.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            } else {
-                IconButton(
-                    onClick = onSend,
-                    enabled = canSend,
-                    modifier = Modifier
-                        .scale(sendScale)
-                        .size(44.dp)
-                        .background(
-                            color = if (canSend) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                            shape = CircleShape,
-                        ),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "发送",
-                        tint = if (canSend) {
-                            MaterialTheme.colorScheme.onPrimary
+            IconButton(
+                onClick = onSend,
+                enabled = canSend,
+                modifier = Modifier
+                    .scale(sendScale)
+                    .size(44.dp)
+                    .background(
+                        color = if (canSend) {
+                            MaterialTheme.colorScheme.primary
                         } else {
-                            SoftGray
+                            MaterialTheme.colorScheme.surfaceVariant
                         },
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
+                        shape = CircleShape,
+                    ),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "发送",
+                    tint = if (canSend) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        SoftGray
+                    },
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
     }

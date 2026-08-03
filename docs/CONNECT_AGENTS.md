@@ -25,7 +25,9 @@ HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent、�
 - **WebSocket 远程 Agent**：`连电脑上的助手` 自动局域网探测；或 `websocket 192.168.1.8` 扫该主机常见端口；也可直接发 `ws://…`  
 输入框上方可随时点「手动配置」走表单。
 
-**后台唤醒问云端：** 开启唤醒监听且「识别后自动发送」打开时，喊唤醒词再说指令 → App（含进后台）会把指令发给当前 Agent；聊天页在则走同一会话，否则独立请求并在通知栏展示回复摘要。划掉进程后无法工作。
+**后台连接：** 连上 WebSocket / Hermes 后，通知栏可出现「HxSync 保持连接」（`BridgeKeepAliveService`），连接挂在 Application 级，**回桌面 / 退出聊天页不会故意关掉**。仍可能被系统强杀；**划掉多任务**后需重开。  
+
+**后台唤醒问云端：** 开启唤醒监听且「识别后自动发送」时，进后台仍可喊词问当前 Agent（聊天页在走同一会话，否则独立请求 + 通知摘要）。划掉进程后无法工作。
 
 ---
 
@@ -54,20 +56,24 @@ HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent、�
 
 ---
 
-## B. 直连 API（OpenAI 兼容）· 远程大脑 + 本机工具
+## B. 直连 API（OpenAI 兼容）
 
-OpenAI、DeepSeek、Ollama 兼容端口等——**不经 WebSocket**，App 直调 HTTP。大脑在云、闹钟/日历在手机执行，见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)。
+OpenAI、DeepSeek、Ollama 兼容端口等——**不经 WebSocket**，App 直调 HTTP。
 
-需要自己写完整 Base URL 时用 **HTTP 兼容**（不要与上面的 Hermes 快捷项混淆）。
+### 要本机闹钟 / 日历（推荐）
 
-1. 添加 Agent → **HTTP 兼容**  
-2. 地址填 **Base URL**（不要漏端口；若服务在 80 端口可写 `http://主机`）  
-   示例：`https://api.deepseek.com`、`http://192.168.x.x:11434`  
-3. API Key、**API 用的模型 id**（不是界面显示名）→ 点「测试」→ 聊天  
+选 **端侧网关（④）**，不要选「HTTP 兼容」。见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)。
 
-「测试」会请求 `{base}/v1/chat/completions`（失败时再试 `/v1/models`），并显示具体原因（超时 / Key 无效 / 模型名等）。
+1. 添加 Agent → **端侧网关**  
+2. API Base / Key / 模型；可选本地兜底模型  
+3. 测连 → 聊天 → 确认卡后操作手机  
 
-请求：`POST {base}/v1/chat/completions`（若已写全路径则不拼接）。
+### 只要纯聊天（②）
+
+1. 添加 Agent → **HTTP 兼容**（默认**不开**本机工具）  
+2. Base URL（如 `https://api.deepseek.com`）+ Key + 模型 id →「测试」→ 聊天  
+
+「测试」会请求 `{base}/v1/chat/completions`（失败时再试 `/v1/models`）。
 
 ### Hermes HTTP 会话（重要）
 

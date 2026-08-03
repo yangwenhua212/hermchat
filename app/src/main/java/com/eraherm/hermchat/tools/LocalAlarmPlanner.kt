@@ -22,12 +22,17 @@ object LocalAlarmPlanner {
         val text = userText.trim()
         if (text.isEmpty()) return null
 
-        val looksAlarm = listOf("闹钟", "叫我", "分钟后", "小时后", "半小时").any { text.contains(it) }
-        val looksCalendarMeeting = listOf("开会", "会议", "日程", "日历", "预约").any { text.contains(it) }
-        if (!looksAlarm && !(text.contains("提醒") && !looksCalendarMeeting && hasRelative(text))) {
+        val looksAlarm = listOf("闹钟", "叫我", "分钟后", "小时后", "半小时", "倒计时").any {
+            text.contains(it)
+        }
+        val looksCalendarMeeting = listOf("开会", "会议", "日程", "日历", "预约").any {
+            text.contains(it)
+        }
+        val looksRemind = text.contains("提醒")
+        // 「提醒我明天 8 点」也走闹钟；开会/日程仍归日历
+        if (!looksAlarm && !(looksRemind && !looksCalendarMeeting && (hasRelative(text) || hasClock(text)))) {
             return null
         }
-        // "明天下午3点提醒我开会" → calendar, not alarm
         if (looksCalendarMeeting && !text.contains("闹钟") && !text.contains("叫我")) {
             return null
         }
@@ -50,6 +55,13 @@ object LocalAlarmPlanner {
 
     private fun hasRelative(text: String): Boolean =
         RELATIVE.any { it.containsMatchIn(text) } || text.contains("半小时后")
+
+    private fun hasClock(text: String): Boolean =
+        Regex("""\d{1,2}\s*点""").containsMatchIn(text) ||
+            text.contains("早上") ||
+            text.contains("上午") ||
+            text.contains("下午") ||
+            text.contains("晚上")
 
     private fun resolveTrigger(text: String): Long? {
         val now = Calendar.getInstance()
@@ -75,20 +87,20 @@ object LocalAlarmPlanner {
             return now.timeInMillis
         }
 
-        // Absolute morning alarm e.g. 明天早上8点叫我 / 闹钟
-        if (text.contains("叫我") || text.contains("闹钟")) {
+        // 绝对时间：叫我/闹钟/提醒我 + 明天早上8点
+        val allowAbsolute = text.contains("叫我") ||
+            text.contains("闹钟") ||
+            (text.contains("提醒") && hasClock(text))
+        if (allowAbsolute) {
             when {
                 text.contains("后天") -> now.add(Calendar.DAY_OF_YEAR, 2)
                 text.contains("明天") -> now.add(Calendar.DAY_OF_YEAR, 1)
                 text.contains("今天") -> Unit
-                else -> {
-                    // if only hour given without day, use today if still ahead else tomorrow
-                }
             }
-            val hourMatch = Regex("""(?:早上|上午|早晨)?\s*(\d{1,2})\s*点(?:\s*(\d{1,2})\s*分)?""")
+            val hourMatch = Regex("""(?:早上|上午|早晨|下午|晚上)?\s*(\d{1,2})\s*点(?:\s*(\d{1,2})\s*分)?""")
                 .find(text)
-            var hour = hourMatch?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 8
-            val minute = hourMatch?.groupValues?.getOrNull(2)?.toIntOrNull() ?: 0
+            var hour = hourMatch?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return null
+            val minute = hourMatch.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
             if (text.contains("下午") && hour in 1..11) hour += 12
             if (text.contains("晚上") && hour in 1..11) hour += 12
             now.set(Calendar.HOUR_OF_DAY, hour.coerceIn(0, 23))

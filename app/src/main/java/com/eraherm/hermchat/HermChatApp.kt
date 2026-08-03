@@ -7,6 +7,7 @@ import com.eraherm.hermchat.data.local.ChatPrefsStore
 import com.eraherm.hermchat.data.local.MessageRepository
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.local.WakeSettingsStore
+import com.eraherm.hermchat.data.network.AgentSessionHolder
 import com.eraherm.hermchat.service.TtsSpeaker
 import com.eraherm.hermchat.service.VoiceCloudBridge
 import com.eraherm.hermchat.service.VoiceEventBus
@@ -21,6 +22,7 @@ class HermChatApp : Application() {
     val wakeSettingsStore: WakeSettingsStore by lazy { WakeSettingsStore(this) }
     val chatPrefsStore: ChatPrefsStore by lazy { ChatPrefsStore(this) }
     val localModelStore: LocalModelStore by lazy { LocalModelStore(this) }
+    val agentSessionHolder: AgentSessionHolder by lazy { AgentSessionHolder() }
     val voiceEventBus: VoiceEventBus by lazy { VoiceEventBus() }
     val toolRegistry: ToolRegistry by lazy { ToolRegistry(this) }
     val voiceCloudBridge: VoiceCloudBridge by lazy { VoiceCloudBridge(this) }

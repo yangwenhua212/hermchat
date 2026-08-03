@@ -13,10 +13,12 @@ import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.data.model.ToolCall
 import com.eraherm.hermchat.data.network.AIClientFactory
 import com.eraherm.hermchat.data.network.AgentFailover
+import com.eraherm.hermchat.data.network.AgentSessionHolder
 import com.eraherm.hermchat.data.network.ChatTurn
 import com.eraherm.hermchat.data.network.HybridGatewayClient
 import com.eraherm.hermchat.data.network.paceForDisplay
 import com.eraherm.hermchat.data.network.StreamingChatClient
+import com.eraherm.hermchat.service.BridgeKeepAliveService
 import com.eraherm.hermchat.service.VoiceEvent
 import com.eraherm.hermchat.tools.LocalToolPlanner
 import com.eraherm.hermchat.tools.ToolCallParser
@@ -57,7 +59,10 @@ class ChatViewModel(
     private val activeAgent = MutableStateFlow<AgentProfile?>(null)
     private val pendingToolCall = MutableStateFlow<ToolCall?>(null)
 
-    private var client: StreamingChatClient? = null
+    private val sessions: AgentSessionHolder =
+        (appContext as HermChatApp).agentSessionHolder
+    private val client: StreamingChatClient?
+        get() = sessions.client
     private var sendJob: Job? = null
     private var agentJob: Job? = null
     private var currentAgentId: String? = null
@@ -289,10 +294,10 @@ class ChatViewModel(
         streamingContent.value = ""
         streamingProvider.value = null
         pendingToolCall.value = null
-        client?.resetConversation()
-        client?.close()
-        client = null
-        bridgeConnected.value = false
+        // 只换会话，不断开底层连接（后台保活仍有效）
+        sessions.client?.resetConversation()
+        bridgeConnected.value = sessions.client != null &&
+            (sessions.client?.connected?.value == true || activeAgent.value?.let { isHttpStyle(it) } == true)
         ensureWelcomeMessage()
     }
 
@@ -306,28 +311,50 @@ class ChatViewModel(
         (appContext as? HermChatApp)?.voiceCloudBridge?.unbindForegroundSender(voiceSendHandler)
         sendJob?.cancel()
         agentJob?.cancel()
-        client?.close()
-        client = null
+        // 不关 sessions.client：回桌面/重建 Activity 后复用；保活服务继续撑进程
+        BridgeKeepAliveService.sync(appContext)
     }
 
     private suspend fun reconnect(agent: AgentProfile?) {
-        if (agent?.id != currentAgentId) {
-            currentAgentId = agent?.id
-            messageRepository.clear()
-            client?.resetConversation()
+        if (agent == null) {
+            currentAgentId = null
+            sessions.release(close = true)
+            BridgeKeepAliveService.stop(appContext)
+            bridgeConnected.value = false
+            return
         }
-        client?.close()
-        client = null
+        if (agent.id != currentAgentId) {
+            currentAgentId = agent.id
+            messageRepository.clear()
+            if (!sessions.matches(agent)) {
+                sessions.client?.resetConversation()
+            }
+        }
+        // 同一 Agent 且已有连接：复用，避免退出再进反复建连
+        if (sessions.matches(agent)) {
+            runCatching {
+                sessions.client?.ensureConnected()
+                bridgeConnected.value =
+                    sessions.client?.connected?.value == true || isHttpStyle(agent)
+                BridgeKeepAliveService.sync(appContext)
+                ensureWelcomeMessage()
+            }.onFailure {
+                softRebind(agent)
+            }
+            return
+        }
+        sessions.release(close = true)
         bridgeConnected.value = false
-        if (agent == null) return
         runCatching {
             val created = AIClientFactory.create(agent, appContext)
             created.ensureConnected()
-            client = created
+            sessions.attach(agent, created)
             bridgeConnected.value = created.connected.value || isHttpStyle(agent)
+            BridgeKeepAliveService.sync(appContext)
             ensureWelcomeMessage()
         }.onFailure { err ->
             bridgeConnected.value = false
+            BridgeKeepAliveService.stop(appContext)
             busy.update {
                 it.copy(error = "未能连接 ${agent.name}：${err.message ?: "未知错误"}")
             }
@@ -335,16 +362,17 @@ class ChatViewModel(
     }
 
     private suspend fun softRebind(agent: AgentProfile) {
-        client?.close()
-        client = null
+        sessions.release(close = true)
         bridgeConnected.value = false
         runCatching {
             val created = AIClientFactory.create(agent, appContext)
             created.ensureConnected()
-            client = created
+            sessions.attach(agent, created)
             bridgeConnected.value = created.connected.value || isHttpStyle(agent)
+            BridgeKeepAliveService.sync(appContext)
         }.onFailure { err ->
             bridgeConnected.value = false
+            BridgeKeepAliveService.stop(appContext)
             busy.update {
                 it.copy(error = "连接已断开，请再试：${err.message ?: "未知错误"}")
             }
@@ -366,9 +394,10 @@ class ChatViewModel(
     ): TurnOutcome {
         val chatClient = if (usePrimaryClient) {
             client ?: run {
-                val created = agent?.let { AIClientFactory.create(it, appContext) }
-                    ?: error("请先配置 Agent")
-                client = created
+                val profile = agent ?: error("请先配置 Agent")
+                val created = AIClientFactory.create(profile, appContext)
+                sessions.attach(profile, created)
+                BridgeKeepAliveService.sync(appContext)
                 created
             }
         } else {
