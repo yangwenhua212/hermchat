@@ -29,15 +29,24 @@ data class ShortcutDef(
 )
 
 enum class ChatThemeStyle(val label: String) {
-    FOREST("森林绿"),
+    FOREST("系统默认绿"),
+    MIST("浅雾绿"),
+    SKY("浅天蓝"),
+    AQUA("浅青"),
+    CLOUD("浅灰白"),
+    APRICOT("浅杏"),
     INK("墨黑"),
-    SKY("晴空蓝"),
 }
 
 enum class BubbleStyle(val label: String) {
     ROUND("圆润"),
     SOFT("柔和"),
     SQUARE("直角"),
+}
+
+enum class ChatBackgroundMode(val label: String) {
+    THEME("跟随主题色"),
+    IMAGE("自定义图片"),
 }
 
 /** ④ 端侧网关路由：自动判复杂度，或手选优先本地 / 云端。 */
@@ -51,12 +60,23 @@ data class ChatPrefs(
     val inputMode: InputMode = InputMode.MIXED,
     val themeStyle: ChatThemeStyle = ChatThemeStyle.FOREST,
     val bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
+    val backgroundMode: ChatBackgroundMode = ChatBackgroundMode.THEME,
+    /** 本地背景图绝对路径（相册或下载） */
+    val backgroundImagePath: String? = null,
+    val backgroundPresetId: String? = null,
     /** 助手回复完成后自动朗读（系统 TTS） */
     val autoSpeakReplies: Boolean = false,
     /** 仅对端侧网关 Agent 生效 */
     val gatewayRouteMode: GatewayRouteMode = GatewayRouteMode.AUTO,
     val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
 ) {
+    fun resolvedImagePath(): String? =
+        if (backgroundMode == ChatBackgroundMode.IMAGE) {
+            backgroundImagePath?.takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
+
     companion object {
         val DEFAULT_SHORTCUTS = listOf(
             ShortcutDef("today", "今天日程", "今天有什么日程？", ShortcutAction.SEND),
@@ -92,6 +112,39 @@ class ChatPrefsStore(
 
     fun setBubbleStyle(style: BubbleStyle) {
         update { it.copy(bubbleStyle = style) }
+    }
+
+    fun setBackgroundThemeOnly() {
+        update {
+            it.copy(
+                backgroundMode = ChatBackgroundMode.THEME,
+                backgroundImagePath = null,
+                backgroundPresetId = null,
+            )
+        }
+    }
+
+    fun setBackgroundImage(path: String, presetId: String? = null) {
+        update {
+            it.copy(
+                backgroundMode = ChatBackgroundMode.IMAGE,
+                backgroundImagePath = path,
+                backgroundPresetId = presetId,
+            )
+        }
+    }
+
+    /** 恢复系统默认：森林绿 + 主题渐变背景。 */
+    fun resetToSystemDefaultAppearance() {
+        update {
+            it.copy(
+                themeStyle = ChatThemeStyle.FOREST,
+                bubbleStyle = BubbleStyle.ROUND,
+                backgroundMode = ChatBackgroundMode.THEME,
+                backgroundImagePath = null,
+                backgroundPresetId = null,
+            )
+        }
     }
 
     fun setAutoSpeakReplies(enabled: Boolean) {
@@ -134,6 +187,9 @@ class ChatPrefsStore(
             .putString(KEY_INPUT_MODE, value.inputMode.name)
             .putString(KEY_THEME, value.themeStyle.name)
             .putString(KEY_BUBBLE, value.bubbleStyle.name)
+            .putString(KEY_BG_MODE, value.backgroundMode.name)
+            .putString(KEY_BG_PATH, value.backgroundImagePath)
+            .putString(KEY_BG_PRESET, value.backgroundPresetId)
             .putBoolean(KEY_AUTO_SPEAK, value.autoSpeakReplies)
             .putString(KEY_GATEWAY_ROUTE, value.gatewayRouteMode.name)
             .putString(KEY_SHORTCUTS, array.toString())
@@ -156,6 +212,14 @@ class ChatPrefsStore(
                 runCatching { BubbleStyle.valueOf(raw) }.getOrDefault(BubbleStyle.ROUND)
             }
             ?: BubbleStyle.ROUND
+        val bgMode = prefs.getString(KEY_BG_MODE, ChatBackgroundMode.THEME.name)
+            ?.let { raw ->
+                runCatching { ChatBackgroundMode.valueOf(raw) }
+                    .getOrDefault(ChatBackgroundMode.THEME)
+            }
+            ?: ChatBackgroundMode.THEME
+        val bgPath = prefs.getString(KEY_BG_PATH, null)?.takeIf { it.isNotBlank() }
+        val bgPreset = prefs.getString(KEY_BG_PRESET, null)?.takeIf { it.isNotBlank() }
         val autoSpeak = prefs.getBoolean(KEY_AUTO_SPEAK, false)
         val gatewayRoute = prefs.getString(KEY_GATEWAY_ROUTE, GatewayRouteMode.AUTO.name)
             ?.let { raw ->
@@ -167,6 +231,9 @@ class ChatPrefsStore(
             inputMode = mode,
             themeStyle = theme,
             bubbleStyle = bubble,
+            backgroundMode = bgMode,
+            backgroundImagePath = bgPath,
+            backgroundPresetId = bgPreset,
             autoSpeakReplies = autoSpeak,
             gatewayRouteMode = gatewayRoute,
             shortcuts = shortcuts,
@@ -201,6 +268,9 @@ class ChatPrefsStore(
         private const val KEY_INPUT_MODE = "input_mode"
         private const val KEY_THEME = "theme_style"
         private const val KEY_BUBBLE = "bubble_style"
+        private const val KEY_BG_MODE = "background_mode"
+        private const val KEY_BG_PATH = "background_image_path"
+        private const val KEY_BG_PRESET = "background_preset_id"
         private const val KEY_AUTO_SPEAK = "auto_speak_replies"
         private const val KEY_GATEWAY_ROUTE = "gateway_route_mode"
         private const val KEY_SHORTCUTS = "shortcuts"

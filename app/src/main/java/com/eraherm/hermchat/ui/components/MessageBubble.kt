@@ -41,8 +41,7 @@ import com.eraherm.hermchat.data.local.BubbleStyle
 import com.eraherm.hermchat.data.local.ChatThemeStyle
 import com.eraherm.hermchat.data.model.Message
 import com.eraherm.hermchat.data.model.MessageRole
-import com.eraherm.hermchat.ui.theme.Forest
-import com.eraherm.hermchat.ui.theme.Ink
+import com.eraherm.hermchat.ui.theme.ChatAtmosphere
 import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
 
@@ -55,11 +54,7 @@ fun MessageBubble(
     isSpeaking: Boolean = false,
     onSpeakClick: (() -> Unit)? = null,
 ) {
-    val userColor = when (themeStyle) {
-        ChatThemeStyle.FOREST -> Forest
-        ChatThemeStyle.INK -> Ink
-        ChatThemeStyle.SKY -> Color(0xFF3A7CA5)
-    }
+    val userColor = ChatAtmosphere.accent(themeStyle)
     val radius = when (bubbleStyle) {
         BubbleStyle.ROUND -> 18.dp
         BubbleStyle.SOFT -> 22.dp

@@ -330,7 +330,10 @@ fun ChatScreen(
         onDispose { app.ttsSpeaker.stop() }
     }
 
-    AtmosphereBackground {
+    AtmosphereBackground(
+        themeStyle = chatPrefs.themeStyle,
+        imagePath = chatPrefs.resolvedImagePath(),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()

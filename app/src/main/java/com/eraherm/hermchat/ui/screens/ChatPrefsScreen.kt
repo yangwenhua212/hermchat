@@ -1,5 +1,8 @@
 package com.eraherm.hermchat.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -34,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,15 +48,21 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.local.BubbleStyle
+import com.eraherm.hermchat.data.local.ChatBackgroundMode
 import com.eraherm.hermchat.data.local.ChatPrefs
 import com.eraherm.hermchat.data.local.ChatPrefsStore
 import com.eraherm.hermchat.data.local.ChatThemeStyle
 import com.eraherm.hermchat.data.local.GatewayRouteMode
 import com.eraherm.hermchat.data.local.InputMode
+import com.eraherm.hermchat.data.local.WallpaperEntry
+import com.eraherm.hermchat.data.local.WallpaperStore
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 设置树：根目录是文件夹，点进去才看详情。 */
 private sealed interface PrefsFolder {
@@ -72,7 +83,7 @@ fun ChatPrefsScreen(
     val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
     var folder by remember { mutableStateOf<PrefsFolder>(PrefsFolder.Root) }
 
-    AtmosphereBackground {
+    AtmosphereBackground(themeStyle = chatPrefs.themeStyle) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -113,6 +124,7 @@ fun ChatPrefsScreen(
                         PrefsFolder.Appearance -> PrefsAppearanceDetail(
                             prefs = chatPrefs,
                             store = app.chatPrefsStore,
+                            wallpaperStore = app.wallpaperStore,
                         )
                         PrefsFolder.Shortcuts -> PrefsShortcutsDetail(
                             prefs = chatPrefs,
@@ -183,7 +195,14 @@ private fun PrefsRoot(
     )
     PrefsFolderRow(
         title = "外观",
-        summary = "${prefs.themeStyle.label} · ${prefs.bubbleStyle.label}",
+        summary = buildString {
+            append(prefs.themeStyle.label)
+            append(" · ")
+            append(prefs.bubbleStyle.label)
+            if (prefs.backgroundMode == ChatBackgroundMode.IMAGE) {
+                append(" · 图片背景")
+            }
+        },
         onClick = onOpenAppearance,
     )
     PrefsFolderRow(
@@ -232,8 +251,45 @@ private fun PrefsGatewayDetail(
 private fun PrefsAppearanceDetail(
     prefs: ChatPrefs,
     store: ChatPrefsStore,
+    wallpaperStore: WallpaperStore,
 ) {
-    Text("聊天主题色", style = MaterialTheme.typography.titleMedium)
+    val scope = rememberCoroutineScope()
+    var searchQuery by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf(WallpaperStore.PRESETS) }
+    var busyId by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+
+    val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            busyId = "album"
+            status = null
+            val result = withContext(Dispatchers.IO) {
+                wallpaperStore.importFromUri(uri)
+            }
+            busyId = null
+            result.onSuccess { file ->
+                store.setBackgroundImage(file.absolutePath, presetId = null)
+                status = "已使用相册图片"
+            }.onFailure {
+                status = it.message ?: "导入失败"
+            }
+        }
+    }
+
+    TextButton(
+        onClick = {
+            store.resetToSystemDefaultAppearance()
+            status = "已恢复系统默认绿"
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("恢复系统默认绿")
+    }
+
+    Text("主题色", style = MaterialTheme.typography.titleMedium)
     ChatThemeStyle.entries.forEach { style ->
         PrefsOptionRow(
             title = style.label,
@@ -241,6 +297,7 @@ private fun PrefsAppearanceDetail(
             onClick = { store.setThemeStyle(style) },
         )
     }
+
     Spacer(modifier = Modifier.height(8.dp))
     Text("气泡样式", style = MaterialTheme.typography.titleMedium)
     BubbleStyle.entries.forEach { style ->
@@ -249,6 +306,154 @@ private fun PrefsAppearanceDetail(
             selected = prefs.bubbleStyle == style,
             onClick = { store.setBubbleStyle(style) },
         )
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+    Text("聊天背景", style = MaterialTheme.typography.titleMedium)
+    PrefsOptionRow(
+        title = ChatBackgroundMode.THEME.label,
+        selected = prefs.backgroundMode == ChatBackgroundMode.THEME,
+        onClick = {
+            store.setBackgroundThemeOnly()
+            status = null
+        },
+    )
+    TextButton(
+        onClick = {
+            pickImage.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        },
+        enabled = busyId == null,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(if (busyId == "album") "导入中…" else "从相册选择")
+    }
+    if (prefs.backgroundMode == ChatBackgroundMode.IMAGE) {
+        TextButton(
+            onClick = {
+                store.setBackgroundThemeOnly()
+                status = "已改回主题色背景"
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("清除图片背景")
+        }
+    }
+
+    Spacer(modifier = Modifier.height(4.dp))
+    Text("搜索壁纸", style = MaterialTheme.typography.titleMedium)
+    OutlinedTextField(
+        value = searchQuery,
+        onValueChange = { searchQuery = it },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text("关键词") },
+        shape = RoundedCornerShape(14.dp),
+    )
+    TextButton(
+        onClick = {
+            scope.launch {
+                busyId = "search"
+                status = null
+                val result = withContext(Dispatchers.IO) {
+                    wallpaperStore.search(searchQuery)
+                }
+                busyId = null
+                result.onSuccess {
+                    results = it
+                    if (it.isEmpty()) status = "没有结果"
+                }.onFailure {
+                    status = it.message ?: "搜索失败"
+                }
+            }
+        },
+        enabled = busyId == null,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(if (busyId == "search") "搜索中…" else "搜索")
+    }
+
+    results.forEach { entry ->
+        WallpaperResultRow(
+            entry = entry,
+            selected = prefs.backgroundPresetId == entry.id &&
+                prefs.backgroundMode == ChatBackgroundMode.IMAGE,
+            busy = busyId == entry.id,
+            downloaded = wallpaperStore.isDownloaded(entry.id),
+            onUse = {
+                scope.launch {
+                    busyId = entry.id
+                    status = null
+                    val result = withContext(Dispatchers.IO) {
+                        val local = wallpaperStore.localPath(entry.id)
+                        if (local != null) {
+                            Result.success(java.io.File(local))
+                        } else {
+                            wallpaperStore.download(entry)
+                        }
+                    }
+                    busyId = null
+                    result.onSuccess { file ->
+                        store.setBackgroundImage(file.absolutePath, presetId = entry.id)
+                        status = "已应用 ${entry.label}"
+                    }.onFailure {
+                        status = it.message ?: "下载失败"
+                    }
+                }
+            },
+        )
+    }
+
+    status?.let {
+        Text(it, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+@Composable
+private fun WallpaperResultRow(
+    entry: WallpaperEntry,
+    selected: Boolean,
+    busy: Boolean,
+    downloaded: Boolean,
+    onUse: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else Line,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(entry.label, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = if (downloaded) "已缓存" else entry.source,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SoftGray,
+                )
+            }
+            TextButton(onClick = onUse, enabled = !busy) {
+                Text(
+                    when {
+                        busy -> "…"
+                        selected -> "使用中"
+                        downloaded -> "使用"
+                        else -> "下载"
+                    },
+                )
+            }
+        }
     }
 }
 

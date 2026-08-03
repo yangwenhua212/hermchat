@@ -37,6 +37,6 @@
 
 工具说明：`PhoneTool` + `ToolRegistry`；日历已接入；闹钟优先系统 SET_TIMER/SET_ALARM，失败回退本机通知（见 Step 17 后续补强）。协议见 [BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)。
 
-聊天定制说明：齿轮进入设置（主题色 / 气泡 / 输入 / 快捷指令）；Agent 管理在顶栏下拉；历史列表回看旧聊；「新建对话」换本地会话 + 服务端 Session。
+聊天定制说明：齿轮进入设置（主题色含背景 / 气泡 / 壁纸相册与搜索 / 输入 / 快捷指令）；Agent 管理在顶栏下拉；历史列表回看旧聊；「新建对话」换本地会话 + 服务端 Session。
 
 配置进阶说明：`EndpointProbe` + 竖屏扫码 + 粘贴导入。
