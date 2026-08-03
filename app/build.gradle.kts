@@ -21,8 +21,8 @@ android {
         applicationId = "com.eraherm.hermchat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 23
-        versionName = "0.1.22"
+        versionCode = 24
+        versionName = "0.1.23"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

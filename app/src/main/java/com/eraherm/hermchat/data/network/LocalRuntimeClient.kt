@@ -42,6 +42,7 @@ class LocalRuntimeClient(
     override fun streamChat(
         prompt: String,
         history: List<ChatTurn>,
+        imageDataUrl: String?,
     ): Flow<String> = flow {
         val tool = LocalToolPlanner.plan(prompt)
         if (tool != null) {

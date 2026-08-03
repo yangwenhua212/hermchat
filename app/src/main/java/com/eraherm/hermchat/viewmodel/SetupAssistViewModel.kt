@@ -42,7 +42,7 @@ class SetupAssistViewModel(
             messages = listOf(
                 AssistChatMessage(
                     fromUser = false,
-                    text = "可以说「连电脑上的助手」自动探测 WebSocket，或「连一下 47.x.x.x，密码是 sk-…」配 Hermes。",
+                    text = SetupAssistParser.WELCOME,
                 ),
             ),
         ),
@@ -54,7 +54,7 @@ class SetupAssistViewModel(
             messages = listOf(
                 AssistChatMessage(
                     fromUser = false,
-                    text = "可以说「连电脑上的助手」自动探测 WebSocket，或「连一下 47.x.x.x，密码是 sk-…」配 Hermes。DeepSeek 等可说「http 兼容」。",
+                    text = SetupAssistParser.WELCOME,
                 ),
             ),
         )
@@ -94,7 +94,11 @@ class SetupAssistViewModel(
             val merged = _uiState.value.draft.merge(parsed)
             _uiState.update { it.copy(draft = merged, pendingConfirm = false) }
 
-            if (merged.wantsLanProbe || !merged.probeHost.isNullOrBlank()) {
+            if ((merged.wantsLanProbe || !merged.probeHost.isNullOrBlank()) &&
+                merged.resolvedKind() != AgentKind.LOCAL &&
+                merged.resolvedKind() != AgentKind.GATEWAY &&
+                merged.resolvedKind() != AgentKind.HTTP_COMPAT
+            ) {
                 runProbeAndConfirm(merged)
                 return@launch
             }
@@ -109,13 +113,22 @@ class SetupAssistViewModel(
             }
 
             val kind = merged.resolvedKind()
+            if (kind == AgentKind.LOCAL) {
+                offerConfirm(allowEmptyKey = true)
+                return@launch
+            }
             val needKeyHint = kind == AgentKind.HERMES ||
                 kind == AgentKind.HTTP_COMPAT ||
                 kind == AgentKind.GATEWAY
             if (needKeyHint && merged.apiKey.isNullOrBlank()) {
+                val tip = when (kind) {
+                    AgentKind.GATEWAY -> "端侧网关已记下 ${merged.endpoint}。"
+                    AgentKind.HTTP_COMPAT -> "HTTP 兼容已记下 ${merged.endpoint}。"
+                    else -> "已记下 ${merged.endpoint}。"
+                }
                 append(
                     fromUser = false,
-                    text = "已记下 ${merged.endpoint}。直接粘贴 API Key 即可（不用写 Key:）；没有就回复「跳过」。",
+                    text = "$tip 直接粘贴 API Key 即可（不用写 Key:）；没有就回复「跳过」。",
                 )
                 return@launch
             }
@@ -142,7 +155,7 @@ class SetupAssistViewModel(
                     pendingConfirm = false,
                 )
             }
-            append(fromUser = false, text = "好，请重新发一段。")
+            append(fromUser = false, text = "好。\n${SetupAssistParser.WELCOME}")
         }
     }
 
@@ -210,11 +223,12 @@ class SetupAssistViewModel(
     private fun offerConfirm(allowEmptyKey: Boolean) {
         val draft = _uiState.value.draft
         if (!draft.isReadyToConnect()) {
-            append(fromUser = false, text = "还没有主机地址。")
+            append(fromUser = false, text = "还没有主机地址。也可说「本地」或「连电脑上的助手」。")
             return
         }
         val kind = draft.resolvedKind()
-        if (!allowEmptyKey &&
+        if (kind != AgentKind.LOCAL &&
+            !allowEmptyKey &&
             (kind == AgentKind.HERMES || kind == AgentKind.HTTP_COMPAT || kind == AgentKind.GATEWAY) &&
             draft.apiKey.isNullOrBlank()
         ) {
@@ -227,13 +241,19 @@ class SetupAssistViewModel(
 
     private suspend fun tryConnect(allowEmptyKey: Boolean) {
         val draft = _uiState.value.draft
-        val endpoint = draft.endpoint?.trim().orEmpty()
+        val kind = draft.resolvedKind()
+        val endpoint = when (kind) {
+            AgentKind.LOCAL ->
+                draft.endpoint?.trim()?.takeIf { it.isNotBlank() }
+                    ?: AgentKind.LOCAL.defaultEndpoint
+            else -> draft.endpoint?.trim().orEmpty()
+        }
         if (endpoint.isEmpty()) {
             append(fromUser = false, text = "还没有主机地址。")
             return
         }
-        val kind = draft.resolvedKind()
-        if (!allowEmptyKey &&
+        if (kind != AgentKind.LOCAL &&
+            !allowEmptyKey &&
             (kind == AgentKind.HERMES || kind == AgentKind.HTTP_COMPAT || kind == AgentKind.GATEWAY) &&
             draft.apiKey.isNullOrBlank()
         ) {
@@ -245,7 +265,11 @@ class SetupAssistViewModel(
         append(fromUser = false, text = "正在测连…")
 
         val apiKey = ConnectionTester.sanitizeKey(draft.apiKey.orEmpty())
-        val model = draft.model?.takeIf { it.isNotBlank() } ?: "default"
+        val model = draft.model?.takeIf { it.isNotBlank() } ?: when (kind) {
+            AgentKind.GATEWAY -> "deepseek-chat"
+            AgentKind.LOCAL -> com.eraherm.hermchat.data.local.LocalModelStore.DEFAULT_MODEL_ID
+            else -> "default"
+        }
         val result = if (kind == AgentKind.LOCAL) {
             Result.success("本地编排")
         } else {
@@ -261,15 +285,21 @@ class SetupAssistViewModel(
                     name = name,
                     endpoint = endpoint,
                     apiKey = apiKey,
-                    model = when {
-                        model != "default" -> model
-                        kind == AgentKind.GATEWAY -> "deepseek-chat"
-                        else -> model
-                    },
+                    model = model,
                     localToolsEnabled = kind != AgentKind.HTTP_COMPAT,
                 )
                 agentStore.saveAgent(profile, setCurrent = true)
-                append(fromUser = false, text = "测连成功（$msg）。已保存「$name」，可以聊天了。")
+                val done = when (kind) {
+                    AgentKind.LOCAL ->
+                        "已保存「$name」。可在设置 → 资源库下载并选用本地模型后再聊。"
+                    AgentKind.GATEWAY ->
+                        "测连成功（$msg）。已保存「$name」（端侧网关，可本机工具）。"
+                    AgentKind.HTTP_COMPAT ->
+                        "测连成功（$msg）。已保存「$name」（纯聊天，无本机工具）。"
+                    else ->
+                        "测连成功（$msg）。已保存「$name」，可以聊天了。"
+                }
+                append(fromUser = false, text = done)
                 _uiState.update {
                     it.copy(busy = false, completedProfile = profile)
                 }

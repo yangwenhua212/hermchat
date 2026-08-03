@@ -79,16 +79,24 @@ class HybridGatewayClient(
         return client.streamMessages(messages)
     }
 
-    /** 首轮强制云端（本地优先解析失败后的保底）。 */
-    fun streamApiChat(prompt: String, history: List<ChatTurn>): Flow<String> {
+    /** 首轮强制云端（本地优先解析失败后的保底 / 识图）。 */
+    fun streamApiChat(
+        prompt: String,
+        history: List<ChatTurn>,
+        imageDataUrl: String? = null,
+    ): Flow<String> {
         val client = api ?: error("未配置 API")
         _lastRouteLabel.value = "网关·API"
-        return client.streamChat(prompt, history)
+        return client.streamChat(prompt, history, imageDataUrl)
     }
 
-    fun buildApiTurnMessages(prompt: String, history: List<ChatTurn>): List<ApiChatMessage> {
+    fun buildApiTurnMessages(
+        prompt: String,
+        history: List<ChatTurn>,
+        imageDataUrl: String? = null,
+    ): List<ApiChatMessage> {
         val client = api ?: error("未配置 API")
-        return client.buildTurnMessages(prompt, history)
+        return client.buildTurnMessages(prompt, history, imageDataUrl)
     }
 
     override suspend fun ensureConnected() {
@@ -105,7 +113,16 @@ class HybridGatewayClient(
     override fun streamChat(
         prompt: String,
         history: List<ChatTurn>,
+        imageDataUrl: String?,
     ): Flow<String> = flow {
+        if (!imageDataUrl.isNullOrBlank()) {
+            val client = api ?: error("未配置 API，无法识图")
+            _lastRouteLabel.value = "网关·API"
+            client.streamChat(prompt, history, imageDataUrl).collect { emit(it) }
+            _connected.value = true
+            return@flow
+        }
+
         val localReady = modelStore.isReady(resolvedLocalModelId)
         val mode = routeModeProvider()
         val route = GatewayRouter.decide(
@@ -124,8 +141,6 @@ class HybridGatewayClient(
             GatewayRouter.Route.LOCAL -> {
                 _lastRouteLabel.value = "网关·本地"
                 val buffer = StringBuilder()
-                // 自动模式可能 escalate：先缓冲，避免弱回复已上屏再叠 API。
-                // 手选本地 / 无 API：边生成边吐字。
                 val liveStream = mode != GatewayRouteMode.AUTO || api == null
                 local.streamChat(prompt, history).collect { piece ->
                     buffer.append(piece)

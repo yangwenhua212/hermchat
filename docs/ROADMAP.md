@@ -52,6 +52,8 @@
 - [ ] 写操作必确认；取消后 Loop 干净结束（骨架已具备，待真机勾）
 - [x] 超步数友好降级到「建议切 ③」：有已存 Hermes/WS 则一键切换；否则「去添加」
 - [x] ①/本地小模型**可**驱动工具解析（实验）：开前警告后果；失败本轮降云端并一行提示（默认仍云脑 Loop）
+- [x] 聊天识图一期：Composer 选图 → ②/④/Hermes HTTP vision；本地/WS 短提示
+- [x] 聊天附件二期：文本注入 + PDF 首页当图；Bridge 真上传留三期
 - [ ] （可选 Pro）设置里「Agent 加强」说明流量/耗电；默认对④开启聪明路由即可
 
 产品原则见 [PRODUCT.md](PRODUCT.md)。实现备忘见 [NEXT_IMPL.md](NEXT_IMPL.md)。UI 文案见 [UI.md](UI.md)。安全见 [SECURITY.md](SECURITY.md)。

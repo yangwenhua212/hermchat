@@ -20,6 +20,9 @@ data class MessageEntity(
     val content: String,
     val providerLabel: String? = null,
     val createdAt: Long,
+    val attachmentPath: String? = null,
+    val attachmentMime: String? = null,
+    val attachmentName: String? = null,
 )
 
 @Dao

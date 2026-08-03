@@ -74,6 +74,7 @@ class HermesBridgeClient(
     override fun streamChat(
         prompt: String,
         history: List<ChatTurn>,
+        imageDataUrl: String?,
     ): Flow<String> = callbackFlow {
         ensureConnected()
         if (protocol == WsProtocol.JSON_RPC && sessionId.isNullOrBlank()) {

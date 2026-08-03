@@ -10,6 +10,9 @@ fun MessageEntity.toModel(): Message = Message(
     content = content,
     providerLabel = providerLabel,
     createdAt = createdAt,
+    attachmentPath = attachmentPath,
+    attachmentMime = attachmentMime,
+    attachmentName = attachmentName,
 )
 
 fun Message.toEntity(): MessageEntity = MessageEntity(
@@ -19,4 +22,7 @@ fun Message.toEntity(): MessageEntity = MessageEntity(
     content = content,
     providerLabel = providerLabel,
     createdAt = createdAt,
+    attachmentPath = attachmentPath,
+    attachmentMime = attachmentMime,
+    attachmentName = attachmentName,
 )

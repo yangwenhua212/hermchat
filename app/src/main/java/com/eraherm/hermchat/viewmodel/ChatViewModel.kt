@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.local.AgentStore
+import com.eraherm.hermchat.data.local.AttachmentKind
+import com.eraherm.hermchat.data.local.ChatAttachmentStore
 import com.eraherm.hermchat.data.local.ConversationRepository
 import com.eraherm.hermchat.data.local.MessageRepository
 import com.eraherm.hermchat.data.model.AgentKind
@@ -17,6 +19,7 @@ import com.eraherm.hermchat.data.network.AIClientFactory
 import com.eraherm.hermchat.data.network.AgentFailover
 import com.eraherm.hermchat.data.network.AgentSessionHolder
 import com.eraherm.hermchat.data.network.ApiChatMessage
+import com.eraherm.hermchat.data.network.AttachmentSupport
 import com.eraherm.hermchat.data.network.ChatTurn
 import com.eraherm.hermchat.data.network.HybridGatewayClient
 import com.eraherm.hermchat.data.network.paceForDisplay
@@ -154,14 +157,69 @@ class ChatViewModel(
         }
     }
 
-    fun sendMessage(text: String, enableLocalTools: Boolean = true) {
+    fun sendMessage(
+        text: String,
+        enableLocalTools: Boolean = true,
+        attachmentPath: String? = null,
+        attachmentMime: String? = null,
+        attachmentName: String? = null,
+    ) {
         val content = text.trim()
-        if (content.isEmpty()) return
+        val hasAttach = !attachmentPath.isNullOrBlank()
+        if (content.isEmpty() && !hasAttach) return
         if (busy.value.isSending || busy.value.isStreaming || busy.value.toolExecuting) return
 
         val agent = activeAgent.value
-        val toolsOn = enableLocalTools && agent?.localToolsEnabled != false
-        val localPlan = if (toolsOn) LocalToolPlanner.plan(content) else null
+        val mime = attachmentMime.orEmpty()
+        val isVisionAttach = hasAttach && ChatAttachmentStore.isImageMime(mime)
+        val isTextAttach = hasAttach &&
+            ChatAttachmentStore.isTextMime(mime, attachmentName.orEmpty().lowercase())
+        val attachKind = when {
+            isTextAttach -> AttachmentKind.TEXT
+            isVisionAttach -> AttachmentKind.IMAGE
+            hasAttach -> AttachmentKind.IMAGE
+            else -> null
+        }
+        if (attachKind != null && !AttachmentSupport.canSend(agent, attachKind)) {
+            (appContext as? HermChatApp)?.voiceEventBus?.emit(
+                VoiceEvent.Status(AttachmentSupport.unsupportedStatus(agent, attachKind)),
+            )
+            return
+        }
+
+        val store = ChatAttachmentStore(appContext)
+        val extracted = if (isTextAttach) {
+            store.readTextLimited(attachmentPath!!)
+        } else {
+            null
+        }
+        if (isTextAttach && extracted.isNullOrBlank()) {
+            (appContext as? HermChatApp)?.voiceEventBus?.emit(
+                VoiceEvent.Status("无法读取附件文本"),
+            )
+            return
+        }
+
+        val promptText = buildString {
+            when {
+                isTextAttach -> {
+                    if (content.isNotBlank()) {
+                        append(content)
+                        append("\n\n")
+                    }
+                    append("【附件：")
+                    append(attachmentName?.ifBlank { "文件" } ?: "文件")
+                    append("】\n")
+                    append(extracted)
+                }
+                content.isNotBlank() -> append(content)
+                isVisionAttach -> append("请看这张图片。")
+            }
+        }
+        val toolsOn = enableLocalTools &&
+            agent?.localToolsEnabled != false &&
+            !isVisionAttach
+        val localPlan = if (toolsOn) LocalToolPlanner.plan(promptText) else null
 
         sendJob?.cancel()
         rejectToolConfirmation()
@@ -188,6 +246,9 @@ class ChatViewModel(
                         content = content,
                         providerLabel = agent?.kind?.label,
                         createdAt = System.currentTimeMillis(),
+                        attachmentPath = attachmentPath,
+                        attachmentMime = attachmentMime,
+                        attachmentName = attachmentName,
                     ),
                 )
 
@@ -195,11 +256,33 @@ class ChatViewModel(
                 streamingContent.value = ""
                 streamingProvider.value = agent?.kind?.label
 
+                val imageDataUrl = if (isVisionAttach) {
+                    store.toDataUrl(
+                        path = attachmentPath!!,
+                        mime = mime.ifBlank { "image/jpeg" },
+                    )
+                } else {
+                    null
+                }
+                if (isVisionAttach && imageDataUrl == null) {
+                    error("图片无法读取")
+                }
+
                 val outcome = runCatching {
-                    streamTurn(agent = agent, prompt = content, toolsOn = toolsOn)
+                    streamTurn(
+                        agent = agent,
+                        prompt = promptText,
+                        toolsOn = toolsOn,
+                        imageDataUrl = imageDataUrl,
+                    )
                 }.recoverCatching { primaryError ->
                     val failover = AgentFailover.pick(agent, agentStore.agents.value)
                         ?: throw primaryError
+                    if (attachKind != null &&
+                        !AttachmentSupport.canSend(failover, attachKind)
+                    ) {
+                        throw primaryError
+                    }
                     (appContext as? HermChatApp)?.voiceEventBus?.emit(
                         VoiceEvent.Status("改用 ${failover.name}…"),
                     )
@@ -207,10 +290,11 @@ class ChatViewModel(
                     setLoopStep(LoopStep.Planning("改用 ${failover.name}…"))
                     streamTurn(
                         agent = failover,
-                        prompt = content,
-                        toolsOn = toolsOn && failover.localToolsEnabled,
+                        prompt = promptText,
+                        toolsOn = toolsOn && failover.localToolsEnabled && !isVisionAttach,
                         usePrimaryClient = false,
                         providerOverride = "备用·${failover.name}",
+                        imageDataUrl = imageDataUrl,
                     )
                 }.getOrThrow()
 
@@ -650,6 +734,7 @@ class ChatViewModel(
         toolsOn: Boolean,
         usePrimaryClient: Boolean = true,
         providerOverride: String? = null,
+        imageDataUrl: String? = null,
     ): TurnOutcome {
         val chatClient = if (usePrimaryClient) {
             client ?: run {
@@ -676,8 +761,11 @@ class ChatViewModel(
             val prefs = (appContext as? HermChatApp)?.chatPrefsStore?.prefsFlow?.value
             val buffer = StringBuilder()
             var usedLocalPlan = false
+            val hasImage = !imageDataUrl.isNullOrBlank()
 
+            // 有图时不做本地优先解析
             if (
+                !hasImage &&
                 toolsOn &&
                 agent?.kind == AgentKind.GATEWAY &&
                 gateway != null &&
@@ -721,7 +809,7 @@ class ChatViewModel(
                 }
             } else {
                 collectStream(
-                    stream = chatClient.streamChat(prompt, history),
+                    stream = chatClient.streamChat(prompt, history, imageDataUrl),
                     buffer = buffer,
                     provider = provider,
                     providerOverride = providerOverride,
@@ -749,7 +837,8 @@ class ChatViewModel(
                 gateway.hasApi
             ) {
                 GatewayLoopState(
-                    messages = gateway.buildApiTurnMessages(prompt, history).toMutableList(),
+                    messages = gateway.buildApiTurnMessages(prompt, history, imageDataUrl)
+                        .toMutableList(),
                     lastAssistantRaw = raw.ifBlank { finalText },
                     step = 1,
                 )

@@ -15,6 +15,7 @@ interface StreamingChatClient {
     fun streamChat(
         prompt: String,
         history: List<ChatTurn> = emptyList(),
+        imageDataUrl: String? = null,
     ): Flow<String>
 
     fun sendToolResult(toolCallId: String, ok: Boolean, message: String) {}

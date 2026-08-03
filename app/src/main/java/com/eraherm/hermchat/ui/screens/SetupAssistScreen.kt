@@ -182,7 +182,7 @@ fun SetupAssistScreen(
                 ) {
                     if (draft.isEmpty()) {
                         Text(
-                            text = "连电脑上的助手 / 连一下 47.x.x.x",
+                            text = "本地 / 端侧网关 / http 兼容 / 连电脑…",
                             color = SoftGray,
                             style = MaterialTheme.typography.bodyLarge,
                         )

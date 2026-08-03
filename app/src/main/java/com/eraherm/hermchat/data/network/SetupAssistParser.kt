@@ -27,6 +27,7 @@ data class SetupAssistDraft(
     )
 
     fun missingHints(): List<String> {
+        if (resolvedKind() == AgentKind.LOCAL) return emptyList()
         if (wantsLanProbe || !probeHost.isNullOrBlank()) return emptyList()
         val resolvedKind = resolvedKind()
         return buildList {
@@ -37,19 +38,31 @@ data class SetupAssistDraft(
     }
 
     fun resolvedKind(): AgentKind {
+        kind?.let { return it }
         val ep = endpoint.orEmpty()
-        return kind ?: when {
+        return when {
             ep.startsWith("ws://", true) || ep.startsWith("wss://", true) -> AgentKind.WEBSOCKET
+            ep.startsWith("local://", true) -> AgentKind.LOCAL
             ep.startsWith("http://", true) || ep.startsWith("https://", true) -> AgentKind.HERMES
             wantsLanProbe -> AgentKind.WEBSOCKET
             else -> AgentKind.HERMES
         }
     }
 
-    fun isReadyToConnect(): Boolean = !endpoint.isNullOrBlank()
+    fun isReadyToConnect(): Boolean =
+        resolvedKind() == AgentKind.LOCAL || !endpoint.isNullOrBlank()
 }
 
 object SetupAssistParser {
+    /** 开场：四档一句示例，勿写成说明书。 */
+    const val WELCOME: String =
+        "选一种说法即可：\n" +
+            "③ 连电脑上的助手 / 连一下 主机\n" +
+            "④ 端侧网关 或 deepseek（出门+本机工具）\n" +
+            "② http 兼容（只要纯聊天）\n" +
+            "① 本地（离线小模型）\n" +
+            "也可点下方手动配置。"
+
     private val IPV4 = Regex("""\b(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{2,5}))?\b""")
     private val URL = Regex(
         """(?i)\b((?:https?|wss?)://[^\s，,；;]+)""",
@@ -148,12 +161,21 @@ object SetupAssistParser {
         val kindFinal = resolvedKind ?: kind
         val endpointFinal = endpoint ?: when (kindFinal) {
             AgentKind.GATEWAY -> "https://api.deepseek.com"
+            AgentKind.LOCAL -> AgentKind.LOCAL.defaultEndpoint
             else -> null
         }
         val modelFinal = model ?: when (kindFinal) {
             AgentKind.GATEWAY -> "deepseek-chat"
+            AgentKind.LOCAL -> com.eraherm.hermchat.data.local.LocalModelStore.DEFAULT_MODEL_ID
             else -> null
         }
+
+        val wantsProbe = wantsLanProbe &&
+            endpointFinal == null &&
+            probeHost == null &&
+            kindFinal != AgentKind.GATEWAY &&
+            kindFinal != AgentKind.LOCAL &&
+            kindFinal != AgentKind.HTTP_COMPAT
 
         return SetupAssistDraft(
             kind = kindFinal,
@@ -161,7 +183,7 @@ object SetupAssistParser {
             apiKey = apiKey,
             model = modelFinal,
             name = name,
-            wantsLanProbe = wantsLanProbe && endpointFinal == null && probeHost == null,
+            wantsLanProbe = wantsProbe,
             probeHost = probeHost,
         )
     }
@@ -232,9 +254,12 @@ object SetupAssistParser {
 
     fun summarizeForConfirm(draft: SetupAssistDraft): String {
         val kind = draft.resolvedKind()
+        if (kind == AgentKind.LOCAL) {
+            return "我找到了：本地助手（默认模型可稍后在资源库下载选用）。确认添加吗？"
+        }
         val ep = draft.endpoint.orEmpty()
         val keyPart = when (kind) {
-            AgentKind.HERMES, AgentKind.HTTP_COMPAT ->
+            AgentKind.HERMES, AgentKind.HTTP_COMPAT, AgentKind.GATEWAY ->
                 "，Key ${maskKey(draft.apiKey.orEmpty())}"
             else -> ""
         }
@@ -244,7 +269,7 @@ object SetupAssistParser {
         val typePart = when (kind) {
             AgentKind.HERMES -> "Hermes"
             AgentKind.WEBSOCKET -> "WebSocket"
-            AgentKind.HTTP_COMPAT -> "HTTP"
+            AgentKind.HTTP_COMPAT -> "HTTP 兼容"
             AgentKind.GATEWAY -> "端侧网关"
             AgentKind.LOCAL -> "本地"
             AgentKind.CUSTOM -> "自定义"
@@ -254,9 +279,14 @@ object SetupAssistParser {
 
     fun detectLanProbeIntent(text: String): Boolean {
         val lower = text.lowercase()
+        // 「端侧网关」含「网关」字，不能当成局域网探测
+        if (lower.contains("端侧网关") || lower.contains("http兼容") || lower.contains("http 兼容")) {
+            return false
+        }
+        if (lower.contains("本地") && !lower.contains("局域网")) return false
         val hints = listOf(
             "电脑", "局域网", "同一wifi", "同一 wi", "自动探测", "探测一下",
-            "找一下", "搜一下", "bridge", "网关", "远程agent", "远程 agent",
+            "找一下", "搜一下", "bridge", "远程agent", "远程 agent",
             "连电脑", "家里的助手", "办公室",
         )
         if (hints.none { lower.contains(it) }) return false
@@ -278,17 +308,23 @@ object SetupAssistParser {
             lower.contains("ws://") || lower.contains("wss://") || lower.contains("websocket") ->
                 AgentKind.WEBSOCKET
             lower.contains("端侧网关") || lower.contains("混合路由") || lower.contains("hybrid") ||
-                lower.contains("平替") && lower.contains("网关") ->
+                (lower.contains("平替") && lower.contains("网关")) ->
                 AgentKind.GATEWAY
+            lower.contains("http兼容") || lower.contains("http 兼容") ||
+                lower.contains("纯聊天") || lower.contains("只要聊天") ->
+                AgentKind.HTTP_COMPAT
             lower.contains("bridge") || lower.contains("局域网") || lower.contains("连电脑") ||
                 (lower.contains("电脑") && !lower.contains("http")) ->
                 AgentKind.WEBSOCKET
-            lower.contains("本地") || lower.contains("local") -> AgentKind.LOCAL
+            lower.contains("本地模型") ||
+                (lower.contains("离线") && lower.contains("模型")) ||
+                (lower.contains("本地") && !lower.contains("局域网")) ||
+                (lower.contains("local") && !lower.contains("localhost")) ->
+                AgentKind.LOCAL
             lower.contains("hermes") -> AgentKind.HERMES
-            // DeepSeek + 工具/闹钟 → ④ 网关；纯 deepseek → 仍可用网关（更完整）
+            // DeepSeek + 工具/闹钟 → ④ 网关；纯 deepseek → 仍用网关（更完整）
             lower.contains("deepseek") -> AgentKind.GATEWAY
-            lower.contains("openai") || lower.contains("ollama") ||
-                lower.contains("http兼容") || lower.contains("http 兼容") -> AgentKind.HTTP_COMPAT
+            lower.contains("openai") || lower.contains("ollama") -> AgentKind.HTTP_COMPAT
             lower.contains("http://") || lower.contains("https://") -> AgentKind.HTTP_COMPAT
             lower.contains("连一下") || lower.contains("连上") || lower.contains("连到") ->
                 AgentKind.HERMES
@@ -301,6 +337,8 @@ object SetupAssistParser {
         return when {
             t.startsWith("ws://", true) || t.startsWith("wss://", true) -> t
             t.startsWith("http://", true) || t.startsWith("https://", true) -> t
+            t.startsWith("local://", true) -> t
+            kind == AgentKind.LOCAL -> AgentKind.LOCAL.defaultEndpoint
             kind == AgentKind.WEBSOCKET -> {
                 if (t.contains(":")) "ws://$t/ws" else "ws://$t:8765/ws"
             }

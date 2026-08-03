@@ -54,7 +54,8 @@ class OpenAiCompatClient(
     override fun streamChat(
         prompt: String,
         history: List<ChatTurn>,
-    ): Flow<String> = streamMessages(buildTurnMessages(prompt, history))
+        imageDataUrl: String?,
+    ): Flow<String> = streamMessages(buildTurnMessages(prompt, history, imageDataUrl))
 
     /** 多轮消息流式（已含 system 时请自行放入列表，本方法不再重复注入）。 */
     fun streamMessages(messages: List<ApiChatMessage>): Flow<String> = flow {
@@ -79,7 +80,11 @@ class OpenAiCompatClient(
         throw lastException ?: IOException("请求失败")
     }.flowOn(Dispatchers.IO)
 
-    fun buildTurnMessages(prompt: String, history: List<ChatTurn>): List<ApiChatMessage> {
+    fun buildTurnMessages(
+        prompt: String,
+        history: List<ChatTurn>,
+        imageDataUrl: String? = null,
+    ): List<ApiChatMessage> {
         val out = ArrayList<ApiChatMessage>()
         if (localToolsEnabled) {
             out += ApiChatMessage("system", com.eraherm.hermchat.tools.LocalToolsPrompt.SYSTEM)
@@ -96,12 +101,15 @@ class OpenAiCompatClient(
                 }
             }
         }
-        val userContent = if (localToolsEnabled) {
-            com.eraherm.hermchat.tools.LocalToolsPrompt.userPrefix() + prompt
-        } else {
-            prompt
+        val textPrompt = prompt.ifBlank {
+            if (imageDataUrl != null) "请看这张图片。" else ""
         }
-        out += ApiChatMessage("user", userContent)
+        val userContent = if (localToolsEnabled) {
+            com.eraherm.hermchat.tools.LocalToolsPrompt.userPrefix() + textPrompt
+        } else {
+            textPrompt
+        }
+        out += ApiChatMessage("user", userContent, imageDataUrl = imageDataUrl)
         return out
     }
 
@@ -116,13 +124,12 @@ class OpenAiCompatClient(
         }
         val arr = JSONArray()
         messages.forEach { msg ->
-            if (msg.content.isNotBlank() || msg.role == "assistant") {
-                arr.put(
-                    JSONObject()
-                        .put("role", msg.role)
-                        .put("content", msg.content),
-                )
-            }
+            if (!msg.hasPayload() && msg.role != "assistant") return@forEach
+            arr.put(
+                JSONObject()
+                    .put("role", msg.role)
+                    .put("content", encodeContent(msg)),
+            )
         }
         val bodyJson = JSONObject()
             .put("model", model.ifBlank { "default" })
@@ -160,6 +167,28 @@ class OpenAiCompatClient(
                 if (piece.isNotEmpty()) onPiece(piece)
             }
         }
+    }
+
+    private fun encodeContent(msg: ApiChatMessage): Any {
+        val image = msg.imageDataUrl
+        if (image.isNullOrBlank()) return msg.content
+        val parts = JSONArray()
+        if (msg.content.isNotBlank()) {
+            parts.put(
+                JSONObject()
+                    .put("type", "text")
+                    .put("text", msg.content),
+            )
+        }
+        parts.put(
+            JSONObject()
+                .put("type", "image_url")
+                .put(
+                    "image_url",
+                    JSONObject().put("url", image),
+                ),
+        )
+        return parts
     }
 
     override fun close() {

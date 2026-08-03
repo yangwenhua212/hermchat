@@ -1,6 +1,7 @@
 package com.eraherm.hermchat.ui.screens
 
 import android.Manifest
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -9,6 +10,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,12 +19,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,6 +38,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddComment
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
@@ -53,11 +59,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,14 +79,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.eraherm.hermchat.HermChatApp
+import com.eraherm.hermchat.data.local.AttachmentKind
+import com.eraherm.hermchat.data.local.ChatAttachment
+import com.eraherm.hermchat.data.local.ChatAttachmentStore
 import com.eraherm.hermchat.data.local.InputMode
 import com.eraherm.hermchat.data.local.ShortcutAction
 import com.eraherm.hermchat.data.local.ShortcutDef
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.data.model.MessageRole
+import com.eraherm.hermchat.data.network.AttachmentSupport
 import com.eraherm.hermchat.service.VoiceEvent
 import com.eraherm.hermchat.data.local.WakeEngineKind
 import com.eraherm.hermchat.service.WakeWordService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.eraherm.hermchat.ui.components.AgentBusyVisual
 import com.eraherm.hermchat.ui.components.AgentSwitcher
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
@@ -122,6 +137,7 @@ fun ChatScreen(
     val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
     val speakingMessageId by app.replySpeaker.speakingMessageId.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf("") }
+    var draftAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
     var voiceStatus by remember { mutableStateOf<String?>(null) }
     var lastAutoSpokenId by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
@@ -129,9 +145,27 @@ fun ChatScreen(
     var stickToBottom by remember { mutableStateOf(true) }
     val textFocus = remember { FocusRequester() }
     val busy = uiState.isSending || uiState.isStreaming || uiState.toolExecuting
-    // 思考中仍可打字/改草稿；仅发送中禁止连发
-    val canSend = draft.isNotBlank() && agent != null && !uiState.isSending && !uiState.isStreaming
+    val canSend = (draft.isNotBlank() || draftAttachment != null) &&
+        agent != null &&
+        !uiState.isSending &&
+        !uiState.isStreaming
     val shortcutsEnabled = agent != null && !uiState.isSending
+    val attachmentStore = remember { ChatAttachmentStore(context) }
+    val pickAttachment = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { attachmentStore.importUri(uri) }
+            result.onSuccess { attachment ->
+                if (!AttachmentSupport.canSend(agent, attachment.kind)) {
+                    voiceStatus = AttachmentSupport.unsupportedStatus(agent, attachment.kind)
+                } else {
+                    draftAttachment = attachment
+                }
+            }.onFailure { voiceStatus = it.message?.take(24) ?: "选文件失败" }
+        }
+    }
     val speechAvailable = remember {
         SpeechRecognizer.isRecognitionAvailable(context)
     }
@@ -563,6 +597,51 @@ fun ChatScreen(
                     onMoveRight = { app.chatPrefsStore.moveShortcut(it.id, 1) },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                draftAttachment?.let { attachment ->
+                    val preview = remember(attachment.path, attachment.kind) {
+                        if (attachment.kind != AttachmentKind.IMAGE) return@remember null
+                        runCatching {
+                            BitmapFactory.Options().run {
+                                inSampleSize = 4
+                                BitmapFactory.decodeFile(attachment.path, this)?.asImageBitmap()
+                            }
+                        }.getOrNull()
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (preview != null) {
+                            Image(
+                                bitmap = preview,
+                                contentDescription = "待发图片",
+                                modifier = Modifier
+                                    .width(56.dp)
+                                    .height(56.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else {
+                            Text(
+                                text = attachment.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = SoftGray,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        IconButton(onClick = { draftAttachment = null }) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "移除附件",
+                                tint = SoftGray,
+                            )
+                        }
+                    }
+                }
                 DoubaoComposer(
                     draft = draft,
                     onDraftChange = { draft = it },
@@ -572,12 +651,22 @@ fun ChatScreen(
                     sendScale = sendScale,
                     showMic = voiceReady && chatPrefs.inputMode != InputMode.TEXT_FIRST,
                     textFocus = textFocus,
+                    onAttach = {
+                        pickAttachment.launch(ChatAttachmentStore.openDocumentMimeTypes())
+                    },
                     onMic = ::requestPushToTalk,
                     onSend = {
                         val text = draft
+                        val attachment = draftAttachment
                         draft = ""
+                        draftAttachment = null
                         stickToBottom = true
-                        viewModel.sendMessage(text)
+                        viewModel.sendMessage(
+                            text = text,
+                            attachmentPath = attachment?.path,
+                            attachmentMime = attachment?.mime,
+                            attachmentName = attachment?.name,
+                        )
                         scrollToLatest(animated = true)
                     },
                 )
@@ -602,7 +691,7 @@ fun ChatScreen(
     }
 }
 
-/** Doubao-like bottom capsule: mic · draft · send, lifted by IME. */
+/** Doubao-like bottom capsule: mic · image · draft · send, lifted by IME. */
 @Composable
 private fun DoubaoComposer(
     draft: String,
@@ -613,6 +702,7 @@ private fun DoubaoComposer(
     sendScale: Float,
     showMic: Boolean,
     textFocus: FocusRequester,
+    onAttach: () -> Unit,
     onMic: () -> Unit,
     onSend: () -> Unit,
 ) {
@@ -646,6 +736,16 @@ private fun DoubaoComposer(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
+            }
+            IconButton(
+                onClick = onAttach,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.AttachFile,
+                    contentDescription = "添加附件",
+                    tint = SoftGray,
+                )
             }
 
             Box(

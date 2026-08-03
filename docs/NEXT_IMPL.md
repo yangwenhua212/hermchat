@@ -17,8 +17,25 @@
 | ④ Agent loop 初版 | ✅ Step 18 | 确认后回灌 API 续跑；聪明路由；链接/搜索/分享 |
 | Loop 中间态 / 分级确认 / 一键切 ③ | ✅ v0.3 三关骨架 | `LoopStep` · `ToolRisk` · `LoopEscalatePicker` |
 | 剪贴板读写 | ✅ | `clipboard.read` 静默；`clipboard.write` 确认；见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md) |
+| 聊天识图（一期） | ✅ | Composer 选图；②/④/Hermes HTTP vision；本地/WS 短提示拒绝 |
+| 聊天附件（二期） | ✅ | 附件：txt/md/json/csv 注入正文；PDF 首页当图；各通道文本可发 |
 
 ---
+
+## 聊天识图 Phase 1
+
+- 输入条「图片」→ 相册；草稿缩略图可移除；气泡显示缩略图  
+- OpenAI 兼容：`content` 多模态数组（text + `image_url` data URL）；图会压缩  
+- ④ 有图强制走 API；① / WS 顶栏短提示「不看图」  
+- 二期再做：任意文件上 ③、系统分享入、历史回传大图
+
+## 聊天附件 Phase 2
+
+- Composer「附件」→ 系统文件选择（图 / PDF / txt / md / csv / json）  
+- **文本**：截断注入 prompt（各档 Agent 可发，含本地/WS）  
+- **PDF**：渲染首页为 JPEG，走 vision（同识图通道要求）  
+- Bridge 仍无上传协议；真·远端落盘留给三期  
+- 气泡：图缩略图 / 文本显示「附件 · 文件名」
 
 ## Step 12 已落地（离线唤醒）
 

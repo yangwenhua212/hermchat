@@ -1,11 +1,13 @@
 package com.eraherm.hermchat.ui.components
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -29,10 +32,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -47,6 +54,7 @@ import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.ui.theme.ChatAtmosphere
 import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
+import java.io.File
 
 /** 助手忙碌态：思考转圈；吐字/执行用键盘指示。 */
 enum class AgentBusyVisual {
@@ -122,28 +130,75 @@ fun MessageBubble(
                             )
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            SelectionContainer {
+                            val thumb = remember(message.attachmentPath, message.attachmentMime) {
+                                val path = message.attachmentPath ?: return@remember null
+                                val mime = message.attachmentMime.orEmpty()
+                                if (!mime.startsWith("image/")) return@remember null
+                                val file = File(path)
+                                if (!file.exists()) return@remember null
+                                runCatching {
+                                    BitmapFactory.Options().run {
+                                        inSampleSize = 2
+                                        BitmapFactory.decodeFile(path, this)?.asImageBitmap()
+                                    }
+                                }.getOrNull()
+                            }
+                            if (thumb != null) {
+                                Image(
+                                    bitmap = thumb,
+                                    contentDescription = "附件图片",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 220.dp)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else if (!message.attachmentPath.isNullOrBlank()) {
                                 Text(
-                                    text = message.content,
-                                    style = MaterialTheme.typography.bodyLarge,
+                                    text = "附件 · ${message.attachmentName ?: "文件"}",
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = if (isUser) {
-                                        Color.White
+                                        Color.White.copy(alpha = 0.92f)
                                     } else {
-                                        MaterialTheme.colorScheme.onSurface
+                                        SoftGray
                                     },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            if (isStreaming && !isUser) {
+                            if (message.content.isNotBlank()) {
+                                Row(
+                                    verticalAlignment = Alignment.Bottom,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    SelectionContainer {
+                                        Text(
+                                            text = message.content,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = if (isUser) {
+                                                Color.White
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
+                                        )
+                                    }
+                                    if (isStreaming && !isUser) {
+                                        AgentBusyIndicator(
+                                            visual = if (message.content.isBlank()) {
+                                                AgentBusyVisual.THINKING
+                                            } else {
+                                                AgentBusyVisual.WORKING
+                                            },
+                                            compact = true,
+                                        )
+                                    }
+                                }
+                            } else if (isStreaming && !isUser) {
                                 AgentBusyIndicator(
-                                    visual = if (message.content.isBlank()) {
-                                        AgentBusyVisual.THINKING
-                                    } else {
-                                        AgentBusyVisual.WORKING
-                                    },
+                                    visual = AgentBusyVisual.THINKING,
                                     compact = true,
                                 )
                             }

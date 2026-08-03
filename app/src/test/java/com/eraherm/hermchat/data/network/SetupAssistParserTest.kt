@@ -119,4 +119,36 @@ class SetupAssistParserTest {
         assertFalse(text.contains("sk-abcdefghij"))
         assertTrue(text.contains("sk-a…ij") || text.contains("…"))
     }
+
+    @Test
+    fun parse_localReadyWithoutHost() {
+        val draft = SetupAssistParser.parse("本地")
+        assertEquals(AgentKind.LOCAL, draft.kind)
+        assertEquals(AgentKind.LOCAL.defaultEndpoint, draft.endpoint)
+        assertTrue(draft.isReadyToConnect())
+        assertFalse(draft.wantsLanProbe)
+    }
+
+    @Test
+    fun parse_gatewayNotLanProbe() {
+        val draft = SetupAssistParser.parse("端侧网关")
+        assertEquals(AgentKind.GATEWAY, draft.kind)
+        assertEquals("https://api.deepseek.com", draft.endpoint)
+        assertFalse(draft.wantsLanProbe)
+    }
+
+    @Test
+    fun parse_httpCompatPhrase() {
+        val draft = SetupAssistParser.parse("http 兼容")
+        assertEquals(AgentKind.HTTP_COMPAT, draft.kind)
+        assertFalse(draft.wantsLanProbe)
+    }
+
+    @Test
+    fun summarize_local() {
+        val draft = SetupAssistDraft(kind = AgentKind.LOCAL, endpoint = AgentKind.LOCAL.defaultEndpoint)
+        val text = SetupAssistParser.summarizeForConfirm(draft)
+        assertTrue(text.contains("本地"))
+        assertTrue(text.contains("资源库") || text.contains("确认"))
+    }
 }
