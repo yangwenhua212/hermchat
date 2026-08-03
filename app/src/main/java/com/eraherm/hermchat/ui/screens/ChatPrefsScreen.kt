@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -199,7 +200,10 @@ private fun PrefsRoot(
     )
     PrefsFolderRow(
         title = "端侧网关",
-        summary = prefs.gatewayRouteMode.label,
+        summary = buildString {
+            append(prefs.gatewayRouteMode.label)
+            if (prefs.localFirstToolParse) append(" · 本地优先")
+        },
         onClick = onOpenGateway,
     )
     PrefsFolderRow(
@@ -327,12 +331,49 @@ private fun PrefsGatewayDetail(
     prefs: ChatPrefs,
     store: ChatPrefsStore,
 ) {
+    var showLocalFirstWarn by remember { mutableStateOf(false) }
+
     Text("路由", style = MaterialTheme.typography.titleMedium)
     GatewayRouteMode.entries.forEach { mode ->
         PrefsOptionRow(
             title = mode.label,
             selected = prefs.gatewayRouteMode == mode,
             onClick = { store.setGatewayRouteMode(mode) },
+        )
+    }
+    PrefsLeafRow(
+        title = "本地优先解析",
+        trailing = {
+            Switch(
+                checked = prefs.localFirstToolParse,
+                onCheckedChange = { enabled ->
+                    if (enabled) {
+                        showLocalFirstWarn = true
+                    } else {
+                        store.setLocalFirstToolParse(false)
+                    }
+                },
+            )
+        },
+    )
+    if (showLocalFirstWarn) {
+        AlertDialog(
+            onDismissRequest = { showLocalFirstWarn = false },
+            title = { Text("开启本地优先解析？") },
+            text = {
+                Text("本地小模型更快但不稳，复杂指令可能失败并改走云端。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        store.setLocalFirstToolParse(true)
+                        showLocalFirstWarn = false
+                    },
+                ) { Text("开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLocalFirstWarn = false }) { Text("取消") }
+            },
         )
     }
 }

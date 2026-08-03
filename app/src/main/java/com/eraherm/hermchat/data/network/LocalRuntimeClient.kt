@@ -4,6 +4,7 @@ import android.content.Context
 import com.eraherm.hermchat.data.local.DeviceCapability
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.tools.LocalToolPlanner
+import com.eraherm.hermchat.tools.LocalToolsPrompt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 
 /**
  * Phase B local runtime: on-device MediaPipe LLM when model is ready and device RAM allows;
@@ -75,6 +77,24 @@ class LocalRuntimeClient(
         emit(text)
     }.flowOn(Dispatchers.Default)
 
+    /**
+     * 实验「本地优先解析」：注入压缩工具协议，让小模型试跑 tool JSON。
+     * 失败返回 null（未就绪 / 推理异常），由调用方改走云端。
+     */
+    suspend fun tryGenerateToolPlan(prompt: String): String? = withContext(Dispatchers.Default) {
+        if (!modelStore.isReady(modelId)) return@withContext null
+        if (!DeviceCapability.canRunLocalLlm(context)) return@withContext null
+        val loaded = runCatching {
+            if (!engine.isLoaded) {
+                engine.ensureLoaded(modelStore.modelFile(modelId).absolutePath)
+            }
+        }
+        if (loaded.isFailure) return@withContext null
+        runCatching {
+            engine.generate(buildToolPlanPrompt(prompt))
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
     override fun close() {
         engine.close()
         _connected.value = false
@@ -82,6 +102,14 @@ class LocalRuntimeClient(
 
     private fun buildPrompt(user: String): String = buildString {
         appendLine("你是手机里的个人助手 HxSync 本地运行时。用简体中文简短回答。")
+        appendLine("用户：$user")
+        append("助手：")
+    }
+
+    private fun buildToolPlanPrompt(user: String): String = buildString {
+        appendLine(LocalToolsPrompt.LOCAL_COMPACT)
+        appendLine()
+        append(LocalToolsPrompt.userPrefix())
         appendLine("用户：$user")
         append("助手：")
     }

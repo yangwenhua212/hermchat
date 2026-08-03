@@ -91,6 +91,11 @@ data class ChatPrefs(
     val ttsVoice: String = "",
     /** 仅对端侧网关 Agent 生效 */
     val gatewayRouteMode: GatewayRouteMode = GatewayRouteMode.AUTO,
+    /**
+     * 实验：④ 首轮先用本地小模型试跑 tool JSON；失败本轮改云端。
+     * 默认关；开启前设置页会弹知情确认。
+     */
+    val localFirstToolParse: Boolean = false,
     val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
 ) {
     fun resolvedImagePath(): String? =
@@ -198,6 +203,10 @@ class ChatPrefsStore(
         update { it.copy(gatewayRouteMode = mode) }
     }
 
+    fun setLocalFirstToolParse(enabled: Boolean) {
+        update { it.copy(localFirstToolParse = enabled) }
+    }
+
     fun moveShortcut(id: String, offset: Int) {
         update { current ->
             val list = current.shortcuts.toMutableList()
@@ -240,6 +249,7 @@ class ChatPrefsStore(
             .putString(KEY_TTS_MODEL, value.ttsModel)
             .putString(KEY_TTS_VOICE, value.ttsVoice)
             .putString(KEY_GATEWAY_ROUTE, value.gatewayRouteMode.name)
+            .putBoolean(KEY_LOCAL_FIRST_TOOL, value.localFirstToolParse)
             .putString(KEY_SHORTCUTS, array.toString())
             .apply()
     }
@@ -283,6 +293,7 @@ class ChatPrefsStore(
                 runCatching { GatewayRouteMode.valueOf(raw) }.getOrDefault(GatewayRouteMode.AUTO)
             }
             ?: GatewayRouteMode.AUTO
+        val localFirstTool = prefs.getBoolean(KEY_LOCAL_FIRST_TOOL, false)
         val shortcuts = loadShortcuts()
         return ChatPrefs(
             inputMode = mode,
@@ -298,6 +309,7 @@ class ChatPrefsStore(
             ttsModel = ttsModel,
             ttsVoice = ttsVoice,
             gatewayRouteMode = gatewayRoute,
+            localFirstToolParse = localFirstTool,
             shortcuts = shortcuts,
         )
     }
@@ -340,6 +352,7 @@ class ChatPrefsStore(
         private const val KEY_TTS_MODEL = "tts_model"
         private const val KEY_TTS_VOICE = "tts_voice"
         private const val KEY_GATEWAY_ROUTE = "gateway_route_mode"
+        private const val KEY_LOCAL_FIRST_TOOL = "local_first_tool_parse"
         private const val KEY_SHORTCUTS = "shortcuts"
     }
 }

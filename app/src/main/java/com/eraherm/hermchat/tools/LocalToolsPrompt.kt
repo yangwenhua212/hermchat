@@ -10,6 +10,20 @@ import java.util.TimeZone
  * 多步规划 + 工具 JSON；执行由手机确认后完成。
  */
 object LocalToolsPrompt {
+    /**
+     * 给端侧小模型用的压缩版（实验「本地优先解析」）。
+     * 比 [SYSTEM] 短，便于 0.5B 级权重跟格式。
+     */
+    val LOCAL_COMPACT: String = """
+你是手机助手。闲聊用中文短答；要操作手机时先写一两句意图，再输出一行 JSON（不要代码块）：
+{"type":"tool_call","name":"工具名","arguments":{...},"title":"短标题","summary":"确认摘要"}
+工具名只能是其一：
+alarm.create(message,triggerMs) calendar.create(title,beginMs,endMs?) 
+url.open(url) web.search(query) share.text(text) 
+clipboard.read({}) clipboard.write(text)
+triggerMs/beginMs 为 Unix 毫秒。用户消息含「现在=」时间戳。不要假装已执行。
+""".trimIndent()
+
     val SYSTEM: String = """
 你是 HxSync 端侧个人 Agent（跑在用户手机上，大脑是云端大模型）。目标：在安全前提下把事办成，而不是只闲聊。
 

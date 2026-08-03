@@ -23,6 +23,7 @@ import com.eraherm.hermchat.data.network.paceForDisplay
 import com.eraherm.hermchat.data.network.StreamingChatClient
 import com.eraherm.hermchat.service.BridgeKeepAliveService
 import com.eraherm.hermchat.service.VoiceEvent
+import com.eraherm.hermchat.tools.LocalFirstToolJudge
 import com.eraherm.hermchat.tools.LocalToolPlanner
 import com.eraherm.hermchat.tools.LocalToolsPrompt
 import com.eraherm.hermchat.tools.ToolCallParser
@@ -31,6 +32,7 @@ import com.eraherm.hermchat.util.UserFacingError
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -670,12 +672,61 @@ class ChatViewModel(
             streamingProvider.value = provider
 
             val history = buildHttpHistory(agent)
+            val gateway = chatClient as? HybridGatewayClient
+            val prefs = (appContext as? HermChatApp)?.chatPrefsStore?.prefsFlow?.value
             val buffer = StringBuilder()
-            chatClient.streamChat(prompt, history).paceForDisplay().collect { token ->
-                buffer.append(token)
-                streamingContent.value = buffer.toString()
-                val route = (chatClient as? HybridGatewayClient)?.lastRouteLabel?.value
-                if (route != null) streamingProvider.value = providerOverride ?: route ?: provider
+            var usedLocalPlan = false
+
+            if (
+                toolsOn &&
+                agent?.kind == AgentKind.GATEWAY &&
+                gateway != null &&
+                gateway.hasApi &&
+                prefs?.localFirstToolParse == true &&
+                gateway.isLocalReady()
+            ) {
+                setLoopStep(LoopStep.Planning("本地解析…"))
+                streamingProvider.value = providerOverride ?: "网关·本地"
+                val localRaw = gateway.tryLocalToolPlan(prompt)
+                if (localRaw != null) {
+                    val (displayText, agentTool) = if (toolsOn) {
+                        ToolCallParser.extract(localRaw)
+                    } else {
+                        localRaw to null
+                    }
+                    if (LocalFirstToolJudge.accept(localRaw, agentTool)) {
+                        usedLocalPlan = true
+                        buffer.append(localRaw)
+                        streamingContent.value = displayText.ifBlank {
+                            if (agentTool != null) "好的。" else localRaw
+                        }
+                        gateway.markLocalRoute()
+                        streamingProvider.value = providerOverride ?: "网关·本地"
+                    }
+                }
+                if (!usedLocalPlan) {
+                    (appContext as? HermChatApp)?.voiceEventBus?.emit(
+                        VoiceEvent.Status("已改用云端"),
+                    )
+                    setLoopStep(LoopStep.Planning("改用云端…"))
+                    streamingContent.value = ""
+                    buffer.clear()
+                    collectStream(
+                        stream = gateway.streamApiChat(prompt, history),
+                        buffer = buffer,
+                        provider = provider,
+                        providerOverride = providerOverride,
+                        chatClient = chatClient,
+                    )
+                }
+            } else {
+                collectStream(
+                    stream = chatClient.streamChat(prompt, history),
+                    buffer = buffer,
+                    provider = provider,
+                    providerOverride = providerOverride,
+                    chatClient = chatClient,
+                )
             }
 
             val raw = buffer.toString()
@@ -692,7 +743,6 @@ class ChatViewModel(
                 }
             }
             val routeLabel = (chatClient as? HybridGatewayClient)?.lastRouteLabel?.value
-            val gateway = chatClient as? HybridGatewayClient
             val loopSeed = if (
                 agent?.kind == AgentKind.GATEWAY &&
                 gateway != null &&
@@ -716,6 +766,21 @@ class ChatViewModel(
             if (!usePrimaryClient) {
                 chatClient.close()
             }
+        }
+    }
+
+    private suspend fun collectStream(
+        stream: Flow<String>,
+        buffer: StringBuilder,
+        provider: String?,
+        providerOverride: String?,
+        chatClient: StreamingChatClient,
+    ) {
+        stream.paceForDisplay().collect { token ->
+            buffer.append(token)
+            streamingContent.value = buffer.toString()
+            val route = (chatClient as? HybridGatewayClient)?.lastRouteLabel?.value
+            streamingProvider.value = providerOverride ?: route ?: provider
         }
     }
 

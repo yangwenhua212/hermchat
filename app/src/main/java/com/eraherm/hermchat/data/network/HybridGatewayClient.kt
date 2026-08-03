@@ -61,11 +61,29 @@ class HybridGatewayClient(
 
     val hasApi: Boolean get() = api != null
 
+    fun isLocalReady(): Boolean = modelStore.isReady(resolvedLocalModelId)
+
+    fun markLocalRoute() {
+        _lastRouteLabel.value = "网关·本地"
+    }
+
+    /**
+     * 实验「本地优先解析」：本地试跑 tool 协议文本；未就绪或异常返回 null。
+     */
+    suspend fun tryLocalToolPlan(prompt: String): String? = local.tryGenerateToolPlan(prompt)
+
     /** ④ Agent loop 续跑：强制走 API（工具结果回灌）。 */
     fun streamApiMessages(messages: List<ApiChatMessage>): Flow<String> {
         val client = api ?: error("未配置 API，无法继续 Agent 步骤")
         _lastRouteLabel.value = "网关·API"
         return client.streamMessages(messages)
+    }
+
+    /** 首轮强制云端（本地优先解析失败后的保底）。 */
+    fun streamApiChat(prompt: String, history: List<ChatTurn>): Flow<String> {
+        val client = api ?: error("未配置 API")
+        _lastRouteLabel.value = "网关·API"
+        return client.streamChat(prompt, history)
     }
 
     fun buildApiTurnMessages(prompt: String, history: List<ChatTurn>): List<ApiChatMessage> {
