@@ -81,6 +81,7 @@ import com.eraherm.hermchat.service.WakeWordService
 import com.eraherm.hermchat.ui.components.AgentBusyVisual
 import com.eraherm.hermchat.ui.components.AgentSwitcher
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
+import com.eraherm.hermchat.ui.components.AtmosphereBackdrop
 import com.eraherm.hermchat.ui.components.ConfirmCard
 import com.eraherm.hermchat.ui.components.ConnectionStatus
 import com.eraherm.hermchat.ui.components.ConversationHistoryMenu
@@ -355,7 +356,8 @@ fun ChatScreen(
 
     AtmosphereBackground(
         themeStyle = chatPrefs.themeStyle,
-        imagePath = chatPrefs.resolvedImagePath(),
+        // 壁纸只铺消息区；顶栏 / 输入区继续用主题渐变
+        imagePath = null,
     ) {
         Column(
             modifier = Modifier
@@ -492,47 +494,58 @@ fun ChatScreen(
                 }
             }
 
-            LazyColumn(
-                state = listState,
-                reverseLayout = true,
+            Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (showTyping) {
-                    item(key = "typing") {
-                        TypingBubble(
+                chatPrefs.resolvedImagePath()?.let { path ->
+                    AtmosphereBackdrop(
+                        modifier = Modifier.fillMaxSize(),
+                        themeStyle = chatPrefs.themeStyle,
+                        imagePath = path,
+                    )
+                }
+                LazyColumn(
+                    state = listState,
+                    reverseLayout = true,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (showTyping) {
+                        item(key = "typing") {
+                            TypingBubble(
+                                bubbleStyle = chatPrefs.bubbleStyle,
+                                visual = if (
+                                    uiState.toolExecuting ||
+                                    uiState.loopStep is LoopStep.Executing ||
+                                    uiState.loopStep is LoopStep.Observing
+                                ) {
+                                    AgentBusyVisual.WORKING
+                                } else {
+                                    AgentBusyVisual.THINKING
+                                },
+                                label = loopLabel,
+                            )
+                        }
+                    }
+                    items(displayMessages, key = { it.id }) { message ->
+                        MessageBubble(
+                            message = message,
+                            themeStyle = chatPrefs.themeStyle,
                             bubbleStyle = chatPrefs.bubbleStyle,
-                            visual = if (
-                                uiState.toolExecuting ||
-                                uiState.loopStep is LoopStep.Executing ||
-                                uiState.loopStep is LoopStep.Observing
-                            ) {
-                                AgentBusyVisual.WORKING
+                            isStreaming = message.id == streamingId,
+                            isSpeaking = speakingMessageId == message.id,
+                            onSpeakClick = if (message.role == MessageRole.ASSISTANT) {
+                                {
+                                    app.replySpeaker.toggle(message.content, message.id)
+                                }
                             } else {
-                                AgentBusyVisual.THINKING
+                                null
                             },
-                            label = loopLabel,
                         )
                     }
-                }
-                items(displayMessages, key = { it.id }) { message ->
-                    MessageBubble(
-                        message = message,
-                        themeStyle = chatPrefs.themeStyle,
-                        bubbleStyle = chatPrefs.bubbleStyle,
-                        isStreaming = message.id == streamingId,
-                        isSpeaking = speakingMessageId == message.id,
-                        onSpeakClick = if (message.role == MessageRole.ASSISTANT) {
-                            {
-                                app.replySpeaker.toggle(message.content, message.id)
-                            }
-                        } else {
-                            null
-                        },
-                    )
                 }
             }
 

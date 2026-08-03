@@ -18,12 +18,12 @@ import com.eraherm.hermchat.data.local.ChatThemeStyle
 import com.eraherm.hermchat.ui.theme.ChatAtmosphere
 import java.io.File
 
+/** 仅绘制氛围层（主题渐变或壁纸+遮罩），不强制占满父布局以外区域。 */
 @Composable
-fun AtmosphereBackground(
+fun AtmosphereBackdrop(
     modifier: Modifier = Modifier,
     themeStyle: ChatThemeStyle = ChatThemeStyle.FOREST,
     imagePath: String? = null,
-    content: @Composable BoxScope.() -> Unit,
 ) {
     val bitmap = remember(imagePath) {
         val path = imagePath?.takeIf { it.isNotBlank() } ?: return@remember null
@@ -37,7 +37,7 @@ fun AtmosphereBackground(
         }.getOrNull()
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier) {
         if (bitmap != null) {
             Image(
                 bitmap = bitmap,
@@ -72,6 +72,22 @@ fun AtmosphereBackground(
                     ),
             )
         }
+    }
+}
+
+@Composable
+fun AtmosphereBackground(
+    modifier: Modifier = Modifier,
+    themeStyle: ChatThemeStyle = ChatThemeStyle.FOREST,
+    imagePath: String? = null,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(modifier = modifier.fillMaxSize()) {
+        AtmosphereBackdrop(
+            modifier = Modifier.fillMaxSize(),
+            themeStyle = themeStyle,
+            imagePath = imagePath,
+        )
         content()
     }
 }
