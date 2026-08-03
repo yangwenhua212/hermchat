@@ -16,6 +16,7 @@ import com.eraherm.hermchat.data.model.ToolCall
 import com.eraherm.hermchat.data.network.AIClientFactory
 import com.eraherm.hermchat.data.network.AgentFailover
 import com.eraherm.hermchat.data.network.AgentSessionHolder
+import com.eraherm.hermchat.data.network.ApiChatMessage
 import com.eraherm.hermchat.data.network.ChatTurn
 import com.eraherm.hermchat.data.network.HybridGatewayClient
 import com.eraherm.hermchat.data.network.paceForDisplay
@@ -23,6 +24,7 @@ import com.eraherm.hermchat.data.network.StreamingChatClient
 import com.eraherm.hermchat.service.BridgeKeepAliveService
 import com.eraherm.hermchat.service.VoiceEvent
 import com.eraherm.hermchat.tools.LocalToolPlanner
+import com.eraherm.hermchat.tools.LocalToolsPrompt
 import com.eraherm.hermchat.tools.ToolCallParser
 import com.eraherm.hermchat.tools.ToolRegistry
 import com.eraherm.hermchat.util.UserFacingError
@@ -75,6 +77,8 @@ class ChatViewModel(
     private var sendJob: Job? = null
     private var agentJob: Job? = null
     private var currentAgentId: String? = null
+    /** ④ Agent loop：等待确认工具后回灌 API 续跑。 */
+    private var gatewayLoop: GatewayLoopState? = null
     private val voiceSendHandler: (String) -> Unit = { text -> sendMessage(text) }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -192,8 +196,23 @@ class ChatViewModel(
                     )
                 }.getOrThrow()
 
-                if (outcome.tool != null) {
-                    pendingToolCall.value = outcome.tool.copy(needConfirm = true)
+                val effectiveTool = outcome.tool ?: pendingToolCall.value
+                if (effectiveTool != null) {
+                    pendingToolCall.value = effectiveTool.copy(needConfirm = true)
+                    val seed = outcome.loopSeed
+                    if (seed != null) {
+                        if (!seed.lastAssistantRaw.contains("\"type\"") &&
+                            !seed.lastAssistantRaw.contains(effectiveTool.name)
+                        ) {
+                            seed.lastAssistantRaw = listOf(
+                                seed.lastAssistantRaw.trim(),
+                                toolCallJson(effectiveTool),
+                            ).filter { it.isNotBlank() }.joinToString("\n")
+                        }
+                        gatewayLoop = seed
+                    }
+                } else {
+                    gatewayLoop = null
                 }
                 messageRepository.save(
                     Message(
@@ -259,12 +278,27 @@ class ChatViewModel(
             runCatching {
                 client?.sendToolResult(result.toolCallId, result.success, result.message)
             }
+
+            val loop = gatewayLoop
+            val gateway = client as? HybridGatewayClient
+            if (loop != null && gateway != null && gateway.hasApi) {
+                continueGatewayLoop(
+                    gateway = gateway,
+                    loop = loop,
+                    toolName = call.name,
+                    success = result.success,
+                    detail = result.message,
+                )
+            } else {
+                gatewayLoop = null
+            }
         }
     }
 
     fun denyPendingTool() {
         val call = pendingToolCall.value ?: return
         pendingToolCall.value = null
+        gatewayLoop = null
         viewModelScope.launch {
             messageRepository.save(
                 Message(
@@ -356,6 +390,7 @@ class ChatViewModel(
         streamingContent.value = ""
         streamingProvider.value = null
         pendingToolCall.value = null
+        gatewayLoop = null
         // 只换会话，不断开底层连接（后台保活仍有效）；旧消息留在历史列表
         sessions.client?.resetConversation()
         bridgeConnected.value = sessions.client != null &&
@@ -388,6 +423,8 @@ class ChatViewModel(
         if (agent.id != currentAgentId) {
             val previous = currentAgentId
             currentAgentId = agent.id
+            gatewayLoop = null
+            pendingToolCall.value = null
             if (previous == null) {
                 conversationRepository.claimOrphanConversations(agent.id)
                 conversationRepository.bootstrap(agent.id)
@@ -452,10 +489,17 @@ class ChatViewModel(
         }
     }
 
+    private data class GatewayLoopState(
+        val messages: MutableList<ApiChatMessage>,
+        var lastAssistantRaw: String,
+        var step: Int,
+    )
+
     private data class TurnOutcome(
         val text: String,
         val tool: ToolCall?,
         val providerLabel: String?,
+        val loopSeed: GatewayLoopState? = null,
     )
 
     private suspend fun streamTurn(
@@ -508,16 +552,125 @@ class ChatViewModel(
                 }
             }
             val routeLabel = (chatClient as? HybridGatewayClient)?.lastRouteLabel?.value
+            val gateway = chatClient as? HybridGatewayClient
+            val loopSeed = if (
+                agent?.kind == AgentKind.GATEWAY &&
+                gateway != null &&
+                gateway.hasApi
+            ) {
+                GatewayLoopState(
+                    messages = gateway.buildApiTurnMessages(prompt, history).toMutableList(),
+                    lastAssistantRaw = raw.ifBlank { finalText },
+                    step = 1,
+                )
+            } else {
+                null
+            }
             return TurnOutcome(
                 text = finalText,
                 tool = agentTool,
                 providerLabel = providerOverride ?: routeLabel ?: provider,
+                loopSeed = loopSeed,
             )
         } finally {
             if (!usePrimaryClient) {
                 chatClient.close()
             }
         }
+    }
+
+    private suspend fun continueGatewayLoop(
+        gateway: HybridGatewayClient,
+        loop: GatewayLoopState,
+        toolName: String,
+        success: Boolean,
+        detail: String,
+    ) {
+        if (loop.step >= GATEWAY_LOOP_MAX_STEPS) {
+            gatewayLoop = null
+            busy.update { it.copy(error = "本轮工具步骤已达上限") }
+            return
+        }
+        val assistantId = UUID.randomUUID().toString()
+        busy.update { it.copy(isStreaming = true, error = null) }
+        streamingContent.value = ""
+        streamingProvider.value = "网关·API"
+        try {
+            loop.messages.add(ApiChatMessage("assistant", loop.lastAssistantRaw))
+            loop.messages.add(
+                ApiChatMessage(
+                    "user",
+                    LocalToolsPrompt.toolResultUserMessage(toolName, success, detail),
+                ),
+            )
+            loop.step += 1
+
+            val buffer = StringBuilder()
+            gateway.streamApiMessages(loop.messages).paceForDisplay().collect { token ->
+                buffer.append(token)
+                streamingContent.value = buffer.toString()
+                streamingProvider.value = gateway.lastRouteLabel.value
+            }
+            val raw = buffer.toString()
+            val (displayText, agentTool) = ToolCallParser.extract(raw)
+            val finalText = displayText.ifBlank {
+                if (agentTool != null) "需要你确认后，我才能操作手机。" else "（空回复）"
+            }
+            messageRepository.save(
+                Message(
+                    id = assistantId,
+                    role = MessageRole.ASSISTANT,
+                    content = finalText,
+                    providerLabel = gateway.lastRouteLabel.value,
+                    createdAt = System.currentTimeMillis(),
+                ),
+            )
+            if (agentTool != null) {
+                pendingToolCall.value = agentTool.copy(needConfirm = true)
+                loop.lastAssistantRaw = raw.ifBlank { finalText }
+                gatewayLoop = loop
+            } else {
+                gatewayLoop = null
+            }
+        } catch (e: Exception) {
+            gatewayLoop = null
+            val friendly = UserFacingError.of(e, "继续回复失败")
+            busy.update { it.copy(error = friendly) }
+            val partial = streamingContent.value
+            if (partial.isNotBlank()) {
+                messageRepository.save(
+                    Message(
+                        id = assistantId,
+                        role = MessageRole.ASSISTANT,
+                        content = partial + "\n\n⚠️ $friendly",
+                        providerLabel = "网关·API",
+                        createdAt = System.currentTimeMillis(),
+                    ),
+                )
+            }
+        } finally {
+            streamingContent.value = ""
+            streamingProvider.value = null
+            busy.update { it.copy(isStreaming = false) }
+        }
+    }
+
+    private fun toolCallJson(call: ToolCall): String {
+        val args = org.json.JSONObject()
+        call.arguments.forEach { (k, v) ->
+            val asLong = v.toLongOrNull()
+            if (asLong != null && (k.endsWith("Ms") || k == "triggerMs" || k == "beginMs" || k == "endMs")) {
+                args.put(k, asLong)
+            } else {
+                args.put(k, v)
+            }
+        }
+        return org.json.JSONObject()
+            .put("type", "tool_call")
+            .put("id", call.id)
+            .put("name", call.name)
+            .put("arguments", args)
+            .toString()
     }
 
     private fun isHttpStyle(agent: AgentProfile): Boolean {
@@ -605,6 +758,7 @@ class ChatViewModel(
     companion object {
         private const val WELCOME_PREFIX = "welcome-"
         private const val AUTO_NEW_CHAT_THRESHOLD = 20
+        private const val GATEWAY_LOOP_MAX_STEPS = 8
 
         private fun welcomeId(conversationId: String): String = "$WELCOME_PREFIX$conversationId"
 

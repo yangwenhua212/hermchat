@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference
  * - Hermes HTTP：靠 [HEADER_SESSION] 续上下文，body 只发本轮（+可选工具 system）
  * - DeepSeek 等 HTTP 兼容：可带本地短历史，避免无记忆
  * - [localToolsEnabled]：注入本机工具协议，模型吐 JSON → 手机执行
+ * - [streamMessages]：④ Agent loop 多轮（含工具结果回灌）
  */
 class OpenAiCompatClient(
     baseUrl: String,
@@ -53,19 +54,22 @@ class OpenAiCompatClient(
     override fun streamChat(
         prompt: String,
         history: List<ChatTurn>,
-    ): Flow<String> = flow {
+    ): Flow<String> = streamMessages(buildTurnMessages(prompt, history))
+
+    /** 多轮消息流式（已含 system 时请自行放入列表，本方法不再重复注入）。 */
+    fun streamMessages(messages: List<ApiChatMessage>): Flow<String> = flow {
+        require(messages.isNotEmpty()) { "消息不能为空" }
         var lastException: Exception? = null
         for (attempt in 0 until MAX_RETRIES) {
             var emitted = false
             try {
-                streamOnce(prompt, history) { piece ->
+                streamOnce(messages) { piece ->
                     emitted = true
                     emit(piece)
                 }
                 return@flow
             } catch (e: Exception) {
                 lastException = e
-                // 已吐过字再重试会叠重复内容；只对「开流前失败」重试
                 if (attempt < MAX_RETRIES - 1 && !emitted && isRetryable(e)) {
                     continue
                 }
@@ -75,23 +79,10 @@ class OpenAiCompatClient(
         throw lastException ?: IOException("请求失败")
     }.flowOn(Dispatchers.IO)
 
-    private suspend fun streamOnce(
-        prompt: String,
-        history: List<ChatTurn>,
-        onPiece: suspend (String) -> Unit,
-    ) {
-        val url = when {
-            root.endsWith("/v1/chat/completions", ignoreCase = true) -> root
-            root.endsWith("/v1", ignoreCase = true) -> "$root/chat/completions"
-            else -> "$root/v1/chat/completions"
-        }
-        val messages = JSONArray()
+    fun buildTurnMessages(prompt: String, history: List<ChatTurn>): List<ApiChatMessage> {
+        val out = ArrayList<ApiChatMessage>()
         if (localToolsEnabled) {
-            messages.put(
-                JSONObject()
-                    .put("role", "system")
-                    .put("content", com.eraherm.hermchat.tools.LocalToolsPrompt.SYSTEM),
-            )
+            out += ApiChatMessage("system", com.eraherm.hermchat.tools.LocalToolsPrompt.SYSTEM)
         }
         if (!hermesSessionMode) {
             history.takeLast(16).forEach { turn ->
@@ -101,9 +92,7 @@ class OpenAiCompatClient(
                     else -> "user"
                 }
                 if (turn.content.isNotBlank()) {
-                    messages.put(
-                        JSONObject().put("role", role).put("content", turn.content),
-                    )
+                    out += ApiChatMessage(role, turn.content)
                 }
             }
         }
@@ -112,12 +101,33 @@ class OpenAiCompatClient(
         } else {
             prompt
         }
-        messages.put(JSONObject().put("role", "user").put("content", userContent))
+        out += ApiChatMessage("user", userContent)
+        return out
+    }
 
+    private suspend fun streamOnce(
+        messages: List<ApiChatMessage>,
+        onPiece: suspend (String) -> Unit,
+    ) {
+        val url = when {
+            root.endsWith("/v1/chat/completions", ignoreCase = true) -> root
+            root.endsWith("/v1", ignoreCase = true) -> "$root/chat/completions"
+            else -> "$root/v1/chat/completions"
+        }
+        val arr = JSONArray()
+        messages.forEach { msg ->
+            if (msg.content.isNotBlank() || msg.role == "assistant") {
+                arr.put(
+                    JSONObject()
+                        .put("role", msg.role)
+                        .put("content", msg.content),
+                )
+            }
+        }
         val bodyJson = JSONObject()
             .put("model", model.ifBlank { "default" })
             .put("stream", true)
-            .put("messages", messages)
+            .put("messages", arr)
         val requestBuilder = Request.Builder()
             .url(url)
             .post(bodyJson.toString().toRequestBody(JSON_MEDIA))
@@ -134,7 +144,6 @@ class OpenAiCompatClient(
                 val errBody = response.body?.string().orEmpty().take(240)
                 val msg = "HTTP $code: ${response.message}${if (errBody.isBlank()) "" else " · $errBody"}"
                 if (code in 400..499) {
-                    // 客户端错误不重试
                     error(msg)
                 }
                 throw IOException(msg)
@@ -170,7 +179,6 @@ class OpenAiCompatClient(
         return message?.optString("content")?.takeIf { it.isNotEmpty() }
     }
 
-    /** 连接/超时等可重试；未知主机不重试（已吐字时由外层禁止重试）。 */
     private fun isRetryable(e: Exception): Boolean = when (e) {
         is UnknownHostException -> false
         is SocketTimeoutException -> true

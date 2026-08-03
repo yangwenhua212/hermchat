@@ -1,15 +1,18 @@
 # ④ 端侧 Agent 网关（本地 + API 混合）
 
-App 内轻量调度：本地小模型 + 云端 API；闹钟/日历在本机执行且**须用户确认**。可再挂 ③ 远端 Agent（顶栏切换）。
+App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环；本地小模型做简单兜底。闹钟/日历在本机执行且**须用户确认**，确认后把结果回灌模型再续答。可再挂 ③ 远端 Agent（顶栏切换）。
 
 ```
 手机（HxSync · AgentKind.GATEWAY）
 ├── HybridGatewayClient
 │   ├── 本地：LocalRuntimeClient（默认 Gemma 270M；AgentProfile.localModelId）
-│   └── API：OpenAiCompatClient（DeepSeek 等，model=API 名）+ 短历史
+│   └── API：OpenAiCompatClient（DeepSeek 等）+ 短历史
 ├── GatewayRouter：自动判复杂度，或手选优先本地 / 云端
-└── 本机手：ToolCallParser → 闹钟 / 日历（确认卡，不静默）
+├── Agent loop（API 路径）：tool_call → 确认卡 → 执行 → 回灌 → 再推理（最多 8 步）
+└── 本机手：闹钟 / 日历 / 打开链接 / 搜索 / 分享（一律确认卡）
 ```
+
+**聪明优先：** 自动路由默认走云脑（DeepSeek 等）；仅极短寒暄才走本地小模型。系统提示按「手机 Agent」多步规划；工具结果回灌后可继续下一步。
 
 本地权重：配置页下载，或 **资源库** 下载后「选用到当前」网关 Agent（详见 [LOCAL_MODEL.md](LOCAL_MODEL.md)）。
 
@@ -19,7 +22,7 @@ App 内轻量调度：本地小模型 + 云端 API；闹钟/日历在本机执�
 
 | 模式 | 行为 |
 |------|------|
-| **自动**（默认） | 按复杂度判断：简单→本地，复杂/长文→API；本地弱回复可 escalate 到 API |
+| **自动**（默认） | **默认云脑**；仅极短寒暄走本地；任务/提醒/搜索等一律 API；弱本地回复仍可 escalate |
 | **优先本地** | 当前对话尽量走本地（未就绪才回落 API）；不因弱回复自动改云端 |
 | **优先云端** | 当前对话尽量走 API（未配 API 才回落本地） |
 
@@ -32,7 +35,7 @@ App 内轻量调度：本地小模型 + 云端 API；闹钟/日历在本机执�
 | 短问候 / ≤28 字简单句，本地就绪 | 本地 |
 | ≥80 字，或「分析/写代码/用大模型…」 | API |
 | 本地回复是「未就绪」类兜底文案 | escalate → API（**不上屏弱文案**，只流式输出 API） |
-| 中等长度，本地就绪 | 先本地（省钱） |
+| 中等及以上 / 含任务词 | API（聪明优先） |
 
 **流式**：手选「优先本地」时边生成边显示；**自动**模式下本地先缓冲，确认不必 escalate 后再整段上屏，避免弱回复与 API 叠字。
 
@@ -74,7 +77,19 @@ App 内轻量调度：本地小模型 + 云端 API；闹钟/日历在本机执�
 
 也可在配置里写 `fallbackAgentId` 指定备用。气泡 provider 会标 `备用·名称`。
 
+## Agent loop 行为
+
+1. 用户发话 → 路由到 API（或本地）  
+2. 模型若输出 `tool_call` JSON（或端侧话术命中）→ 确认卡  
+3. 用户允许 → 本机执行 → 系统气泡显示结果  
+4. **回灌**「【本机工具结果】…」给 API → 模型用一两句话收尾；若再要工具则重复 2～4  
+5. 步数上限 8；取消确认则中止 loop  
+
+本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search` / `share.text`。  
+本地路径本身不做完整 loop；续跑始终走 API（需已配 DeepSeek 等）。
+
 ## 仍可加强
 
+- 更多本机工具；EraHerm-Memory  
+- 同机 Termux Hermes 伴侣（③ localhost）  
 - 按 token/耗电更细的路由  
-- EraHerm-Memory 同步  

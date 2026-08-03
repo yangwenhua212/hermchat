@@ -78,6 +78,7 @@ import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.service.VoiceEvent
 import com.eraherm.hermchat.data.local.WakeEngineKind
 import com.eraherm.hermchat.service.WakeWordService
+import com.eraherm.hermchat.ui.components.AgentBusyVisual
 import com.eraherm.hermchat.ui.components.AgentSwitcher
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.ConfirmCard
@@ -439,7 +440,14 @@ fun ChatScreen(
             ) {
                 if (showTyping) {
                     item(key = "typing") {
-                        TypingBubble(bubbleStyle = chatPrefs.bubbleStyle)
+                        TypingBubble(
+                            bubbleStyle = chatPrefs.bubbleStyle,
+                            visual = if (uiState.toolExecuting) {
+                                AgentBusyVisual.WORKING
+                            } else {
+                                AgentBusyVisual.THINKING
+                            },
+                        )
                     }
                 }
                 items(displayMessages, key = { it.id }) { message ->

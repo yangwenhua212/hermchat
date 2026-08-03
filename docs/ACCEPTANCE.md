@@ -62,6 +62,8 @@
 | 顶栏英文 Unable to resolve host | 直接展示异常 message | ≥本次：UserFacingError 中文短句 |
 | 已改系统朗读仍显示云端 404 | lastError 粘住 + 同步读错误 | ≥本次：开读清错误；自动静默回退；错误走 SharedFlow |
 | Hermes 已配 Edge 小艺，手机云端仍 404 | 旧版对着 Hermes 聊天地址打 `/v1/audio/speech` | ≥本次：选「Edge 小艺」直连微软；与 `tts.provider: edge` + `zh-CN-XiaoyiNeural` 对齐 |
+| 流式末尾一根死杠 `|` | 文本拼接光标 | ≥本次：思考转圈、吐字/执行键盘图标 |
+| ④ 像纯 API 无 Agent | 单轮 chat、工具结果不回灌 | ≥本次：确认后回灌 DeepSeek 续跑（loop≤6） |
 | 顶栏 Unable to resolve host… | 异常原文直接展示 | ≥本次：UserFacingError →「找不到服务器…」 |
 | 历史混在一起 | 列表未按 Agent 过滤 | ≥本次：只显示当前 Agent 会话 |
 
@@ -80,5 +82,6 @@
 | 2026-08-03 | | **0.1.17** | 历史按 Agent；错误中文化；朗读/深色/返回等 | 待真机勾清单 |
 | 2026-08-03 | | 0.1.17+ | 真机：Unable to resolve host 英文；历史全 Agent；云端朗读 404；改系统仍显示 404；Hermes Edge 小艺手机用不了 | 错误中文+历史隔离+404粘住已修 |
 | 2026-08-03 | | **0.1.18** | Edge 小艺直连；对齐 Hermes edge / zh-CN-XiaoyiNeural | 待真机勾清单 |
+| 2026-08-03 | | **0.1.19** | ④ Agent loop 存档：回灌续跑、新工具、忙态 UI | 待真机勾清单 |
 
 （往下追加行即可。）

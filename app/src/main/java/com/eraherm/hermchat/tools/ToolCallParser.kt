@@ -58,7 +58,10 @@ object ToolCallParser {
                         val slice = text.substring(start, i + 1)
                         if (slice.contains("tool_call") ||
                             slice.contains("calendar.create") ||
-                            slice.contains("alarm.create")
+                            slice.contains("alarm.create") ||
+                            slice.contains("url.open") ||
+                            slice.contains("web.search") ||
+                            slice.contains("share.text")
                         ) {
                             return slice
                         }
@@ -73,6 +76,9 @@ object ToolCallParser {
     private fun humanTitle(name: String): String = when (name) {
         CalendarTool.NAME -> "创建日历事件"
         AlarmTool.NAME -> "设置提醒"
+        OpenUrlTool.NAME -> "打开链接"
+        WebSearchTool.NAME -> "打开搜索"
+        ShareTextTool.NAME -> "分享文本"
         else -> "执行工具：$name"
     }
 
@@ -95,6 +101,12 @@ object ToolCallParser {
                 } else {
                     "将设置「$message」"
                 }
+            }
+            OpenUrlTool.NAME -> "将打开：${args["url"].orEmpty()}"
+            WebSearchTool.NAME -> "将搜索：${args["query"].orEmpty()}"
+            ShareTextTool.NAME -> {
+                val text = args["text"].orEmpty()
+                "将分享：${text.take(80)}${if (text.length > 80) "…" else ""}"
             }
             else -> args.entries.joinToString("\n") { "${it.key}=${it.value}" }
         }

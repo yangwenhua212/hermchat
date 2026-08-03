@@ -16,12 +16,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -44,6 +47,12 @@ import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.ui.theme.ChatAtmosphere
 import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
+
+/** 助手忙碌态：思考转圈；吐字/执行用键盘指示。 */
+enum class AgentBusyVisual {
+    THINKING,
+    WORKING,
+}
 
 @Composable
 fun MessageBubble(
@@ -113,16 +122,31 @@ fun MessageBubble(
                             )
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                     ) {
-                        SelectionContainer {
-                            Text(
-                                text = if (isStreaming && message.content.isNotEmpty()) {
-                                    message.content + "▍"
-                                } else {
-                                    message.content
-                                },
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface,
-                            )
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            SelectionContainer {
+                                Text(
+                                    text = message.content,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (isUser) {
+                                        Color.White
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                )
+                            }
+                            if (isStreaming && !isUser) {
+                                AgentBusyIndicator(
+                                    visual = if (message.content.isBlank()) {
+                                        AgentBusyVisual.THINKING
+                                    } else {
+                                        AgentBusyVisual.WORKING
+                                    },
+                                    compact = true,
+                                )
+                            }
                         }
                     }
                 }
@@ -151,6 +175,7 @@ fun MessageBubble(
 @Composable
 fun TypingBubble(
     bubbleStyle: BubbleStyle = BubbleStyle.ROUND,
+    visual: AgentBusyVisual = AgentBusyVisual.THINKING,
 ) {
     val radius = when (bubbleStyle) {
         BubbleStyle.ROUND -> 18.dp
@@ -174,33 +199,45 @@ fun TypingBubble(
                 )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
-            TypingDots()
+            AgentBusyIndicator(visual = visual, compact = false)
         }
     }
 }
 
 @Composable
-private fun TypingDots() {
-    val transition = rememberInfiniteTransition(label = "typing")
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(3) { index ->
+fun AgentBusyIndicator(
+    visual: AgentBusyVisual,
+    compact: Boolean = false,
+) {
+    val size = if (compact) 14.dp else 18.dp
+    when (visual) {
+        AgentBusyVisual.THINKING -> {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .size(size)
+                    .semantics { contentDescription = "思考中" },
+                strokeWidth = if (compact) 1.5.dp else 2.dp,
+                color = SoftGray,
+            )
+        }
+        AgentBusyVisual.WORKING -> {
+            val transition = rememberInfiniteTransition(label = "working")
             val alpha by transition.animateFloat(
-                initialValue = 0.25f,
+                initialValue = 0.35f,
                 targetValue = 1f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 420, delayMillis = index * 120, easing = LinearEasing),
+                    animation = tween(durationMillis = 520, easing = LinearEasing),
                     repeatMode = RepeatMode.Reverse,
                 ),
-                label = "dot$index",
+                label = "keyboardAlpha",
             )
-            Box(
+            Icon(
+                imageVector = Icons.Filled.Keyboard,
+                contentDescription = "执行中",
+                tint = SoftGray,
                 modifier = Modifier
-                    .size(7.dp)
-                    .alpha(alpha)
-                    .background(SoftGray, CircleShape),
+                    .size(size)
+                    .alpha(alpha),
             )
         }
     }

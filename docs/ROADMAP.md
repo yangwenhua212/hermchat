@@ -22,8 +22,36 @@
 | 15 | 安全与稳定性收口 | ✅ 加密 Agent 存储、WS 重连、关键单测；见 [SECURITY.md](SECURITY.md) |
 | 16 | 发版隐患收口 | ✅ release 长期签名、本地 LLM 内存门槛、关于页 AGPL、工具强制确认 |
 | 17 | Hermes 会话 + 聊天体验 | ✅ HTTP `X-Hermes-Session-Id`；新建对话 / ≥20 条自动换会话；气泡可复制；修复编辑 Agent 跳转 |
+| 18 | ④ Agent loop 初版 | ✅ API 路径 tool 确认后回灌续跑；聪明优先路由；链接/搜索/分享工具（见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)） |
 
-产品原则见 [PRODUCT.md](PRODUCT.md)（三种模式 + 分阶段；品牌表述 B）。实现备忘见 [NEXT_IMPL.md](NEXT_IMPL.md)。UI 文案见 [UI.md](UI.md)。安全见 [SECURITY.md](SECURITY.md)。
+## v0.3.0 目标：端侧真 Agent（进行中）
+
+把 HxSync 从「插线板」升级为「有自己执行循环的终端机器人」——**不在 APK 内嵌 Hermes**，而是双轨：
+
+| 轨 | 大脑 | 手脚 | 定位 |
+|----|------|------|------|
+| **④ 端侧 Loop** | 强制云脑（DeepSeek 等 OpenAI 兼容 API，**不用** 270M 做 Planner） | 本机工具 + 确认卡 | 出门高频、低延迟、隐私向操作 |
+| **③ 云端 Hermes** | 远端完整 Agent（WS/HTTP） | 手机可作「手脚中断响应器」（tool_call ↔ observation） | 长上下文、复杂多步、重技能 |
+
+**灵魂问题答案：** ④ Loop 默认用 **② 同类云 API（挂在 GATEWAY 里）** 当 Planner，**不是**把 Hermes 逻辑在手机重写一遍。③ 仍是 Hermes；远期补强「云脑下发 tool → 手机执行 → observation 推回」，那是分布式协议，不是④的替代品。
+
+### 三道鬼门关 → 路线切片
+
+| 痛点 | v0.3 应对 |
+|------|-----------|
+| 超长延迟 / 后台被杀 | 每步中间态上屏（思考→查/写→完成）；Loop 挂 Application 级 + 保活；流式终答 |
+| Context 爆炸 | 硬上限步数（现 8）；超限提示「请切 ③」；历史截断 |
+| 确认悖论 | **分级确认**：读类可先静默（剪贴板读等，后续加）；写闹钟/日历/分享/开链 → 暂停协程等用户允许再续 Loop |
+
+### v0.3 验收（草案）
+
+- [ ] ④：「查天气然后半小时后提醒我」能多步完成并实时显示阶段
+- [ ] 写操作必确认；取消后 Loop 干净结束
+- [ ] 超步数友好降级到「建议切 ③」
+- [ ] ① 本地小模型**永不**驱动 Loop 规划
+- [ ] （可选 Pro）设置里「Agent 加强」说明流量/耗电；默认对④开启聪明路由即可
+
+产品原则见 [PRODUCT.md](PRODUCT.md)。实现备忘见 [NEXT_IMPL.md](NEXT_IMPL.md)。UI 文案见 [UI.md](UI.md)。安全见 [SECURITY.md](SECURITY.md)。
 
 - 最短上手：仓库 [README.md](../README.md)
 - 接 Agent / API：[CONNECT_AGENTS.md](CONNECT_AGENTS.md)

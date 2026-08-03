@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 
 /**
- * ④ 端侧 Agent 网关：本地小模型 + OpenAI 兼容 API 混合路由，本机工具由 ChatViewModel 执行。
+ * ④ 端侧 Agent 网关：本地/API 路由；API 路径支持多轮 tool 回灌（见 [streamApiMessages]）。
  */
 class HybridGatewayClient(
     context: Context,
@@ -58,6 +58,20 @@ class HybridGatewayClient(
 
     private val _lastRouteLabel = MutableStateFlow("网关")
     val lastRouteLabel: StateFlow<String> = _lastRouteLabel.asStateFlow()
+
+    val hasApi: Boolean get() = api != null
+
+    /** ④ Agent loop 续跑：强制走 API（工具结果回灌）。 */
+    fun streamApiMessages(messages: List<ApiChatMessage>): Flow<String> {
+        val client = api ?: error("未配置 API，无法继续 Agent 步骤")
+        _lastRouteLabel.value = "网关·API"
+        return client.streamMessages(messages)
+    }
+
+    fun buildApiTurnMessages(prompt: String, history: List<ChatTurn>): List<ApiChatMessage> {
+        val client = api ?: error("未配置 API")
+        return client.buildTurnMessages(prompt, history)
+    }
 
     override suspend fun ensureConnected() {
         local.ensureConnected()
