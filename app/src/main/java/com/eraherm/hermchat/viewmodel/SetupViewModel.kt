@@ -332,16 +332,12 @@ class SetupViewModel(
     fun downloadLocalModel() {
         val state = _uiState.value
         if (state.downloadingModel) return
-        if (!DeviceCapability.canRunLocalLlm(appContext)) {
-            _uiState.update {
-                it.copy(error = "该设备内存不足，不支持本地大模型")
-            }
-            return
-        }
         downloadJob?.cancel()
         downloadJob = viewModelScope.launch {
             val modelId = onDeviceModelId(state)
             val approx = localModelStore.expectedBytes(modelId)
+            // 仍允许下载存盘；内存不够时推理会拒载。进聊天不再预加载，避免原生 OOM 闪退。
+            val ramWarn = DeviceCapability.refuseReason(appContext, approx)
             val partial = localModelStore.hasPartial(modelId)
             _uiState.update {
                 it.copy(
@@ -383,7 +379,12 @@ class SetupViewModel(
                             downloadDetail = null,
                             modelReady = true,
                             testPassed = true,
-                            testMessage = "本地模型已就绪",
+                            testMessage = if (ramWarn != null) {
+                                "模型已下载。$ramWarn"
+                            } else {
+                                "本地模型已就绪"
+                            },
+                            error = ramWarn,
                         )
                     },
                     onFailure = { err ->

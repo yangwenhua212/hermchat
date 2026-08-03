@@ -18,12 +18,18 @@ class MediaPipeLocalEngine(
         if (inferenceRef.get() != null) return@withContext
         synchronized(this@MediaPipeLocalEngine) {
             if (inferenceRef.get() != null) return@synchronized
+            // 较小 maxTokens 降低 KV 缓存峰值，减轻中低端机 OOM
             val options = LlmInference.LlmInferenceOptions.builder()
                 .setModelPath(modelPath)
-                .setMaxTokens(1024)
+                .setMaxTokens(512)
                 .setPreferredBackend(LlmInference.Backend.CPU)
                 .build()
-            inferenceRef.set(LlmInference.createFromOptions(context, options))
+            try {
+                inferenceRef.set(LlmInference.createFromOptions(context, options))
+            } catch (t: Throwable) {
+                runCatching { inferenceRef.getAndSet(null)?.close() }
+                throw t
+            }
         }
     }
 

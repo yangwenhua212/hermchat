@@ -18,6 +18,9 @@ import kotlinx.coroutines.withContext
  * Phase B local runtime: on-device MediaPipe LLM when model is ready and device RAM allows;
  * otherwise a lightweight local orchestrator (tools still work via ChatViewModel).
  * Model weights are downloaded on demand — never bundled in the APK.
+ *
+ * 重要：不要在 [ensureConnected] 里预加载权重。MediaPipe 原生 OOM 会直接杀进程，
+ * 进聊天/回前台就会闪退；只在真正推理时再加载。
  */
 class LocalRuntimeClient(
     private val context: Context,
@@ -30,13 +33,11 @@ class LocalRuntimeClient(
     private val _connected = MutableStateFlow(false)
     override val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
+    private fun approxBytes(): Long = modelStore.expectedBytes(modelId)
+
     override suspend fun ensureConnected() {
+        // 仅标记会话可用；日程/闹钟编排不依赖权重。切勿在此 createFromOptions。
         _connected.value = true
-        if (!modelStore.isReady(modelId)) return
-        if (!DeviceCapability.canRunLocalLlm(context)) return
-        runCatching {
-            engine.ensureLoaded(modelStore.modelFile(modelId).absolutePath)
-        }
     }
 
     override fun streamChat(
@@ -55,8 +56,9 @@ class LocalRuntimeClient(
             return@flow
         }
 
-        if (!DeviceCapability.canRunLocalLlm(context)) {
-            emit("该设备内存不足，不支持本地大模型。日程和闹钟仍可用。")
+        val refuse = DeviceCapability.refuseReason(context, approxBytes())
+        if (refuse != null) {
+            emit(refuse)
             return@flow
         }
 
@@ -84,7 +86,7 @@ class LocalRuntimeClient(
      */
     suspend fun tryGenerateToolPlan(prompt: String): String? = withContext(Dispatchers.Default) {
         if (!modelStore.isReady(modelId)) return@withContext null
-        if (!DeviceCapability.canRunLocalLlm(context)) return@withContext null
+        if (!DeviceCapability.canRunLocalLlm(context, approxBytes())) return@withContext null
         val loaded = runCatching {
             if (!engine.isLoaded) {
                 engine.ensureLoaded(modelStore.modelFile(modelId).absolutePath)

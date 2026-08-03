@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eraherm.hermchat.HermChatApp
+import com.eraherm.hermchat.data.local.DeviceCapability
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
@@ -135,7 +136,13 @@ fun LibraryScreen(
             downloadJob = null
             refreshModels()
             statusMessage = result.fold(
-                onSuccess = { "已下载 $label" },
+                onSuccess = {
+                    val warn = DeviceCapability.refuseReason(
+                        app,
+                        app.localModelStore.expectedBytes(modelId),
+                    )
+                    if (warn != null) "已下载 $label。$warn" else "已下载 $label"
+                },
                 onFailure = { err ->
                     if (err.message == LocalModelStore.PAUSED_MESSAGE) {
                         LocalModelStore.PAUSED_MESSAGE
