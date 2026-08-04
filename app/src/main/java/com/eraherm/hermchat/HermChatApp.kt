@@ -9,6 +9,8 @@ import com.eraherm.hermchat.data.local.MessageRepository
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.local.WakeSettingsStore
 import com.eraherm.hermchat.data.local.WallpaperStore
+import com.eraherm.hermchat.data.memory.LocalMemoryStore
+import com.eraherm.hermchat.data.share.ShareInbox
 import com.eraherm.hermchat.data.network.AgentSessionHolder
 import com.eraherm.hermchat.service.ReplySpeaker
 import com.eraherm.hermchat.service.TtsSpeaker
@@ -27,6 +29,10 @@ class HermChatApp : Application() {
     val agentStore: AgentStore by lazy { AgentStore(this) }
     val wakeSettingsStore: WakeSettingsStore by lazy { WakeSettingsStore(this) }
     val chatPrefsStore: ChatPrefsStore by lazy { ChatPrefsStore(this) }
+    val memoryStore: LocalMemoryStore by lazy {
+        LocalMemoryStore(database.localMemoryDao(), chatPrefsStore)
+    }
+    val shareInbox: ShareInbox by lazy { ShareInbox() }
     val wallpaperStore: WallpaperStore by lazy { WallpaperStore(this) }
     val localModelStore: LocalModelStore by lazy { LocalModelStore(this) }
     val agentSessionHolder: AgentSessionHolder by lazy { AgentSessionHolder() }

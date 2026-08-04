@@ -40,6 +40,7 @@ async def handle(websocket: Any) -> None:
         msg_type = msg.get("type")
         msg_id = msg.get("id", "")
         content = str(msg.get("content", ""))
+        attachment = msg.get("attachment")
 
         if msg_type != "chat":
             await websocket.send(
@@ -47,9 +48,15 @@ async def handle(websocket: Any) -> None:
             )
             continue
 
-        reply = f"你好！" if content in {"你好", "您好", "hi", "hello"} else (
-            "好的，已记下。" if any(k in content for k in ("提醒", "开会", "日程")) else f"好的：{content}"
-        )
+        if isinstance(attachment, dict) and attachment.get("data"):
+            mime = str(attachment.get("mime") or "image/*")
+            reply = f"已收到附件（{mime}）：{content or '请描述图片'}"
+        elif content in {"你好", "您好", "hi", "hello"}:
+            reply = "你好！"
+        elif any(k in content for k in ("提醒", "开会", "日程")):
+            reply = "好的，已记下。"
+        else:
+            reply = f"好的：{content}"
         for ch in reply:
             await websocket.send(
                 json.dumps({"type": "token", "id": msg_id, "content": ch}, ensure_ascii=False),

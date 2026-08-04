@@ -151,6 +151,25 @@ fun ChatScreen(
         !uiState.isStreaming
     val shortcutsEnabled = agent != null && !uiState.isSending
     val attachmentStore = remember { ChatAttachmentStore(context) }
+    val sharePending by app.shareInbox.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(sharePending) {
+        if (sharePending == null) return@LaunchedEffect
+        val pending = app.shareInbox.consume() ?: return@LaunchedEffect
+        pending.text?.takeIf { it.isNotBlank() }?.let { shared ->
+            draft = if (draft.isBlank()) shared else "$draft\n$shared"
+        }
+        val uri = pending.uri ?: return@LaunchedEffect
+        val result = withContext(Dispatchers.IO) { attachmentStore.importUri(uri) }
+        result.onSuccess { attachment ->
+            if (!AttachmentSupport.canSend(agent, attachment.kind)) {
+                voiceStatus = AttachmentSupport.unsupportedStatus(agent, attachment.kind)
+            } else {
+                draftAttachment = attachment
+            }
+        }.onFailure {
+            voiceStatus = "无法导入分享内容"
+        }
+    }
     val pickAttachment = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->

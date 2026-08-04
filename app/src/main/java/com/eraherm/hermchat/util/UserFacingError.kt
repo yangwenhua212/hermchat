@@ -14,6 +14,9 @@ object UserFacingError {
     fun of(err: Throwable?, fallback: String = "出了点问题，请稍后再试"): String {
         if (err == null) return fallback
         if (err is CancellationException) return "已取消"
+        if (err is com.eraherm.hermchat.data.network.FirstChunkTimeoutException) {
+            return "云端响应超时"
+        }
 
         val msg = err.message?.trim().orEmpty()
         // 业务侧已写好的中文提示

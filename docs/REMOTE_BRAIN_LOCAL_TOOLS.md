@@ -75,16 +75,16 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 
 1. 用户发话 → 路由到 API（或本地）；立刻上屏 `LoopStep.Planning`  
 2. 模型若输出 `tool_call` JSON（或端侧话术命中）→ 确认卡（中间态收起）  
-3. 用户允许 → `Executing` → 本机执行 → `Observing` → 系统气泡显示结果（写操作经 `suspend` 挂起等待确认卡；`ToolRisk.READ_ONLY` 可静默，当前工具均为 WRITE）  
-4. **回灌**「【本机工具结果】…」给 API（`Planning`「第 N 步」）→ 模型用一两句话收尾；若再要工具则重复 2～4  
-5. 步数上限 8；超限顶栏一键切已保存的 ③（Hermes/WS），没有则「去添加」；取消确认则中止 loop（协程 resume 拒绝，不留半截状态）  
+3. **JSON 挽救（一次）**：该出工具却格式坏 / 假装已执行 / 空应答 → 顶栏「纠正工具格式…」再请求一轮只吐 JSON；端侧话术已能兜底则跳过  
+4. 用户允许 → `Executing` → 本机执行 → `Observing` → 系统气泡显示结果  
+5. **回灌**「【本机工具结果】…」给 API → 收尾或再 tool；续跑若再吐坏 JSON 同样挽救一次  
+6. 步数上限 8；超限切 ③；取消确认则中止 loop  
 
-
-本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search` / `share.text`（均为 `WRITE`，须确认）；`clipboard.read`（`READ_ONLY`，可静默）；`clipboard.write`（`WRITE`，须确认）。  
-本地路径本身不做完整 loop；续跑始终走 API（需已配 DeepSeek 等）。
+本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search` / `share.text` / `app.open` / `phone.dial` / `memory.recall`（本机关键词，只读）/ `memory.remember`（本机写入，须确认）；`clipboard.read`（只读可静默）；`clipboard.write`（须确认）。  
+本地记忆见 [MEMORY.md](MEMORY.md)。本地路径本身不做完整 loop；续跑始终走 API（需已配 DeepSeek 等）。
 
 ## 仍可加强
 
-- 更多本机工具；EraHerm-Memory  
+- 更多本机工具（通知摘要等，须权限）  
 - 同机 Termux Hermes 伴侣（③ localhost）  
 - 按 token/耗电更细的路由  

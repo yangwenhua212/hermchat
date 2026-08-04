@@ -10,10 +10,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
@@ -32,7 +36,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -47,6 +53,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.eraherm.hermchat.data.local.BubbleStyle
 import com.eraherm.hermchat.data.local.ChatThemeStyle
 import com.eraherm.hermchat.data.model.Message
@@ -98,6 +106,7 @@ fun MessageBubble(
         MessageRole.USER, MessageRole.ASSISTANT -> {
             val isUser = message.role == MessageRole.USER
             val maxBubbleWidth = (LocalConfiguration.current.screenWidthDp * 0.78f).dp
+            var previewPath by remember { mutableStateOf<String?>(null) }
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
@@ -139,12 +148,7 @@ fun MessageBubble(
                                 if (!mime.startsWith("image/")) return@remember null
                                 val file = File(path)
                                 if (!file.exists()) return@remember null
-                                runCatching {
-                                    BitmapFactory.Options().run {
-                                        inSampleSize = 2
-                                        BitmapFactory.decodeFile(path, this)?.asImageBitmap()
-                                    }
-                                }.getOrNull()
+                                decodeAttachmentBitmap(path, sampleSize = 2)
                             }
                             if (thumb != null) {
                                 Image(
@@ -153,7 +157,13 @@ fun MessageBubble(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .heightIn(max = 220.dp)
-                                        .clip(RoundedCornerShape(12.dp)),
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable(
+                                            indication = null,
+                                            interactionSource = remember { MutableInteractionSource() },
+                                        ) {
+                                            previewPath = message.attachmentPath
+                                        },
                                     contentScale = ContentScale.Crop,
                                 )
                             } else if (!message.attachmentPath.isNullOrBlank()) {
@@ -230,9 +240,80 @@ fun MessageBubble(
                     }
                 }
             }
+            previewPath?.let { path ->
+                AttachmentImagePreviewDialog(
+                    path = path,
+                    onDismiss = { previewPath = null },
+                )
+            }
         }
     }
 }
+
+@Composable
+private fun AttachmentImagePreviewDialog(
+    path: String,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.92f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = onDismiss,
+                ),
+        ) {
+            val large = remember(path) {
+                val file = File(path)
+                if (!file.exists()) null else decodeAttachmentBitmap(path, sampleSize = 1)
+            }
+            if (large != null) {
+                Image(
+                    bitmap = large,
+                    contentDescription = "大图",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp)
+                        .align(Alignment.Center),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Text(
+                    text = "图片已失效",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "关闭",
+                    tint = Color.White,
+                )
+            }
+        }
+    }
+}
+
+private fun decodeAttachmentBitmap(path: String, sampleSize: Int) =
+    runCatching {
+        BitmapFactory.Options().run {
+            inSampleSize = sampleSize.coerceAtLeast(1)
+            BitmapFactory.decodeFile(path, this)?.asImageBitmap()
+        }
+    }.getOrNull()
 
 @Composable
 fun TypingBubble(

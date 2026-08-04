@@ -39,7 +39,7 @@
 | 端侧权重 | 资源库下载并选用 | 不需要 | 不需要 | 资源库选本地兜底；API 模型另填 |
 | 典型用法 | 敏感/离线闲聊 | 临时保底问答 | **日常主力** | 没开电脑时改闹钟、问 DeepSeek |
 
-细节：③ 见 [CONNECT_AGENTS.md](CONNECT_AGENTS.md)；④ 见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)；① / 资源库见 [LOCAL_MODEL.md](LOCAL_MODEL.md)。
+细节：③ 见 [CONNECT_AGENTS.md](CONNECT_AGENTS.md)；④ 见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)；① / 资源库见 [LOCAL_MODEL.md](LOCAL_MODEL.md)；长记忆见 [MEMORY.md](MEMORY.md)。
 
 **④ 已通**：`HybridGatewayClient` + `GatewayRouter`（自动/手动路由）+ **API 路径 Agent loop**（tool 确认后回灌续跑，最多 6 步）。本机工具须确认。**④↔③** 发送失败时本轮自动改用备用 Agent（`AgentFailover`）。
 
@@ -47,7 +47,7 @@
 
 | 组件 | 隐喻 | 职责 |
 |------|------|------|
-| [eraherm-memory](https://github.com/yangwenhua212/eraherm-memory) | **记忆增强** | 可嵌入记忆内核；挂到兼容 Host |
+| [eraherm-memory](https://github.com/yangwenhua212/eraherm-memory) | **记忆增强** | 远端 Host；④ 本机另有极简本地记忆，见 [MEMORY.md](MEMORY.md) |
 | **hermchat / HxSync** | **口袋客户端** | 统一界面：连接远程 / 直连 API；Phase B 再承载可选移动端运行时；唤醒与本机工具 |
 
 一句话：**memory 增强「记得」；HxSync 提供「同一 App 里对话」，Agent 在哪跑由用户选。**  

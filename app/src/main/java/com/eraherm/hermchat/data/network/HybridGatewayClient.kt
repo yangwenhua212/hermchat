@@ -146,6 +146,16 @@ class HybridGatewayClient(
         _connected.value = true
     }
 
+    /** 首轮强制本地（首包超时降级；有图勿用）。 */
+    fun streamLocalChat(
+        prompt: String,
+        history: List<ChatTurn>,
+    ): Flow<String> = flow {
+        _lastRouteLabel.value = "网关·本地"
+        local.streamChat(prompt, history).collect { emit(it) }
+        _connected.value = true
+    }
+
     override fun close() {
         api?.close()
         local.close()

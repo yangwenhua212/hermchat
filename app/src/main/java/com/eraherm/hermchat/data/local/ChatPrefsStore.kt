@@ -100,6 +100,8 @@ data class ChatPrefs(
      * 默认关；开启前设置页会弹知情确认。
      */
     val localFirstToolParse: Boolean = false,
+    /** ④ 本机极简记忆：工具 + 首轮关键词召回注入；默认开 */
+    val memoryEnabled: Boolean = true,
     val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
 ) {
     fun resolvedImagePath(): String? =
@@ -211,6 +213,10 @@ class ChatPrefsStore(
         update { it.copy(localFirstToolParse = enabled) }
     }
 
+    fun setMemoryEnabled(enabled: Boolean) {
+        update { it.copy(memoryEnabled = enabled) }
+    }
+
     fun moveShortcut(id: String, offset: Int) {
         update { current ->
             val list = current.shortcuts.toMutableList()
@@ -254,6 +260,7 @@ class ChatPrefsStore(
             .putString(KEY_TTS_VOICE, value.ttsVoice)
             .putString(KEY_GATEWAY_ROUTE, value.gatewayRouteMode.name)
             .putBoolean(KEY_LOCAL_FIRST_TOOL, value.localFirstToolParse)
+            .putBoolean(KEY_MEMORY_ENABLED, value.memoryEnabled)
             .putString(KEY_SHORTCUTS, array.toString())
             .apply()
     }
@@ -302,6 +309,12 @@ class ChatPrefsStore(
             }
             ?: GatewayRouteMode.API
         val localFirstTool = prefs.getBoolean(KEY_LOCAL_FIRST_TOOL, false)
+        // 默认开：仅当用户曾显式写入 false 才关；旧版无 key 时为开
+        val memoryEnabled = if (prefs.contains(KEY_MEMORY_ENABLED)) {
+            prefs.getBoolean(KEY_MEMORY_ENABLED, true)
+        } else {
+            true
+        }
         val shortcuts = loadShortcuts()
         return ChatPrefs(
             inputMode = mode,
@@ -318,6 +331,7 @@ class ChatPrefsStore(
             ttsVoice = ttsVoice,
             gatewayRouteMode = gatewayRoute,
             localFirstToolParse = localFirstTool,
+            memoryEnabled = memoryEnabled,
             shortcuts = shortcuts,
         )
     }
@@ -361,6 +375,7 @@ class ChatPrefsStore(
         private const val KEY_TTS_VOICE = "tts_voice"
         private const val KEY_GATEWAY_ROUTE = "gateway_route_mode"
         private const val KEY_LOCAL_FIRST_TOOL = "local_first_tool_parse"
+        private const val KEY_MEMORY_ENABLED = "memory_enabled"
         private const val KEY_SHORTCUTS = "shortcuts"
     }
 }

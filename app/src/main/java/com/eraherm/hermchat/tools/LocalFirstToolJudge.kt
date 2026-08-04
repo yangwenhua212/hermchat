@@ -32,5 +32,9 @@ object LocalFirstToolJudge {
         "share.text",
         "clipboard.read",
         "clipboard.write",
+        "app.open",
+        "phone.dial",
+        "memory.recall",
+        "memory.remember",
     )
 }

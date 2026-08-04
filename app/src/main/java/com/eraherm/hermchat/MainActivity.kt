@@ -1,5 +1,6 @@
 package com.eraherm.hermchat
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,6 +18,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        ingestShare(intent)
         val app = application as HermChatApp
         setContent {
             val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
@@ -27,5 +29,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        ingestShare(intent)
+    }
+
+    private fun ingestShare(intent: Intent?) {
+        (application as? HermChatApp)?.shareInbox?.offerFromIntent(intent)
     }
 }

@@ -93,9 +93,9 @@ class HermesBridgeClient(
         streamHandlers[requestId] = handler
 
         val sent = when (protocol) {
-            WsProtocol.JSON_RPC -> sendJsonRpcPrompt(requestId, prompt)
-            WsProtocol.AGENT_MESSAGE -> sendAgentMessage(requestId, prompt)
-            WsProtocol.SIMPLE -> sendSimpleChat(requestId, prompt)
+            WsProtocol.JSON_RPC -> sendJsonRpcPrompt(requestId, prompt, imageDataUrl)
+            WsProtocol.AGENT_MESSAGE -> sendAgentMessage(requestId, prompt, imageDataUrl)
+            WsProtocol.SIMPLE -> sendSimpleChat(requestId, prompt, imageDataUrl)
         }
         if (!sent) {
             streamHandlers.remove(requestId)
@@ -256,13 +256,18 @@ class HermesBridgeClient(
         }
     }
 
-    private fun sendJsonRpcPrompt(requestId: String, prompt: String): Boolean {
+    private fun sendJsonRpcPrompt(
+        requestId: String,
+        prompt: String,
+        imageDataUrl: String? = null,
+    ): Boolean {
         val sid = sessionId
         val params = JSONObject()
             .put("text", prompt)
             .put("content", prompt)
         if (!sid.isNullOrBlank()) params.put("session_id", sid)
         params.put("client_request_id", requestId)
+        putAttachment(params, imageDataUrl)
         val payload = JSONObject()
             .put("jsonrpc", "2.0")
             .put("id", requestId)
@@ -280,21 +285,60 @@ class HermesBridgeClient(
         return webSocket?.send(payload.toString()) == true
     }
 
-    private fun sendAgentMessage(requestId: String, prompt: String): Boolean {
+    private fun sendAgentMessage(
+        requestId: String,
+        prompt: String,
+        imageDataUrl: String? = null,
+    ): Boolean {
         val payload = JSONObject()
             .put("type", "agent.message.send")
             .put("id", requestId)
             .put("content", prompt)
             .put("text", prompt)
+        putAttachment(payload, imageDataUrl)
         return webSocket?.send(payload.toString()) == true
     }
 
-    private fun sendSimpleChat(requestId: String, prompt: String): Boolean {
+    private fun sendSimpleChat(
+        requestId: String,
+        prompt: String,
+        imageDataUrl: String? = null,
+    ): Boolean {
         val payload = JSONObject()
             .put("type", "chat")
             .put("id", requestId)
             .put("content", prompt)
+        putAttachment(payload, imageDataUrl)
         return webSocket?.send(payload.toString()) == true
+    }
+
+    /** Bridge 简易附件：inline base64（见 BRIDGE_PROTOCOL.md）。 */
+    private fun putAttachment(target: JSONObject, imageDataUrl: String?) {
+        val raw = imageDataUrl?.trim().orEmpty()
+        if (raw.isBlank()) return
+        val comma = raw.indexOf(',')
+        val meta = if (raw.startsWith("data:", ignoreCase = true) && comma > 0) {
+            raw.substring(5, comma)
+        } else {
+            "image/jpeg;base64"
+        }
+        val data = if (comma > 0) raw.substring(comma + 1) else raw
+        if (data.isBlank()) return
+        val mime = meta.substringBefore(';').ifBlank { "image/jpeg" }
+        val ext = when {
+            mime.contains("png", true) -> "png"
+            mime.contains("webp", true) -> "webp"
+            mime.contains("gif", true) -> "gif"
+            else -> "jpg"
+        }
+        target.put(
+            "attachment",
+            JSONObject()
+                .put("name", "image.$ext")
+                .put("mime", mime)
+                .put("encoding", "base64")
+                .put("data", data),
+        )
     }
 
     private fun handleIncoming(text: String) {

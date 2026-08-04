@@ -42,6 +42,8 @@ sealed class LoopStep {
             "share.text" -> "分享"
             "clipboard.read" -> "读剪贴板"
             "clipboard.write" -> "写剪贴板"
+            "app.open" -> "打开应用"
+            "phone.dial" -> "拨号"
             else -> name
         }
     }

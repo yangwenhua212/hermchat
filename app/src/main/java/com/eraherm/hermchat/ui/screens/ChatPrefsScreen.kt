@@ -416,6 +416,16 @@ private fun PrefsGatewayDetail(
             },
         )
     }
+
+    PrefsLeafRow(
+        title = "本地记忆",
+        trailing = {
+            Switch(
+                checked = prefs.memoryEnabled,
+                onCheckedChange = store::setMemoryEnabled,
+            )
+        },
+    )
 }
 
 @Composable

@@ -26,43 +26,23 @@
 
 - 输入条「图片」→ 相册；草稿缩略图可移除；气泡显示缩略图  
 - OpenAI 兼容：`content` 多模态数组（text + `image_url` data URL）；图会压缩  
-- ④ 有图强制走 API；① / WS 顶栏短提示「不看图」  
-- 二期再做：任意文件上 ③、系统分享入、历史回传大图
+- ④ 有图强制走 API；① 顶栏短提示「不看图」；③ WS 可带 Bridge `attachment`  
+- 二期再做：任意文件上 ③、系统分享入、历史回传大图 → **三期已做**
 
 ## 聊天附件 Phase 2
 
 - Composer「附件」→ 系统文件选择（图 / PDF / txt / md / csv / json）  
 - **文本**：截断注入 prompt（各档 Agent 可发，含本地/WS）  
 - **PDF**：渲染首页为 JPEG，走 vision（同识图通道要求）  
-- Bridge 仍无上传协议；真·远端落盘留给三期  
-- 气泡：真图缩略图；PDF/文本显示「PDF · 名」/「附件 · 名」（PDF 仍用首页 JPEG 识图，界面不当相册图）
+- 气泡：真图缩略图；PDF/文本显示「PDF · 名」/「附件 · 名」
 
-## Step 12 已落地（离线唤醒）
+## 聊天附件 Phase 3
 
-架构：
+- **系统分享入**：`ACTION_SEND` 文本/图/PDF → 草稿或附件  
+- **历史大图**：点气泡缩略图全屏查看；文件缺失提示「图片已失效」  
+- **Bridge 真上传**：简易 WS / agent.message / JSON-RPC 带 `attachment`（base64）；见 [BRIDGE_PROTOCOL.md](BRIDGE_PROTOCOL.md)
 
-```
-WakeWordService
-    └── VoiceEngine
-            ├── SpeechWakeEngine      ← 系统 SpeechRecognizer
-            └── SherpaWakeEngine      ← sherpa-onnx KeywordSpotter
-                    ↓
-              VoiceEventBus → ChatScreen
-```
-
-- 设置可切换「系统 / 离线」；无系统引擎时默认倾向离线  
-- 首次离线需下载 WenetSpeech KWS 模型（约数十 MB，写入 `filesDir`）  
-- 命中唤醒词 → 震动 + 切入短指令 ASR → `Transcript(autoSend)` → 聊天执行  
-- 点按麦克风同样走离线 ASR（无需系统语音引擎）
-
-### 模型
-
-| 用途 | 包 |
-|------|----|
-| 唤醒 KWS | WenetSpeech 3.3M（`KwsModelInstaller`） |
-| 指令 ASR | zipformer zh-14M int8（`AsrModelInstaller`） |
-
-### 后续可选
+### 后续可选（唤醒）
 
 | 项 | 说明 |
 |----|------|
@@ -77,6 +57,6 @@ WakeWordService
 3. ~~本地运行时 Phase B~~ ✅ — 见 [LOCAL_MODEL.md](LOCAL_MODEL.md)  
 4. ~~Hermes 会话 / 新建对话 / 复制~~ ✅ Step 17  
 5. ~~④ Agent loop + 三关骨架~~ ✅ — 中间态 / `ToolRisk` / 超步数切 ③  
-6. 真机验收「多步提醒 + 确认 + 续跑」与「剪贴板内容设提醒」；可选：首包超时降级、eraherm-memory、界面深化  
+6. 真机验收「多步提醒 + 确认 + 续跑」与「剪贴板内容设提醒」；✅ tool JSON 失败自动纠正一轮；✅ ④ 本机极简记忆；✅ 首包超时降级（12s→本地/备用）；✅ 附件三期；可选：界面深化  
 
 UI 文案规范：[UI.md](UI.md)。产品节奏：[ROADMAP.md](ROADMAP.md) v0.3.0。

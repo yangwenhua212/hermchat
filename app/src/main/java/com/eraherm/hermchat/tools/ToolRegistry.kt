@@ -15,6 +15,10 @@ class ToolRegistry(
         ShareTextTool(context.applicationContext),
         ClipboardReadTool(context.applicationContext),
         ClipboardWriteTool(context.applicationContext),
+        AppOpenTool(context.applicationContext),
+        PhoneDialTool(context.applicationContext),
+        MemoryRecallTool(context.applicationContext),
+        MemoryRememberTool(context.applicationContext),
     ).associateBy { it.name }
 
     fun get(name: String): PhoneTool? = tools[name]

@@ -39,7 +39,7 @@
 
 | 痛点 | v0.3 应对 |
 |------|-----------|
-| 超长延迟 / 后台被杀 | ✅ 每步中间态上屏（`LoopStep`：思考→执行→观察）；Loop 挂 Application 级 + 保活待加强；流式终答 |
+| 超长延迟 / 后台被杀 | ✅ 每步中间态上屏（`LoopStep`：思考→执行→观察）；Loop 挂 Application 级 + 保活待加强；✅ 首包 12s 超时降级；流式终答 |
 | Context 爆炸 | ✅ 硬上限步数（现 8）；超限顶栏一键切已存 ③ / 无则去添加；历史截断待加强 |
 | 确认悖论 | ✅ **分级确认**：`ToolRisk`（`clipboard.read` 静默；写操作暂停等确认） |
 | 本地当 Planner 不准 | ✅ **允许但须警告**：默认仍云脑；设置「本地优先解析」开前弹窗知情；失败本轮改 API，顶栏「已改用云端」 |
@@ -48,12 +48,14 @@
 
 - [x] ④ Loop 中间态：`LoopStep` 上屏（分析 / 执行 / 观察）
 - [x] 分级确认：`ToolRisk` + 写操作挂起等待；`clipboard.read` 静默验证 READ_ONLY
-- [ ] ④：「查天气然后半小时后提醒我」能多步完成并实时显示阶段
+- [ ] ④：「查天气然后半小时后提醒我」能多步完成并实时显示阶段（待真机勾）
 - [ ] 写操作必确认；取消后 Loop 干净结束（骨架已具备，待真机勾）
 - [x] 超步数友好降级到「建议切 ③」：有已存 Hermes/WS 则一键切换；否则「去添加」
 - [x] ①/本地小模型**可**驱动工具解析（实验）：开前警告后果；失败本轮降云端并一行提示（默认仍云脑 Loop）
-- [x] 聊天识图一期：Composer 选图 → ②/④/Hermes HTTP vision；本地/WS 短提示
-- [x] 聊天附件二期：文本注入 + PDF 首页当图；Bridge 真上传留三期
+- [x] 聊天识图一期：Composer 选图 → ②/④/Hermes HTTP vision；本地短提示；③ WS 可带 attachment
+- [x] 聊天附件二期：文本注入 + PDF 首页当图
+- [x] 聊天附件三期：系统分享入 + 历史大图 + Bridge `attachment`
+- [x] 首包超时降级：12s 无首 token → ④ 改本地（若就绪）否则 AgentFailover
 - [ ] （可选 Pro）设置里「Agent 加强」说明流量/耗电；默认对④开启聪明路由即可
 
 产品原则见 [PRODUCT.md](PRODUCT.md)。实现备忘见 [NEXT_IMPL.md](NEXT_IMPL.md)。UI 文案见 [UI.md](UI.md)。安全见 [SECURITY.md](SECURITY.md)。

@@ -17,7 +17,7 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
-    <!-- Android 11+：否则 resolveActivity(SET_ALARM) 会误判为「没有时钟应用」 -->
+    <!-- Android 11+：时钟 / 启动器 / 拨号可见性 -->
     <queries>
         <intent>
             <action android:name="android.intent.action.SET_ALARM" />
@@ -28,6 +28,14 @@
         <intent>
             <action android:name="android.intent.action.SHOW_ALARMS" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
         <package android:name="com.google.android.deskclock" />
         <package android:name="com.android.deskclock" />
         <package android:name="com.sec.android.app.clockpackage" />
@@ -37,6 +45,9 @@
         <package android:name="com.coloros.alarmclock" />
         <package android:name="com.oplus.alarmclock" />
         <package android:name="com.vivo.deskclock" />
+        <package android:name="com.tencent.mm" />
+        <package android:name="com.eg.android.AlipayGphone" />
+        <package android:name="com.android.settings" />
     </queries>
 
     <uses-feature
@@ -61,10 +72,26 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
 

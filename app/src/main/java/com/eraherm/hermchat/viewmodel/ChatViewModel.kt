@@ -21,7 +21,10 @@ import com.eraherm.hermchat.data.network.AgentSessionHolder
 import com.eraherm.hermchat.data.network.ApiChatMessage
 import com.eraherm.hermchat.data.network.AttachmentSupport
 import com.eraherm.hermchat.data.network.ChatTurn
+import com.eraherm.hermchat.data.network.FirstChunkTimeoutException
 import com.eraherm.hermchat.data.network.HybridGatewayClient
+import com.eraherm.hermchat.data.network.StreamFirstChunk
+import com.eraherm.hermchat.data.network.collectWithFirstChunkTimeout
 import com.eraherm.hermchat.data.network.paceForDisplay
 import com.eraherm.hermchat.data.network.StreamingChatClient
 import com.eraherm.hermchat.service.BridgeKeepAliveService
@@ -30,6 +33,7 @@ import com.eraherm.hermchat.tools.LocalFirstToolJudge
 import com.eraherm.hermchat.tools.LocalToolPlanner
 import com.eraherm.hermchat.tools.LocalToolsPrompt
 import com.eraherm.hermchat.tools.ToolCallParser
+import com.eraherm.hermchat.tools.ToolCallRepair
 import com.eraherm.hermchat.tools.ToolRegistry
 import com.eraherm.hermchat.util.UserFacingError
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -770,6 +774,29 @@ class ChatViewModel(
             var usedLocalPlan = false
             val hasImage = !imageDataUrl.isNullOrBlank()
 
+            // 长记忆：首轮自动召回注入模型上下文（端侧话术 / 纠正仍用原 prompt）
+            val modelPrompt = if (
+                !hasImage &&
+                toolsOn &&
+                agent?.kind == AgentKind.GATEWAY
+            ) {
+                val mem = (appContext as? HermChatApp)?.memoryStore
+                if (mem != null && mem.isReady()) {
+                    val snippet = runCatching {
+                        mem.formatRecallForPrompt(prompt)
+                    }.getOrNull().orEmpty()
+                    if (snippet.isNotBlank()) {
+                        "【相关记忆】\n$snippet\n\n$prompt"
+                    } else {
+                        prompt
+                    }
+                } else {
+                    prompt
+                }
+            } else {
+                prompt
+            }
+
             // 有图时不做本地优先解析
             if (
                 !hasImage &&
@@ -782,7 +809,7 @@ class ChatViewModel(
             ) {
                 setLoopStep(LoopStep.Planning("本地解析…"))
                 streamingProvider.value = providerOverride ?: "网关·本地"
-                val localRaw = gateway.tryLocalToolPlan(prompt)
+                val localRaw = gateway.tryLocalToolPlan(modelPrompt)
                 if (localRaw != null) {
                     val (displayText, agentTool) = if (toolsOn) {
                         ToolCallParser.extract(localRaw)
@@ -807,29 +834,75 @@ class ChatViewModel(
                     streamingContent.value = ""
                     buffer.clear()
                     collectStream(
-                        stream = gateway.streamApiChat(prompt, history),
+                        stream = gateway.streamApiChat(modelPrompt, history),
                         buffer = buffer,
                         provider = provider,
                         providerOverride = providerOverride,
                         chatClient = chatClient,
+                        allowLocalDegrade = !hasImage,
+                        localFallbackPrompt = modelPrompt,
+                        localFallbackHistory = history,
                     )
                 }
             } else {
                 collectStream(
-                    stream = chatClient.streamChat(prompt, history, imageDataUrl),
+                    stream = chatClient.streamChat(modelPrompt, history, imageDataUrl),
+                    buffer = buffer,
+                    provider = provider,
+                    providerOverride = providerOverride,
+                    chatClient = chatClient,
+                    allowLocalDegrade = !hasImage && agent?.kind == AgentKind.GATEWAY,
+                    localFallbackPrompt = modelPrompt,
+                    localFallbackHistory = history,
+                )
+            }
+
+            val rawFirst = buffer.toString()
+            var (displayText, agentTool) = if (toolsOn) {
+                ToolCallParser.extract(rawFirst)
+            } else {
+                rawFirst to null
+            }
+            var raw = rawFirst
+
+            // 该出 tool 却吐错 / 假装已执行：云端再救一轮（端侧话术能兜底则跳过）
+            if (
+                toolsOn &&
+                agent?.kind == AgentKind.GATEWAY &&
+                gateway != null &&
+                gateway.hasApi &&
+                ToolCallRepair.shouldRetry(
+                    userPrompt = prompt,
+                    assistantRaw = rawFirst,
+                    parsedTool = agentTool,
+                    localFallback = LocalToolPlanner.plan(prompt),
+                )
+            ) {
+                setLoopStep(LoopStep.Planning("纠正工具格式…"))
+                (appContext as? HermChatApp)?.voiceEventBus?.emit(
+                    VoiceEvent.Status("纠正工具格式…"),
+                )
+                val repairMessages = gateway.buildApiTurnMessages(modelPrompt, history, imageDataUrl)
+                    .toMutableList()
+                    .also {
+                        it.add(ApiChatMessage("assistant", rawFirst.ifBlank { displayText }))
+                        it.add(ApiChatMessage("user", ToolCallRepair.nudgeMessage(prompt)))
+                    }
+                buffer.clear()
+                streamingContent.value = ""
+                collectStream(
+                    stream = gateway.streamApiMessages(repairMessages),
                     buffer = buffer,
                     provider = provider,
                     providerOverride = providerOverride,
                     chatClient = chatClient,
                 )
+                raw = buffer.toString()
+                val repaired = ToolCallParser.extract(raw)
+                displayText = repaired.first
+                agentTool = repaired.second
             }
 
-            val raw = buffer.toString()
-            val (displayText, agentTool) = if (toolsOn) {
-                ToolCallParser.extract(raw)
-            } else {
-                raw to null
-            }
             val finalText = displayText.ifBlank {
                 if (agentTool != null) {
                     "好的。"
@@ -844,7 +917,7 @@ class ChatViewModel(
                 gateway.hasApi
             ) {
                 GatewayLoopState(
-                    messages = gateway.buildApiTurnMessages(prompt, history, imageDataUrl)
+                    messages = gateway.buildApiTurnMessages(modelPrompt, history, imageDataUrl)
                         .toMutableList(),
                     lastAssistantRaw = raw.ifBlank { finalText },
                     step = 1,
@@ -871,12 +944,44 @@ class ChatViewModel(
         provider: String?,
         providerOverride: String?,
         chatClient: StreamingChatClient,
+        allowLocalDegrade: Boolean = false,
+        localFallbackPrompt: String? = null,
+        localFallbackHistory: List<ChatTurn>? = null,
     ) {
-        stream.paceForDisplay().collect { token ->
-            buffer.append(token)
-            streamingContent.value = buffer.toString()
-            val route = (chatClient as? HybridGatewayClient)?.lastRouteLabel?.value
-            streamingProvider.value = providerOverride ?: route ?: provider
+        try {
+            stream.paceForDisplay().collectWithFirstChunkTimeout(StreamFirstChunk.TIMEOUT_MS) { token ->
+                buffer.append(token)
+                streamingContent.value = buffer.toString()
+                val route = (chatClient as? HybridGatewayClient)?.lastRouteLabel?.value
+                streamingProvider.value = providerOverride ?: route ?: provider
+            }
+        } catch (e: FirstChunkTimeoutException) {
+            if (buffer.isNotEmpty()) throw e
+            val gateway = chatClient as? HybridGatewayClient
+            if (
+                allowLocalDegrade &&
+                gateway != null &&
+                gateway.isLocalReady() &&
+                !localFallbackPrompt.isNullOrBlank()
+            ) {
+                (appContext as? HermChatApp)?.voiceEventBus?.emit(
+                    VoiceEvent.Status("改用本地…"),
+                )
+                setLoopStep(LoopStep.Planning("改用本地…"))
+                streamingContent.value = ""
+                buffer.clear()
+                gateway.markLocalRoute()
+                gateway.streamLocalChat(
+                    localFallbackPrompt,
+                    localFallbackHistory.orEmpty(),
+                ).paceForDisplay().collect { token ->
+                    buffer.append(token)
+                    streamingContent.value = buffer.toString()
+                    streamingProvider.value = providerOverride ?: "网关·本地"
+                }
+                return
+            }
+            throw e
         }
     }
 
@@ -913,13 +1018,52 @@ class ChatViewModel(
             loop.step += 1
 
             val buffer = StringBuilder()
-            gateway.streamApiMessages(loop.messages).paceForDisplay().collect { token ->
-                buffer.append(token)
-                streamingContent.value = buffer.toString()
-                streamingProvider.value = gateway.lastRouteLabel.value
+            try {
+                gateway.streamApiMessages(loop.messages).paceForDisplay()
+                    .collectWithFirstChunkTimeout(StreamFirstChunk.TIMEOUT_MS) { token ->
+                        buffer.append(token)
+                        streamingContent.value = buffer.toString()
+                        streamingProvider.value = gateway.lastRouteLabel.value
+                    }
+            } catch (e: FirstChunkTimeoutException) {
+                gatewayLoop = null
+                val friendly = UserFacingError.of(e, "继续回复失败")
+                busy.update { it.copy(error = friendly, loopStep = LoopStep.Error(friendly)) }
+                (appContext as? HermChatApp)?.voiceEventBus?.emit(VoiceEvent.Error(friendly))
+                offerLoopEscalate()
+                return
             }
-            val raw = buffer.toString()
-            val (displayText, agentTool) = ToolCallParser.extract(raw)
+            val rawFirst = buffer.toString()
+            var (displayText, agentTool) = ToolCallParser.extract(rawFirst)
+            var raw = rawFirst
+            if (
+                agentTool == null &&
+                LocalFirstToolJudge.looksLikeBrokenToolAttempt(rawFirst)
+            ) {
+                setLoopStep(LoopStep.Planning("纠正工具格式…"))
+                loop.messages.add(ApiChatMessage("assistant", rawFirst.ifBlank { displayText }))
+                loop.messages.add(ApiChatMessage("user", ToolCallRepair.continueNudgeMessage()))
+                buffer.clear()
+                streamingContent.value = ""
+                try {
+                    gateway.streamApiMessages(loop.messages).paceForDisplay()
+                        .collectWithFirstChunkTimeout(StreamFirstChunk.TIMEOUT_MS) { token ->
+                            buffer.append(token)
+                            streamingContent.value = buffer.toString()
+                            streamingProvider.value = gateway.lastRouteLabel.value
+                        }
+                } catch (e: FirstChunkTimeoutException) {
+                    gatewayLoop = null
+                    val friendly = UserFacingError.of(e, "继续回复失败")
+                    busy.update { it.copy(error = friendly, loopStep = LoopStep.Error(friendly)) }
+                    offerLoopEscalate()
+                    return
+                }
+                raw = buffer.toString()
+                val repaired = ToolCallParser.extract(raw)
+                displayText = repaired.first
+                agentTool = repaired.second
+            }
             val finalText = displayText.ifBlank {
                 if (agentTool != null) "好的。" else "（空回复）"
             }

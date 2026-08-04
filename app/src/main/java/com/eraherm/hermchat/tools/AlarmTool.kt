@@ -39,19 +39,19 @@ class AlarmTool(
     override suspend fun execute(call: ToolCall): ToolResult = withContext(Dispatchers.Main) {
         try {
             val message = call.arguments["message"]?.ifBlank { null } ?: "HxSync 提醒"
-            val triggerAt = call.arguments["triggerMs"]?.toLongOrNull()
+            val triggerAt = parseTriggerMs(call.arguments)
                 ?: return@withContext ToolResult(
                     toolCallId = call.id,
                     name = name,
                     success = false,
-                    message = "缺少提醒时间",
+                    message = "缺少提醒时间（需要 triggerMs 毫秒时间戳）",
                 )
             if (triggerAt <= System.currentTimeMillis() + 5_000L) {
                 return@withContext ToolResult(
                     toolCallId = call.id,
                     name = name,
                     success = false,
-                    message = "提醒时间已过",
+                    message = "提醒时间已过，请换一个更晚的时间",
                 )
             }
 
@@ -68,7 +68,7 @@ class AlarmTool(
                         toolCallId = call.id,
                         name = name,
                         success = true,
-                        message = "已打开系统闹钟「$message」· $whenText（请在时钟里确认保存）",
+                        message = "已请求系统闹钟「$message」· $whenText",
                     )
                 }
             }
@@ -80,7 +80,7 @@ class AlarmTool(
                         toolCallId = call.id,
                         name = name,
                         success = true,
-                        message = "已打开系统倒计时「$message」· $whenText（请在时钟里确认）",
+                        message = "已请求系统倒计时「$message」· $whenText",
                     )
                 }
             }
@@ -91,7 +91,7 @@ class AlarmTool(
                     toolCallId = call.id,
                     name = name,
                     success = true,
-                    message = "已打开系统闹钟「$message」· $whenText（请在时钟里确认保存）",
+                    message = "已请求系统闹钟「$message」· $whenText",
                 )
             }
 
@@ -118,7 +118,8 @@ class AlarmTool(
         val base = Intent(AlarmClock.ACTION_SET_TIMER).apply {
             putExtra(AlarmClock.EXTRA_LENGTH, lengthSec)
             putExtra(AlarmClock.EXTRA_MESSAGE, message)
-            putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+            // true：尽量直接写入，避免只打开时钟 UI、用户没点保存就以为失败
+            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
         }
         return launchClockIntent(base)
     }
@@ -128,7 +129,7 @@ class AlarmTool(
             putExtra(AlarmClock.EXTRA_HOUR, hour)
             putExtra(AlarmClock.EXTRA_MINUTES, minute)
             putExtra(AlarmClock.EXTRA_MESSAGE, message)
-            putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             putExtra(AlarmClock.EXTRA_VIBRATE, true)
         }
         return launchClockIntent(base)
@@ -273,6 +274,17 @@ class AlarmTool(
 
     companion object {
         const val NAME = "alarm.create"
+
+        /** 接受 triggerMs / trigger_ms；秒级时间戳自动 ×1000。 */
+        fun parseTriggerMs(args: Map<String, String>): Long? {
+            val raw = args["triggerMs"]?.ifBlank { null }
+                ?: args["trigger_ms"]?.ifBlank { null }
+                ?: args["time"]?.ifBlank { null }
+                ?: return null
+            val value = raw.trim().toLongOrNull() ?: raw.trim().toDoubleOrNull()?.toLong() ?: return null
+            // 1e12 ms ≈ 2001 年；更小多半是秒
+            return if (value in 1_000_000_000L..9_999_999_999L) value * 1000L else value
+        }
 
         /** 常见系统/厂商时钟包，用于 SET_ALARM / SET_TIMER 点名唤起。 */
         private val CLOCK_PACKAGES = listOf(

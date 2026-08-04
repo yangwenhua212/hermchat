@@ -9,21 +9,28 @@ import java.util.UUID
 
 object ToolCallParser {
     fun extract(assistantText: String): Pair<String, ToolCall?> {
-        val block = findJsonObject(assistantText) ?: return assistantText to null
+        val normalized = stripCodeFences(assistantText)
+        val block = findJsonObject(normalized) ?: return assistantText to null
         val call = parse(block) ?: return assistantText to null
-        val cleaned = assistantText.replace(block, "")
+        val cleaned = stripCodeFences(assistantText.replace(block, ""))
             .replace(Regex("\n{3,}"), "\n\n")
             .trim()
             .ifBlank { "好的。" }
         return cleaned to call
     }
 
+    /** 去掉 ```json ... ```，便于模型包在代码块里仍能解析。 */
+    fun stripCodeFences(text: String): String =
+        text.replace(Regex("```(?:json|JSON)?\\s*", RegexOption.IGNORE_CASE), "")
+            .replace("```", "")
+
     fun parse(jsonText: String): ToolCall? = runCatching {
         val obj = JSONObject(jsonText)
         val type = obj.optString("type")
-        val name = obj.optString("name")
-        if (type != "tool_call" && name.isBlank()) return null
-        if (name.isBlank()) return null
+        val rawName = obj.optString("name")
+        if (type != "tool_call" && rawName.isBlank()) return null
+        if (rawName.isBlank()) return null
+        val name = normalizeToolName(rawName)
 
         val argsObj = obj.optJSONObject("arguments") ?: JSONObject()
         val args = buildMap {
@@ -44,6 +51,24 @@ object ToolCallParser {
         )
     }.getOrNull()
 
+    fun normalizeToolName(raw: String): String {
+        val n = raw.trim().lowercase().replace('-', '_').replace(' ', '_')
+        return when (n) {
+            "alarm.create", "alarm_create", "set_alarm", "create_alarm", "alarm" -> AlarmTool.NAME
+            "calendar.create", "calendar_create", "create_calendar", "calendar" -> CalendarTool.NAME
+            "url.open", "url_open", "open_url", "open.url" -> OpenUrlTool.NAME
+            "web.search", "web_search", "search" -> WebSearchTool.NAME
+            "share.text", "share_text", "share" -> ShareTextTool.NAME
+            "clipboard.read", "clipboard_read", "read_clipboard" -> ClipboardReadTool.NAME
+            "clipboard.write", "clipboard_write", "write_clipboard" -> ClipboardWriteTool.NAME
+            "app.open", "app_open", "open_app", "launch_app" -> AppOpenTool.NAME
+            "phone.dial", "phone_dial", "dial", "call" -> PhoneDialTool.NAME
+            "memory.recall", "memory_recall", "recall", "memory.search" -> MemoryRecallTool.NAME
+            "memory.remember", "memory_remember", "remember", "memory.write" -> MemoryRememberTool.NAME
+            else -> raw.trim()
+        }
+    }
+
     private fun findJsonObject(text: String): String? {
         var start = -1
         var depth = 0
@@ -60,11 +85,16 @@ object ToolCallParser {
                         if (slice.contains("tool_call") ||
                             slice.contains("calendar.create") ||
                             slice.contains("alarm.create") ||
+                            slice.contains("set_alarm") ||
                             slice.contains("url.open") ||
                             slice.contains("web.search") ||
                             slice.contains("share.text") ||
                             slice.contains("clipboard.read") ||
-                            slice.contains("clipboard.write")
+                            slice.contains("clipboard.write") ||
+                            slice.contains("app.open") ||
+                            slice.contains("phone.dial") ||
+                            slice.contains("memory.recall") ||
+                            slice.contains("memory.remember")
                         ) {
                             return slice
                         }
@@ -84,6 +114,10 @@ object ToolCallParser {
         ShareTextTool.NAME -> "分享文本"
         ClipboardReadTool.NAME -> "读取剪贴板"
         ClipboardWriteTool.NAME -> "写入剪贴板"
+        AppOpenTool.NAME -> "打开应用"
+        PhoneDialTool.NAME -> "打开拨号盘"
+        MemoryRecallTool.NAME -> "召回记忆"
+        MemoryRememberTool.NAME -> "写入记忆"
         else -> "执行工具：$name"
     }
 
@@ -100,7 +134,7 @@ object ToolCallParser {
             }
             AlarmTool.NAME -> {
                 val message = args["message"] ?: "提醒"
-                val trigger = args["triggerMs"]?.toLongOrNull()
+                val trigger = AlarmTool.parseTriggerMs(args)
                 if (trigger != null) {
                     "将设置「$message」\n时间：${formatTime(trigger)}"
                 } else {
@@ -117,6 +151,25 @@ object ToolCallParser {
             ClipboardWriteTool.NAME -> {
                 val text = args["text"].orEmpty()
                 "将写入剪贴板：${text.take(80)}${if (text.length > 80) "…" else ""}"
+            }
+            AppOpenTool.NAME -> {
+                val app = args["app"].orEmpty().ifBlank {
+                    args["package"].orEmpty().ifBlank { args["packageName"].orEmpty() }
+                }
+                "将打开应用「$app」"
+            }
+            PhoneDialTool.NAME -> {
+                val num = args["number"].orEmpty()
+                    .ifBlank { args["phone"].orEmpty() }
+                "将打开拨号盘：$num"
+            }
+            MemoryRecallTool.NAME -> {
+                val q = args["query"].orEmpty().ifBlank { args["q"].orEmpty() }
+                "将查找记忆：$q"
+            }
+            MemoryRememberTool.NAME -> {
+                val c = args["content"].orEmpty().ifBlank { args["text"].orEmpty() }
+                "将记住：${c.take(80)}${if (c.length > 80) "…" else ""}"
             }
             else -> args.entries.joinToString("\n") { "${it.key}=${it.value}" }
         }

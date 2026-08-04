@@ -17,6 +17,24 @@ HxSync 按连接类型 / URL 自动选择传输（不绑定某一家 Agent 品�
 {"type":"chat","id":"uuid","content":"你好"}
 ```
 
+带图（三期附件，inline base64；过大慎用）：
+
+```json
+{
+  "type": "chat",
+  "id": "uuid",
+  "content": "图里写了什么",
+  "attachment": {
+    "name": "image.jpg",
+    "mime": "image/jpeg",
+    "encoding": "base64",
+    "data": "<base64…>"
+  }
+}
+```
+
+`agent.message.send` / JSON-RPC `prompt.submit` 的 params 也可带同一 `attachment` 字段。
+
 服务端流式：
 
 ```json
