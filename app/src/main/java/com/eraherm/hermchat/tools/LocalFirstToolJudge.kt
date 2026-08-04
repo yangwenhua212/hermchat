@@ -36,5 +36,7 @@ object LocalFirstToolJudge {
         "phone.dial",
         "memory.recall",
         "memory.remember",
+        "maps.search",
+        "email.compose",
     )
 }

@@ -293,7 +293,7 @@ class SetupAssistViewModel(
                     AgentKind.LOCAL ->
                         "已保存「$name」。可在设置 → 资源库下载并选用本地模型后再聊。"
                     AgentKind.GATEWAY ->
-                        "测连成功（$msg）。已保存「$name」（端侧网关，可本机工具）。"
+                        "测连成功（$msg）。已保存「$name」（端侧网关：识图·本机工具·Loop）。"
                     AgentKind.HTTP_COMPAT ->
                         "测连成功（$msg）。已保存「$name」（纯聊天，无本机工具）。"
                     else ->

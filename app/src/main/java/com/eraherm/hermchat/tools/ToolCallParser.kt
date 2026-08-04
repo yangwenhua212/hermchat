@@ -65,6 +65,8 @@ object ToolCallParser {
             "phone.dial", "phone_dial", "dial", "call" -> PhoneDialTool.NAME
             "memory.recall", "memory_recall", "recall", "memory.search" -> MemoryRecallTool.NAME
             "memory.remember", "memory_remember", "remember", "memory.write" -> MemoryRememberTool.NAME
+            "maps.search", "maps_search", "map.search", "open_maps" -> MapsSearchTool.NAME
+            "email.compose", "email_compose", "compose_email", "send_email", "mailto" -> EmailComposeTool.NAME
             else -> raw.trim()
         }
     }
@@ -94,7 +96,9 @@ object ToolCallParser {
                             slice.contains("app.open") ||
                             slice.contains("phone.dial") ||
                             slice.contains("memory.recall") ||
-                            slice.contains("memory.remember")
+                            slice.contains("memory.remember") ||
+                            slice.contains("maps.search") ||
+                            slice.contains("email.compose")
                         ) {
                             return slice
                         }
@@ -118,6 +122,8 @@ object ToolCallParser {
         PhoneDialTool.NAME -> "打开拨号盘"
         MemoryRecallTool.NAME -> "召回记忆"
         MemoryRememberTool.NAME -> "写入记忆"
+        MapsSearchTool.NAME -> "打开地图"
+        EmailComposeTool.NAME -> "写邮件"
         else -> "执行工具：$name"
     }
 
@@ -170,6 +176,15 @@ object ToolCallParser {
             MemoryRememberTool.NAME -> {
                 val c = args["content"].orEmpty().ifBlank { args["text"].orEmpty() }
                 "将记住：${c.take(80)}${if (c.length > 80) "…" else ""}"
+            }
+            MapsSearchTool.NAME -> {
+                val q = args["query"].orEmpty()
+                    .ifBlank { args["address"].orEmpty() }
+                "将在地图搜索「$q」"
+            }
+            EmailComposeTool.NAME -> {
+                val to = args["to"].orEmpty().ifBlank { args["email"].orEmpty() }
+                if (to.isNotBlank()) "将打开邮件给 $to" else "将打开邮件撰写"
             }
             else -> args.entries.joinToString("\n") { "${it.key}=${it.value}" }
         }

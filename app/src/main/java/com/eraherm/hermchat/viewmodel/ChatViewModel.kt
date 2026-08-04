@@ -490,7 +490,7 @@ class ChatViewModel(
         val loop = gatewayLoop
         val gateway = client as? HybridGatewayClient
         if (loop != null && gateway != null && gateway.hasApi) {
-            delay(320)
+            delay(520)
             continueGatewayLoop(
                 gateway = gateway,
                 loop = loop,

@@ -66,6 +66,10 @@ fun AboutScreen(
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
+                    "识图附件 · ④ Loop · 本机工具；重 Agent 接远端",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
                     "本软件以 AGPL-3.0 许可分发。完整对应源代码：",
                     style = MaterialTheme.typography.bodyLarge,
                 )

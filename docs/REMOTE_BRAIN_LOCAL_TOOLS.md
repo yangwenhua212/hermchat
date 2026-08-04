@@ -80,11 +80,24 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 5. **回灌**「【本机工具结果】…」给 API → 收尾或再 tool；续跑若再吐坏 JSON 同样挽救一次  
 6. 步数上限 8；超限切 ③；取消确认则中止 loop  
 
-本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search` / `share.text` / `app.open` / `phone.dial` / `memory.recall`（本机关键词，只读）/ `memory.remember`（本机写入，须确认）；`clipboard.read`（只读可静默）；`clipboard.write`（须确认）。  
+本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search` / `share.text` / `app.open` / `phone.dial` / `maps.search` / `email.compose` / `memory.recall`（本机关键词，只读）/ `memory.remember`（本机写入，须确认）；`clipboard.read`（只读可静默）；`clipboard.write`（须确认）。  
 本地记忆见 [MEMORY.md](MEMORY.md)。本地路径本身不做完整 loop；续跑始终走 API（需已配 DeepSeek 等）。
+
+## Agent 感（Loop 呈现）
+
+每步气泡侧一行短阶段，避免黑盒：
+
+| 阶段 | 文案前缀 |
+|------|----------|
+| Planning | 分析中 · … |
+| Executing | 执行中 · 工具名 |
+| Observing | 观察中 · 结果摘要（稍顿再续跑） |
+
+确认卡弹出时收起中间态。超步数 / 首包超时另有顶栏短提示。
 
 ## 仍可加强
 
 - 更多本机工具（通知摘要等，须权限）  
 - 同机 Termux Hermes 伴侣（③ localhost）  
 - 按 token/耗电更细的路由  
+- 非线性对话分支（非当前目标）  

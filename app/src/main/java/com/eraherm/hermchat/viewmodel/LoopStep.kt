@@ -2,7 +2,7 @@ package com.eraherm.hermchat.viewmodel
 
 /**
  * ④ Agent loop 中间态：每步上屏，避免黑盒等待像死机。
- * 文案保持一行内短句（见 UI.md）。
+ * 文案保持一行内短句（见 UI.md）；阶段前缀让用户感到「分析→执行→观察」。
  */
 sealed class LoopStep {
     data object Idle : LoopStep()
@@ -23,12 +23,24 @@ sealed class LoopStep {
     /** 聊天侧展示用短句；Idle 为 null。 */
     fun label(): String? = when (this) {
         Idle -> null
-        is Planning -> thought.ifBlank { "正在分析…" }
+        is Planning -> {
+            val t = thought.trim()
+            when {
+                t.isBlank() || t == "正在分析…" -> "分析中…"
+                t.startsWith("分析") || t.startsWith("第") ||
+                    t.startsWith("改用") || t.startsWith("纠正") ||
+                    t.startsWith("本地") -> t.take(40)
+                else -> "分析中 · ${t.take(28)}"
+            }
+        }
         is Executing -> {
             val what = desc.ifBlank { friendlyToolName(toolName) }
-            "正在执行：$what"
+            "执行中 · ${what.take(28)}"
         }
-        is Observing -> "已完成：${result.trim().take(40)}"
+        is Observing -> {
+            val r = result.trim()
+            if (r.isBlank()) "观察中…" else "观察中 · ${r.take(28)}"
+        }
         is Finished -> answer.trim().take(40).ifBlank { "已完成" }
         is Error -> msg.trim().take(48)
     }
@@ -44,6 +56,10 @@ sealed class LoopStep {
             "clipboard.write" -> "写剪贴板"
             "app.open" -> "打开应用"
             "phone.dial" -> "拨号"
+            "memory.recall" -> "召回记忆"
+            "memory.remember" -> "写入记忆"
+            "maps.search" -> "打开地图"
+            "email.compose" -> "写邮件"
             else -> name
         }
     }

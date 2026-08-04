@@ -15,10 +15,13 @@
 | Hermes HTTP 会话 / 新建对话 | ✅ Step 17 | 请求带 `X-Hermes-Session-Id`；顶栏新建对话；满 20 条自动换会话 |
 | 气泡复制 / 编辑 Agent 跳转 | ✅ Step 17 | 长按选中复制；下拉菜单关闭后再导航 |
 | ④ Agent loop 初版 | ✅ Step 18 | 确认后回灌 API 续跑；聪明路由；链接/搜索/分享 |
-| Loop 中间态 / 分级确认 / 一键切 ③ | ✅ v0.3 三关骨架 | `LoopStep` · `ToolRisk` · `LoopEscalatePicker` |
-| 剪贴板读写 | ✅ | `clipboard.read` 静默；`clipboard.write` 确认；见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md) |
-| 聊天识图（一期） | ✅ | Composer 选图；②/④/Hermes HTTP vision；本地/WS 短提示拒绝 |
-| 聊天附件（二期） | ✅ | 附件：txt/md/json/csv 注入正文；PDF 首页当图；各通道文本可发 |
+| Loop 中间态 / 分级确认 / 一键切 ③ | ✅ | 分析中/执行中/观察中；`ToolRisk`；超步数切 ③ |
+| 剪贴板读写 | ✅ | `clipboard.read` 静默；`clipboard.write` 确认 |
+| 开应用 / 拨号 / 地图 / 邮件 | ✅ | `app.open` / `phone.dial` / `maps.search` / `email.compose` |
+| 本机极简记忆 | ✅ | `memory.recall` / `memory.remember`；见 [MEMORY.md](MEMORY.md) |
+| 聊天识图（一期） | ✅ | Composer 选图；②/④/Hermes HTTP vision；③ Bridge attachment |
+| 聊天附件（二期+三期） | ✅ | 文本/PDF；分享入；历史大图；Bridge 带图 |
+| 首包超时降级 | ✅ | 约 12s → 本地或 AgentFailover |
 
 ---
 
@@ -57,6 +60,6 @@
 3. ~~本地运行时 Phase B~~ ✅ — 见 [LOCAL_MODEL.md](LOCAL_MODEL.md)  
 4. ~~Hermes 会话 / 新建对话 / 复制~~ ✅ Step 17  
 5. ~~④ Agent loop + 三关骨架~~ ✅ — 中间态 / `ToolRisk` / 超步数切 ③  
-6. 真机验收「多步提醒 + 确认 + 续跑」与「剪贴板内容设提醒」；✅ tool JSON 失败自动纠正一轮；✅ ④ 本机极简记忆；✅ 首包超时降级（12s→本地/备用）；✅ 附件三期；可选：界面深化  
+6. 真机验收「多步提醒 + 确认 + 续跑」；✅ JSON 纠正 / 本机记忆 / 首包超时 / 附件三期 / maps·email / Loop 阶段呈现；可选：界面深化、更多本机工具  
 
 UI 文案规范：[UI.md](UI.md)。产品节奏：[ROADMAP.md](ROADMAP.md) v0.3.0。

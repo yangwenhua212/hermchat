@@ -11,6 +11,8 @@ object LocalToolPlanner {
         if (looksMultiStep(text)) return null
         return LocalAlarmPlanner.plan(text)
             ?: LocalDialPlanner.plan(text)
+            ?: LocalMapsPlanner.plan(text)
+            ?: LocalEmailPlanner.plan(text)
             ?: LocalAppOpenPlanner.plan(text)
             ?: LocalMemoryPlanner.plan(text)
             ?: LocalCalendarPlanner.plan(text)

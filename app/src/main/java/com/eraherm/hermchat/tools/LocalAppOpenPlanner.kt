@@ -18,8 +18,10 @@ object LocalAppOpenPlanner {
             .removeSuffix("应用")
             .trim()
         if (app.isBlank() || app.length > 20) return null
-        // 排除链接 / 搜索类
+        // 排除链接 / 搜索类；「打开地图搜…」交给 maps.search
         if (app.startsWith("http") || app.contains("搜索") || app.contains("链接")) return null
+        if (LocalMapsPlanner.extractQuery(text) != null) return null
+        if (app.startsWith("地图搜") || app.startsWith("地图搜索") || app.contains("导航")) return null
         if (listOf("闹钟", "提醒", "日历", "日程").any { app.contains(it) }) return null
         val args = mapOf("app" to app)
         return ToolCall(

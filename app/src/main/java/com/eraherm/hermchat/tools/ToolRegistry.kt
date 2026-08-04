@@ -19,6 +19,8 @@ class ToolRegistry(
         PhoneDialTool(context.applicationContext),
         MemoryRecallTool(context.applicationContext),
         MemoryRememberTool(context.applicationContext),
+        MapsSearchTool(context.applicationContext),
+        EmailComposeTool(context.applicationContext),
     ).associateBy { it.name }
 
     fun get(name: String): PhoneTool? = tools[name]
