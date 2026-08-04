@@ -8,35 +8,40 @@ import org.junit.Test
 
 class GatewayRouterTest {
     @Test
-    fun simpleGoesLocalWhenReady() {
+    fun defaultApiEvenForGreeting() {
         val r = GatewayRouter.decide("你好", localReady = true, apiConfigured = true)
-        assertEquals(GatewayRouter.Route.LOCAL, r)
+        assertEquals(GatewayRouter.Route.API, r)
     }
 
     @Test
-    fun complexGoesApi() {
+    fun defaultApiWhenOnlyCloud() {
         val r = GatewayRouter.decide(
-            "帮我写一个排序算法并详细分析复杂度",
-            localReady = true,
+            "帮我写一个排序算法",
+            localReady = false,
             apiConfigured = true,
         )
         assertEquals(GatewayRouter.Route.API, r)
     }
 
     @Test
-    fun noLocalFallsBackApi() {
-        val r = GatewayRouter.decide("你好", localReady = false, apiConfigured = true)
+    fun defaultFallsBackLocalWhenNoApi() {
+        val r = GatewayRouter.decide("你好", localReady = true, apiConfigured = false)
+        assertEquals(GatewayRouter.Route.LOCAL, r)
+    }
+
+    @Test
+    fun legacyAutoSameAsApi() {
+        val r = GatewayRouter.decide(
+            "你好",
+            localReady = true,
+            apiConfigured = true,
+            mode = GatewayRouteMode.AUTO,
+        )
         assertEquals(GatewayRouter.Route.API, r)
     }
 
     @Test
-    fun forceApiKeyword() {
-        val r = GatewayRouter.decide("用大模型解释相对论", localReady = true, apiConfigured = true)
-        assertEquals(GatewayRouter.Route.API, r)
-    }
-
-    @Test
-    fun manualLocalIgnoresComplexity() {
+    fun manualLocalUsesLocal() {
         val r = GatewayRouter.decide(
             "帮我写一个排序算法并详细分析复杂度",
             localReady = true,

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -201,8 +202,10 @@ private fun PrefsRoot(
     PrefsFolderRow(
         title = "端侧网关",
         summary = buildString {
-            append(prefs.gatewayRouteMode.label)
-            if (prefs.localFirstToolParse) append(" · 本地优先")
+            append(
+                if (prefs.gatewayRouteMode == GatewayRouteMode.LOCAL) "本地模型" else "云端",
+            )
+            if (prefs.localFirstToolParse) append(" · 本地解析")
         },
         onClick = onOpenGateway,
     )
@@ -331,16 +334,53 @@ private fun PrefsGatewayDetail(
     prefs: ChatPrefs,
     store: ChatPrefsStore,
 ) {
+    var showLocalRouteWarn by remember { mutableStateOf(false) }
     var showLocalFirstWarn by remember { mutableStateOf(false) }
+    val usingLocal = prefs.gatewayRouteMode == GatewayRouteMode.LOCAL
 
     Text("路由", style = MaterialTheme.typography.titleMedium)
-    GatewayRouteMode.entries.forEach { mode ->
-        PrefsOptionRow(
-            title = mode.label,
-            selected = prefs.gatewayRouteMode == mode,
-            onClick = { store.setGatewayRouteMode(mode) },
+    Text(
+        text = if (usingLocal) "当前：本地模型" else "当前：云端",
+        style = MaterialTheme.typography.bodyLarge,
+    )
+    if (usingLocal) {
+        Button(
+            onClick = { store.setGatewayRouteMode(GatewayRouteMode.API) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Text("改回云端")
+        }
+    } else {
+        Button(
+            onClick = { showLocalRouteWarn = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Text("使用本地模型")
+        }
+    }
+    if (showLocalRouteWarn) {
+        AlertDialog(
+            onDismissRequest = { showLocalRouteWarn = false },
+            title = { Text("改用本地模型？") },
+            text = {
+                Text("本地小模型能力有限，复杂任务可能不准；内存不足时可能失败。确认后网关对话将走本地。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        store.setGatewayRouteMode(GatewayRouteMode.LOCAL)
+                        showLocalRouteWarn = false
+                    },
+                ) { Text("确认") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLocalRouteWarn = false }) { Text("取消") }
+            },
         )
     }
+
     PrefsLeafRow(
         title = "本地优先解析",
         trailing = {

@@ -104,9 +104,17 @@ class LocalRuntimeClient(
     }
 
     private fun buildPrompt(user: String): String = buildString {
-        appendLine("你是手机里的个人助手 HxSync 本地运行时。用简体中文简短回答。")
-        appendLine("用户：$user")
-        append("助手：")
+        // TinyLlama 等偏英文权重：勿写死「用简体中文」，否则英文提问也会被逼出烂中文/乱码。
+        if (isEnglishPrimaryModel(modelId)) {
+            appendLine("You are HxSync, a brief on-device phone assistant.")
+            appendLine("Reply in the same language as the user. Keep answers short.")
+            appendLine("User: $user")
+            append("Assistant:")
+        } else {
+            appendLine("你是手机里的个人助手 HxSync 本地运行时。用简体中文简短回答。")
+            appendLine("用户：$user")
+            append("助手：")
+        }
     }
 
     private fun buildToolPlanPrompt(user: String): String = buildString {
@@ -136,5 +144,9 @@ class LocalRuntimeClient(
 
     companion object {
         private val GREETING = listOf("你好", "在吗", "嗨", "hello", "hi")
+
+        fun isEnglishPrimaryModel(modelId: String): Boolean =
+            modelId == LocalModelStore.MODEL_TINYLLAMA_ID ||
+                modelId.contains("tinyllama", ignoreCase = true)
     }
 }

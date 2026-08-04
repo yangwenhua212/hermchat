@@ -61,11 +61,15 @@ enum class SpeakEngine(val label: String) {
     AUTO("自动"),
 }
 
-/** ④ 端侧网关路由：自动判复杂度，或手选优先本地 / 云端。 */
+/**
+ * ④ 端侧网关路由。
+ * 默认 [API]（云端）；[LOCAL] 须设置页点「使用本地模型」并确认风险后才生效。
+ * [AUTO] 仅为旧版兼容，加载时视同 [API]。
+ */
 enum class GatewayRouteMode(val label: String) {
-    AUTO("自动"),
-    LOCAL("优先本地"),
-    API("优先云端"),
+    AUTO("云端"),
+    LOCAL("本地模型"),
+    API("云端"),
 }
 
 data class ChatPrefs(
@@ -89,8 +93,8 @@ data class ChatPrefs(
     val ttsApiKey: String = "",
     val ttsModel: String = "",
     val ttsVoice: String = "",
-    /** 仅对端侧网关 Agent 生效 */
-    val gatewayRouteMode: GatewayRouteMode = GatewayRouteMode.AUTO,
+    /** 仅对端侧网关 Agent 生效；默认云端 */
+    val gatewayRouteMode: GatewayRouteMode = GatewayRouteMode.API,
     /**
      * 实验：④ 首轮先用本地小模型试跑 tool JSON；失败本轮改云端。
      * 默认关；开启前设置页会弹知情确认。
@@ -288,11 +292,15 @@ class ChatPrefsStore(
         val ttsApiKey = prefs.getString(KEY_TTS_API_KEY, "") ?: ""
         val ttsModel = prefs.getString(KEY_TTS_MODEL, "") ?: ""
         val ttsVoice = prefs.getString(KEY_TTS_VOICE, "") ?: ""
-        val gatewayRoute = prefs.getString(KEY_GATEWAY_ROUTE, GatewayRouteMode.AUTO.name)
+        val gatewayRoute = prefs.getString(KEY_GATEWAY_ROUTE, GatewayRouteMode.API.name)
             ?.let { raw ->
-                runCatching { GatewayRouteMode.valueOf(raw) }.getOrDefault(GatewayRouteMode.AUTO)
+                runCatching { GatewayRouteMode.valueOf(raw) }.getOrDefault(GatewayRouteMode.API)
             }
-            ?: GatewayRouteMode.AUTO
+            ?.let { mode ->
+                // 旧「自动」（闲聊走本地）取消，统一默认云端
+                if (mode == GatewayRouteMode.AUTO) GatewayRouteMode.API else mode
+            }
+            ?: GatewayRouteMode.API
         val localFirstTool = prefs.getBoolean(KEY_LOCAL_FIRST_TOOL, false)
         val shortcuts = loadShortcuts()
         return ChatPrefs(

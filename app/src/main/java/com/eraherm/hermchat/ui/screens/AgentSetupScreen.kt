@@ -375,7 +375,7 @@ private fun StepSelectKind(
         style = MaterialTheme.typography.bodyLarge,
     )
     ImportActions(onScan = onScan, onPaste = onPaste)
-    AgentKind.entries.forEach { kind ->
+    AgentKind.forManualPicker(selected).forEach { kind ->
         val selectedKind = kind == selected
         Surface(
             modifier = Modifier
@@ -535,17 +535,12 @@ private fun StepEndpoint(
 
     if (kind == AgentKind.GATEWAY) {
         Text("端侧网关", style = MaterialTheme.typography.bodyLarge)
-        Text(
-            text = "简单题走本地，难题走 API；闹钟/日历在本机",
-            color = SoftGray,
-            style = MaterialTheme.typography.bodyMedium,
-        )
         OutlinedTextField(
             value = endpoint,
             onValueChange = onEndpointChange,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            label = { Text("API Base URL") },
+            label = { Text("API Base URL（可空）") },
             placeholder = { Text("https://api.deepseek.com") },
             shape = RoundedCornerShape(16.dp),
         )
@@ -554,7 +549,7 @@ private fun StepEndpoint(
             onValueChange = onApiKeyChange,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            label = { Text("API Key（兼作下载令牌）") },
+            label = { Text("API Key") },
             shape = RoundedCornerShape(16.dp),
         )
         OutlinedTextField(
@@ -566,7 +561,7 @@ private fun StepEndpoint(
             placeholder = { Text("deepseek-chat") },
             shape = RoundedCornerShape(16.dp),
         )
-        Text("本地兜底模型", style = MaterialTheme.typography.bodyLarge)
+        Text("本地模型", style = MaterialTheme.typography.bodyLarge)
         LocalModelPicker(
             catalog = modelCatalog,
             selectedId = localModelId.ifBlank { LocalModelStore.DEFAULT_MODEL_ID },
@@ -600,7 +595,7 @@ private fun StepEndpoint(
                     when {
                         modelReady -> "重新下载本地模型"
                         gatewayPartial -> "继续下载本地模型"
-                        else -> "下载本地兜底模型"
+                        else -> "下载本地模型"
                     },
                 )
             }
@@ -610,11 +605,17 @@ private fun StepEndpoint(
         }
         Button(
             onClick = onTest,
-            enabled = endpoint.isNotBlank() && !testing && !downloadingModel,
+            enabled = (endpoint.isNotBlank() || modelReady) && !testing && !downloadingModel,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
         ) {
-            Text(if (testing) "测试中…" else "测试 API")
+            Text(
+                when {
+                    testing -> "测试中…"
+                    endpoint.isBlank() -> "测试本地"
+                    else -> "测试 API"
+                },
+            )
         }
         when {
             testPassed -> Text(

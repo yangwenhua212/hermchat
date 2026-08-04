@@ -9,10 +9,12 @@ HxSync 是**通用口袋客户端**（品牌表述 B）：兼容远程 Agent、�
 | 模式 | App 里选 | 填什么 |
 |------|----------|--------|
 | 远程 Agent（电脑/云） | **WebSocket** | `ws://主机:端口/路径` |
-| **Hermes（推荐少填）** | **Hermes** | **主机**（IP/域名）+ API Key + 模型名 |
-| 直连 API | **HTTP 兼容** | 完整 Base URL + API Key（可选）+ 模型名 |
+| 直连 API / Hermes HTTP | **HTTP 兼容** | 完整 Base URL + API Key（可选）+ 模型名 |
 | 本地运行时 | **本地** | 选免令牌模型下载 → 测试（Gemma 才需 HF 令牌） |
+| 端侧网关 | **端侧网关** | API 基址 + Key + 模型；本机工具 |
 | 演示回声 | WebSocket | `python scripts/demo_bridge.py` 打印的地址 |
+
+> **Hermes：** 手动配置类型列表**不再单独列「Hermes」**（与 HTTP 重复占位）。连 Hermes 请用**配置助手**说「连一下 主机」+ Key，或扫码/粘贴 `kind=HERMES`；已保存的 Hermes 档案仍可编辑。
 
 真机用电脑局域网 IP，**不要用** `10.0.2.2`（模拟器专用）。
 
@@ -68,14 +70,14 @@ Hermes 这段是 **电脑侧** 自己调 Edge；聊天 API **不会**把 speech 
 
 ## A2. Hermes HTTP（少填主机）
 
-仅暴露 OpenAI 兼容 HTTP 的 Hermes（无公网 WS）时用这个：
+仅暴露 OpenAI 兼容 HTTP 的 Hermes（无公网 WS）时用这个（**推荐配置助手**，手动类型列表已不单列 Hermes）：
 
-1. 添加 Agent → **Hermes**  
-2. **主机**只填 IP 或域名（如 `47.x.x.x`）；需要端口时写 `主机:8080`  
+1. 添加 Agent → 配置助手：`连一下 主机` + 粘贴 API Key（或扫码/粘贴 JSON）  
+2. 主机只填 IP 或域名（如 `47.x.x.x`）；需要端口时写 `主机:8080`  
    App 自动拼成 `http://…`（已写 `http(s)://` 则原样使用）  
-3. API Key、模型 id →「测试」→ 聊天  
+3. 也可手动选 **HTTP 兼容**，填完整 `http(s)://…` Base URL  
 
-也可扫码/粘贴：`{"kind":"HERMES","endpoint":"主机或URL","apiKey":"…"}`。
+扫码/粘贴：`{"kind":"HERMES","endpoint":"主机或URL","apiKey":"…"}`。
 
 ---
 

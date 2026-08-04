@@ -20,7 +20,7 @@ class HybridGatewayClient(
     localModelId: String = LocalModelStore.DEFAULT_MODEL_ID,
     hfToken: String = "",
     private val modelStore: LocalModelStore = LocalModelStore(context),
-    private val routeModeProvider: () -> GatewayRouteMode = { GatewayRouteMode.AUTO },
+    private val routeModeProvider: () -> GatewayRouteMode = { GatewayRouteMode.API },
 ) : StreamingChatClient {
 
     private val appContext = context.applicationContext
@@ -140,22 +140,7 @@ class HybridGatewayClient(
             }
             GatewayRouter.Route.LOCAL -> {
                 _lastRouteLabel.value = "网关·本地"
-                val buffer = StringBuilder()
-                val liveStream = mode != GatewayRouteMode.AUTO || api == null
-                local.streamChat(prompt, history).collect { piece ->
-                    buffer.append(piece)
-                    if (liveStream) emit(piece)
-                }
-                val localText = buffer.toString()
-                if (mode == GatewayRouteMode.AUTO &&
-                    api != null &&
-                    GatewayRouter.isWeakLocalReply(localText)
-                ) {
-                    _lastRouteLabel.value = "网关·API"
-                    api.streamChat(prompt, history).collect { emit(it) }
-                } else if (!liveStream && localText.isNotEmpty()) {
-                    emit(localText)
-                }
+                local.streamChat(prompt, history).collect { emit(it) }
             }
         }
         _connected.value = true

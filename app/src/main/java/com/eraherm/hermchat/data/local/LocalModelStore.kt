@@ -410,7 +410,7 @@ class LocalModelStore(
             ),
             MODEL_TINYLLAMA_ID to ModelEntry(
                 id = MODEL_TINYLLAMA_ID,
-                label = "TinyLlama 1.1B（免令牌）",
+                label = "TinyLlama 1.1B（免令牌·英文为主）",
                 fileName = "TinyLlama-1.1B-Chat-v1.0_multi-prefill-seq_q8_ekv1280.task",
                 url = "https://huggingface.co/litert-community/TinyLlama-1.1B-Chat-v1.0/resolve/main/" +
                     "TinyLlama-1.1B-Chat-v1.0_multi-prefill-seq_q8_ekv1280.task",

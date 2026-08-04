@@ -157,8 +157,15 @@ fun MessageBubble(
                                     contentScale = ContentScale.Crop,
                                 )
                             } else if (!message.attachmentPath.isNullOrBlank()) {
+                                val attachLabel = message.attachmentName ?: "文件"
+                                val mime = message.attachmentMime.orEmpty()
+                                val prefix = when {
+                                    mime.equals("application/pdf", true) ||
+                                        attachLabel.lowercase().endsWith(".pdf") -> "PDF"
+                                    else -> "附件"
+                                }
                                 Text(
-                                    text = "附件 · ${message.attachmentName ?: "文件"}",
+                                    text = "$prefix · $attachLabel",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = if (isUser) {
                                         Color.White.copy(alpha = 0.92f)

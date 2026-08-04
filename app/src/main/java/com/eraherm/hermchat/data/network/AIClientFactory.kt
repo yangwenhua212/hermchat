@@ -36,7 +36,7 @@ object AIClientFactory {
                 localModelId = agent.localModelId.ifBlank { LocalModelStore.DEFAULT_MODEL_ID },
                 hfToken = agent.apiKey,
                 routeModeProvider = {
-                    prefsStore?.prefsFlow?.value?.gatewayRouteMode ?: GatewayRouteMode.AUTO
+                    prefsStore?.prefsFlow?.value?.gatewayRouteMode ?: GatewayRouteMode.API
                 },
             )
         }

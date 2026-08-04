@@ -623,16 +623,20 @@ fun ChatScreen(
                                     .clip(RoundedCornerShape(10.dp)),
                                 contentScale = ContentScale.Crop,
                             )
-                        } else {
-                            Text(
-                                text = attachment.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = SoftGray,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
                         }
+                        Text(
+                            text = when (attachment.kind) {
+                                AttachmentKind.PDF -> "PDF · ${attachment.name}"
+                                AttachmentKind.TEXT -> "文件 · ${attachment.name}"
+                                AttachmentKind.IMAGE ->
+                                    if (preview != null) attachment.name else "图片 · ${attachment.name}"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SoftGray,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
                         IconButton(onClick = { draftAttachment = null }) {
                             Icon(
                                 imageVector = Icons.Filled.Close,

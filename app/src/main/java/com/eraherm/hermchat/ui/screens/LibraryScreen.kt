@@ -246,7 +246,7 @@ fun LibraryScreen(
 
                         LibraryFolder.Models -> {
                             Text(
-                                text = "默认 Qwen / TinyLlama 可直接下载；Gemma 需上方令牌并在网页接受许可。",
+                                text = "要中文请用默认 Qwen2.5；TinyLlama 偏英文，中文易乱码。Gemma 需令牌并在网页接受许可。",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = SoftGray,
                             )

@@ -10,6 +10,10 @@ enum class AgentKind(
         defaultEndpoint = "ws://10.0.2.2:8765/ws",
         defaultName = "我的助手",
     ),
+    /**
+     * Hermes HTTP（少填主机）。手动配置列表不再单独展示，避免与「HTTP 兼容」重复；
+     * 配置助手 / 扫码 / 已保存档案仍可用。编辑旧 Hermes 时类型选择里会临时出现。
+     */
     HERMES(
         label = "Hermes",
         defaultEndpoint = "",
@@ -65,6 +69,10 @@ enum class AgentKind(
             }
             return kind
         }
+
+        /** 手动配置「选择类型」展示列表；默认不列 Hermes（与 HTTP 重复）。 */
+        fun forManualPicker(current: AgentKind): List<AgentKind> =
+            entries.filter { it != HERMES || current == HERMES }
     }
 }
 

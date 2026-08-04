@@ -1,11 +1,13 @@
 ---
-description: HxSync UI copy must stay clean — no footnote/hint clutter
+description: HxSync UI 精简 — 无灰字备注、无冗余入口
 alwaysApply: true
 ---
 
-# UI 文案：不要小字备注
+# UI：精简高效
 
 修改或新增 HxSync（hermchat）界面时：
+
+## 文案
 
 - **不要**在卡片、列表、配置步进、设置页下增加灰色说明句、hint、备注、说教提示。
 - 只保留标题、按钮、字段 label、短 placeholder、必要短状态（如「测连成功」）。
@@ -14,3 +16,12 @@ alwaysApply: true
 - 短暂错误提示应可自动消失，勿长期霸占聊天顶栏。
 
 若「删掉灰字后仍可操作」，就必须删掉。
+
+## 入口 / 选项（禁止冗余）
+
+- **同一能力不要两条几乎重复的 UI 路径**。能合并就合并。
+- 协议/品牌细分（如 Hermes HTTP vs 通用 OpenAI 兼容）用配置助手、扫码、粘贴 JSON 或编辑旧档案承载，**不要**在手动类型列表再多占一行。
+- 加新 `AgentKind` / 设置开关 / 列表项前自问：是否与现有项重叠？重叠则勿上屏。
+- 产品档位保持清晰（①本地 ②HTTP ③远端 ④网关）；不要为「看起来更全」再拆平行入口。
+
+细则与反例见 `docs/UI.md`「不堆冗余入口」。

@@ -171,11 +171,16 @@ class ChatViewModel(
 
         val agent = activeAgent.value
         val mime = attachmentMime.orEmpty()
-        val isVisionAttach = hasAttach && ChatAttachmentStore.isImageMime(mime)
+        val nameLower = attachmentName.orEmpty().lowercase()
+        val isPdfAttach = hasAttach && ChatAttachmentStore.isPdfMime(mime, nameLower)
+        val isVisionAttach = hasAttach &&
+            (isPdfAttach || ChatAttachmentStore.isImageMime(mime))
         val isTextAttach = hasAttach &&
-            ChatAttachmentStore.isTextMime(mime, attachmentName.orEmpty().lowercase())
+            !isPdfAttach &&
+            ChatAttachmentStore.isTextMime(mime, nameLower)
         val attachKind = when {
             isTextAttach -> AttachmentKind.TEXT
+            isPdfAttach -> AttachmentKind.PDF
             isVisionAttach -> AttachmentKind.IMAGE
             hasAttach -> AttachmentKind.IMAGE
             else -> null
@@ -213,6 +218,7 @@ class ChatViewModel(
                     append(extracted)
                 }
                 content.isNotBlank() -> append(content)
+                isPdfAttach -> append("请看这份 PDF 的首页。")
                 isVisionAttach -> append("请看这张图片。")
             }
         }
@@ -257,15 +263,16 @@ class ChatViewModel(
                 streamingProvider.value = agent?.kind?.label
 
                 val imageDataUrl = if (isVisionAttach) {
+                    // PDF 首页落盘为 JPEG；元数据 mime 仍是 application/pdf
                     store.toDataUrl(
                         path = attachmentPath!!,
-                        mime = mime.ifBlank { "image/jpeg" },
+                        mime = if (isPdfAttach) "image/jpeg" else mime.ifBlank { "image/jpeg" },
                     )
                 } else {
                     null
                 }
                 if (isVisionAttach && imageDataUrl == null) {
-                    error("图片无法读取")
+                    error(if (isPdfAttach) "PDF 无法读取" else "图片无法读取")
                 }
 
                 val outcome = runCatching {

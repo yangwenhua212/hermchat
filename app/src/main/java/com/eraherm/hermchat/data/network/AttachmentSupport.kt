@@ -7,11 +7,11 @@ import com.eraherm.hermchat.data.model.AgentProfile
 object AttachmentSupport {
     fun canSend(agent: AgentProfile?, kind: AttachmentKind): Boolean = when (kind) {
         AttachmentKind.TEXT -> agent != null
-        AttachmentKind.IMAGE -> VisionSupport.canSendImage(agent)
+        AttachmentKind.IMAGE, AttachmentKind.PDF -> VisionSupport.canSendImage(agent)
     }
 
     fun unsupportedStatus(agent: AgentProfile?, kind: AttachmentKind): String = when (kind) {
         AttachmentKind.TEXT -> "请先配置 Agent"
-        AttachmentKind.IMAGE -> VisionSupport.unsupportedStatus(agent)
+        AttachmentKind.IMAGE, AttachmentKind.PDF -> VisionSupport.unsupportedStatus(agent)
     }
 }

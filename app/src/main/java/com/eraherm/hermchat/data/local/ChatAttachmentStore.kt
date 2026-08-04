@@ -18,6 +18,10 @@ enum class AttachmentKind {
     IMAGE,
     /** 纯文本，注入 prompt */
     TEXT,
+    /**
+     * PDF：磁盘上存首页 JPEG 供 vision，元数据仍是文件（界面按附件名显示，不当相册图）。
+     */
+    PDF,
 }
 
 data class ChatAttachment(
@@ -169,9 +173,9 @@ class ChatAttachmentStore(
         }
         return ChatAttachment(
             path = dest.absolutePath,
-            mime = "image/jpeg",
+            mime = "application/pdf",
             name = displayName,
-            kind = AttachmentKind.IMAGE,
+            kind = AttachmentKind.PDF,
         )
     }
 
@@ -260,14 +264,15 @@ class ChatAttachmentStore(
 
         private val IMAGE_EXT = listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
 
+        /** 文档类型靠前，减少部分机型一打开像「选相册」。 */
         private val DOC_MIME_TYPES = arrayOf(
-            "image/*",
             "application/pdf",
             "text/plain",
             "text/markdown",
             "text/csv",
             "application/json",
             "text/*",
+            "image/*",
         )
 
         fun openDocumentMimeTypes(): Array<String> = DOC_MIME_TYPES
@@ -279,6 +284,10 @@ class ChatAttachmentStore(
         }
 
         fun isImageMime(mime: String): Boolean = mime.startsWith("image/")
+
+        fun isPdfMime(mime: String, nameLower: String = ""): Boolean =
+            mime.equals("application/pdf", ignoreCase = true) ||
+                nameLower.endsWith(".pdf")
 
         private fun guessTextMime(nameLower: String): String = when {
             nameLower.endsWith(".md") -> "text/markdown"

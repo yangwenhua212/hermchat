@@ -288,6 +288,22 @@ class SetupViewModel(
             if (state.kind == AgentKind.GATEWAY) {
                 val ready = localModelStore.isReady(onDeviceModelId(state))
                 _uiState.update { it.copy(modelReady = ready) }
+                // 仅本地：未填 API 时测本地就绪即可
+                if (state.endpoint.isBlank()) {
+                    _uiState.update {
+                        it.copy(
+                            testing = false,
+                            testPassed = ready,
+                            testMessage = if (ready) {
+                                "本地模型已就绪"
+                            } else {
+                                "请填写 API 或先下载本地模型"
+                            },
+                            error = if (ready) null else "请填写 API 或先下载本地模型",
+                        )
+                    }
+                    return@launch
+                }
             }
             val endpoint = runCatching { resolveEndpoint(state) }.getOrElse { err ->
                 val msg = UserFacingError.of(err, "地址无效")
@@ -430,17 +446,25 @@ class SetupViewModel(
     fun finish() {
         val state = _uiState.value
         val name = state.name.trim().ifEmpty { state.kind.defaultName }
+        if (state.kind == AgentKind.GATEWAY) {
+            val hasApi = state.endpoint.isNotBlank()
+            val localReady = localModelStore.isReady(onDeviceModelId(state))
+            if (!hasApi && !localReady) {
+                _uiState.update { it.copy(error = "请至少填写 API 或下载本地模型") }
+                return
+            }
+        }
         val endpoint = runCatching {
-            if (state.kind == AgentKind.LOCAL) {
-                AgentKind.LOCAL.defaultEndpoint
-            } else {
-                resolveEndpoint(state)
+            when (state.kind) {
+                AgentKind.LOCAL -> AgentKind.LOCAL.defaultEndpoint
+                AgentKind.GATEWAY -> state.endpoint.trim()
+                else -> resolveEndpoint(state)
             }
         }.getOrElse { err ->
             _uiState.update { it.copy(error = UserFacingError.of(err, "地址不能为空")) }
             return
         }
-        if (endpoint.isBlank()) {
+        if (state.kind != AgentKind.GATEWAY && endpoint.isBlank()) {
             _uiState.update { it.copy(error = "地址不能为空") }
             return
         }
@@ -477,15 +501,26 @@ class SetupViewModel(
 
     private fun goToNameStep(requireTest: Boolean) {
         val state = _uiState.value
-        if (state.kind != AgentKind.LOCAL) {
-            val ok = runCatching { resolveEndpoint(state) }.isSuccess
-            if (!ok || state.endpoint.isBlank()) {
-                _uiState.update {
-                    it.copy(
-                        error = if (state.kind == AgentKind.HERMES) "请先填写主机" else "请先填写地址",
-                    )
+        when (state.kind) {
+            AgentKind.LOCAL -> Unit
+            AgentKind.GATEWAY -> {
+                val hasApi = state.endpoint.isNotBlank()
+                val localReady = localModelStore.isReady(onDeviceModelId(state))
+                if (!hasApi && !localReady) {
+                    _uiState.update { it.copy(error = "请至少填写 API 或下载本地模型") }
+                    return
                 }
-                return
+            }
+            else -> {
+                val ok = runCatching { resolveEndpoint(state) }.isSuccess
+                if (!ok || state.endpoint.isBlank()) {
+                    _uiState.update {
+                        it.copy(
+                            error = if (state.kind == AgentKind.HERMES) "请先填写主机" else "请先填写地址",
+                        )
+                    }
+                    return
+                }
             }
         }
         if (requireTest && !state.testPassed) {
