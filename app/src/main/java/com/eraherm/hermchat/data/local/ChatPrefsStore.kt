@@ -102,6 +102,11 @@ data class ChatPrefs(
     val localFirstToolParse: Boolean = false,
     /** ④ 本机极简记忆：工具 + 首轮关键词召回注入；默认开 */
     val memoryEnabled: Boolean = true,
+    /**
+     * ③ 连接/发送失败时，持久切换到备选档（④>②>①）；默认关。
+     * 与本轮 [com.eraherm.hermchat.data.network.AgentFailover] 临时备用不同。
+     */
+    val connectionAutoDegrade: Boolean = false,
     val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
 ) {
     fun resolvedImagePath(): String? =
@@ -217,6 +222,10 @@ class ChatPrefsStore(
         update { it.copy(memoryEnabled = enabled) }
     }
 
+    fun setConnectionAutoDegrade(enabled: Boolean) {
+        update { it.copy(connectionAutoDegrade = enabled) }
+    }
+
     fun moveShortcut(id: String, offset: Int) {
         update { current ->
             val list = current.shortcuts.toMutableList()
@@ -261,6 +270,7 @@ class ChatPrefsStore(
             .putString(KEY_GATEWAY_ROUTE, value.gatewayRouteMode.name)
             .putBoolean(KEY_LOCAL_FIRST_TOOL, value.localFirstToolParse)
             .putBoolean(KEY_MEMORY_ENABLED, value.memoryEnabled)
+            .putBoolean(KEY_CONNECTION_AUTO_DEGRADE, value.connectionAutoDegrade)
             .putString(KEY_SHORTCUTS, array.toString())
             .apply()
     }
@@ -315,6 +325,7 @@ class ChatPrefsStore(
         } else {
             true
         }
+        val connectionAutoDegrade = prefs.getBoolean(KEY_CONNECTION_AUTO_DEGRADE, false)
         val shortcuts = loadShortcuts()
         return ChatPrefs(
             inputMode = mode,
@@ -332,6 +343,7 @@ class ChatPrefsStore(
             gatewayRouteMode = gatewayRoute,
             localFirstToolParse = localFirstTool,
             memoryEnabled = memoryEnabled,
+            connectionAutoDegrade = connectionAutoDegrade,
             shortcuts = shortcuts,
         )
     }
@@ -376,6 +388,7 @@ class ChatPrefsStore(
         private const val KEY_GATEWAY_ROUTE = "gateway_route_mode"
         private const val KEY_LOCAL_FIRST_TOOL = "local_first_tool_parse"
         private const val KEY_MEMORY_ENABLED = "memory_enabled"
+        private const val KEY_CONNECTION_AUTO_DEGRADE = "connection_auto_degrade"
         private const val KEY_SHORTCUTS = "shortcuts"
     }
 }

@@ -22,6 +22,7 @@
 | 聊天识图（一期） | ✅ | Composer 选图；②/④/Hermes HTTP vision；③ Bridge attachment |
 | 聊天附件（二期+三期） | ✅ | 文本/PDF；分享入；历史大图；Bridge 带图 |
 | 首包超时降级 | ✅ | 约 12s → 本地或 AgentFailover |
+| ③ 连接失败自动降级 | ✅ | 设置根目录开关（默认关）；持久切 ④>②>①；顶栏切回 |
 
 ---
 

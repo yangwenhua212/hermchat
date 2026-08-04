@@ -5,6 +5,7 @@ import com.eraherm.hermchat.data.model.AgentProfile
 
 /**
  * ④↔③ 等通道故障时自动挑选备用 Agent（本轮改用，不永久切换当前 Agent）。
+ * 持久切档见设置「连接失败自动降级」与 [ConnectionDegradePicker]。
  */
 object AgentFailover {
     fun pick(

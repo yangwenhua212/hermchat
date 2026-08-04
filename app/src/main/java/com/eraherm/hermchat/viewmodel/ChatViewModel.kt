@@ -18,6 +18,7 @@ import com.eraherm.hermchat.data.model.ToolCall
 import com.eraherm.hermchat.data.network.AIClientFactory
 import com.eraherm.hermchat.data.network.AgentFailover
 import com.eraherm.hermchat.data.network.AgentSessionHolder
+import com.eraherm.hermchat.data.network.ConnectionDegradePicker
 import com.eraherm.hermchat.data.network.ApiChatMessage
 import com.eraherm.hermchat.data.network.AttachmentSupport
 import com.eraherm.hermchat.data.network.ChatTurn
@@ -68,6 +69,7 @@ data class ChatUiState(
     val toolExecuting: Boolean = false,
     val loopStep: LoopStep = LoopStep.Idle,
     val loopEscalate: LoopEscalateOffer? = null,
+    val connectionRestore: ConnectionRestoreOffer? = null,
 )
 
 class ChatViewModel(
@@ -98,6 +100,11 @@ class ChatViewModel(
     /** 分级确认：挂起中的「允许/取消」回调；取消或换会话时 resume(false)。 */
     private var toolDecisionCont: Continuation<Boolean>? = null
     private val voiceSendHandler: (String) -> Unit = { text -> sendMessage(text) }
+    /** 自动降级前的 ③ id；非空表示已持久切到备选。 */
+    private var degradedFromAgentId: String? = null
+    private var degradedFromName: String? = null
+    /** 用户主动切回 ③ 后暂停自动降级，直到该档连接成功。 */
+    private var autoDegradePaused: Boolean = false
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val conversationsForAgent = activeAgent.flatMapLatest { agent ->
@@ -142,6 +149,7 @@ class ChatViewModel(
             toolExecuting = flags.toolExecuting,
             loopStep = flags.loopStep,
             loopEscalate = flags.loopEscalate,
+            connectionRestore = flags.connectionRestore,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -155,6 +163,11 @@ class ChatViewModel(
             combine(agentStore.agents, agentStore.currentId) { agents, currentId ->
                 agents.find { it.id == currentId } ?: agents.firstOrNull()
             }.collect { agent ->
+                val fromId = degradedFromAgentId
+                if (agent != null && fromId != null && agent.id == fromId) {
+                    // 用户从顶栏/列表主动切回原 ③：清提示并暂停自动降级
+                    clearDegradeTracking(pause = true)
+                }
                 activeAgent.value = agent
                 reconnect(agent)
             }
@@ -279,6 +292,8 @@ class ChatViewModel(
                     error(if (isPdfAttach) "PDF 无法读取" else "图片无法读取")
                 }
 
+                val primaryAgent = agent
+                var didFailover = false
                 val outcome = runCatching {
                     streamTurn(
                         agent = agent,
@@ -294,6 +309,7 @@ class ChatViewModel(
                     ) {
                         throw primaryError
                     }
+                    didFailover = true
                     (appContext as? HermChatApp)?.voiceEventBus?.emit(
                         VoiceEvent.Status("改用 ${failover.name}…"),
                     )
@@ -308,6 +324,10 @@ class ChatViewModel(
                         imageDataUrl = imageDataUrl,
                     )
                 }.getOrThrow()
+
+                if (didFailover) {
+                    maybePersistDegrade(primaryAgent)
+                }
 
                 val effectiveTool = outcome.tool ?: localPlan
                 messageRepository.save(
@@ -362,6 +382,7 @@ class ChatViewModel(
                         ),
                     )
                 }
+                maybePersistDegrade(agent)
             } finally {
                 streamingContent.value = ""
                 streamingProvider.value = null
@@ -550,6 +571,20 @@ class ChatViewModel(
         }
     }
 
+    /** 自动降级后一键切回原 ③；并暂停本会话自动降级至再次连上。 */
+    fun restoreConnectionDegrade(): Boolean {
+        val offer = busy.value.connectionRestore ?: return false
+        clearDegradeTracking(pause = true)
+        busy.update { it.copy(error = null) }
+        agentStore.setCurrentId(offer.agentId)
+        return true
+    }
+
+    fun dismissConnectionRestore() {
+        clearDegradeTracking(pause = true)
+        busy.update { it.copy(error = null) }
+    }
+
     fun onForeground() {
         viewModelScope.launch {
             val agent = activeAgent.value ?: return@launch
@@ -681,6 +716,7 @@ class ChatViewModel(
                     sessions.client?.connected?.value == true || isHttpStyle(agent)
                 BridgeKeepAliveService.sync(appContext)
                 ensureWelcomeMessage()
+                onConnectSuccess()
             }.onFailure {
                 softRebind(agent)
             }
@@ -695,6 +731,7 @@ class ChatViewModel(
             bridgeConnected.value = created.connected.value || isHttpStyle(agent)
             BridgeKeepAliveService.sync(appContext)
             ensureWelcomeMessage()
+            onConnectSuccess()
         }.onFailure { err ->
             bridgeConnected.value = false
             BridgeKeepAliveService.stop(appContext)
@@ -703,6 +740,7 @@ class ChatViewModel(
                     error = "未能连接 ${agent.name}：${UserFacingError.of(err, "请检查地址与网络")}",
                 )
             }
+            maybePersistDegrade(agent)
         }
     }
 
@@ -715,6 +753,7 @@ class ChatViewModel(
             sessions.attach(agent, created)
             bridgeConnected.value = created.connected.value || isHttpStyle(agent)
             BridgeKeepAliveService.sync(appContext)
+            onConnectSuccess()
         }.onFailure { err ->
             bridgeConnected.value = false
             BridgeKeepAliveService.stop(appContext)
@@ -723,7 +762,49 @@ class ChatViewModel(
                     error = "连接已断开：${UserFacingError.of(err, "请再试一次")}",
                 )
             }
+            maybePersistDegrade(agent)
         }
+    }
+
+    private fun onConnectSuccess() {
+        if (autoDegradePaused) autoDegradePaused = false
+    }
+
+    /**
+     * ③ 失败且设置开启时，持久切到备选（④>②>①）；与本轮 [AgentFailover] 独立。
+     */
+    private fun maybePersistDegrade(from: AgentProfile?) {
+        if (from == null) return
+        if (!ConnectionDegradePicker.isRemotePrimary(from)) return
+        val prefs = (appContext as? HermChatApp)?.chatPrefsStore?.prefsFlow?.value
+        if (prefs?.connectionAutoDegrade != true) return
+        if (autoDegradePaused) return
+        if (degradedFromAgentId != null) return
+        val target = ConnectionDegradePicker.pick(from, agentStore.agents.value) ?: return
+        applyPersistentDegrade(from, target)
+    }
+
+    private fun applyPersistentDegrade(from: AgentProfile, to: AgentProfile) {
+        if (from.id == to.id) return
+        degradedFromAgentId = from.id
+        degradedFromName = from.name
+        busy.update {
+            it.copy(
+                connectionRestore = ConnectionRestoreOffer(from.id, from.name),
+                error = "已改用「${to.name}」",
+            )
+        }
+        (appContext as? HermChatApp)?.voiceEventBus?.emit(
+            VoiceEvent.Status("已改用「${to.name}」"),
+        )
+        agentStore.setCurrentId(to.id)
+    }
+
+    private fun clearDegradeTracking(pause: Boolean) {
+        degradedFromAgentId = null
+        degradedFromName = null
+        if (pause) autoDegradePaused = true
+        busy.update { it.copy(connectionRestore = null) }
     }
 
     private data class GatewayLoopState(
@@ -1235,6 +1316,7 @@ class ChatViewModel(
         val error: String? = null,
         val loopStep: LoopStep = LoopStep.Idle,
         val loopEscalate: LoopEscalateOffer? = null,
+        val connectionRestore: ConnectionRestoreOffer? = null,
     )
 
     private fun setLoopStep(step: LoopStep) {

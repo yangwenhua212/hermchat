@@ -94,7 +94,7 @@ data class AgentProfile(
      * WebSocket / 本地默认同开。
      */
     val localToolsEnabled: Boolean = true,
-    /** 显式指定故障备用 Agent；空则按 AgentFailover 自动挑 ③/④。 */
+    /** 显式指定故障备用 Agent；空则本轮 AgentFailover / 持久降级按档位挑。 */
     val fallbackAgentId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
 )

@@ -41,7 +41,7 @@
 
 细节：③ 见 [CONNECT_AGENTS.md](CONNECT_AGENTS.md)；④ 见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)；① / 资源库见 [LOCAL_MODEL.md](LOCAL_MODEL.md)；长记忆见 [MEMORY.md](MEMORY.md)。
 
-**④ 已通**：`HybridGatewayClient` + `GatewayRouter`（自动/手动路由）+ **API 路径 Agent loop**（tool 确认后回灌续跑，最多 6 步）。本机工具须确认。**④↔③** 发送失败时本轮自动改用备用 Agent（`AgentFailover`）。
+**④ 已通**：`HybridGatewayClient` + `GatewayRouter`（自动/手动路由）+ **API 路径 Agent loop**（tool 确认后回灌续跑，最多 6 步）。本机工具须确认。**④↔③** 发送失败时本轮自动改用备用 Agent（`AgentFailover`，不改当前档）。可选 **连接失败自动降级**（设置根目录开关，默认关）：③ 连接/发送失败时持久切到 ④>②>①，顶栏可一键切回。
 
 ## EraHerm 分工
 

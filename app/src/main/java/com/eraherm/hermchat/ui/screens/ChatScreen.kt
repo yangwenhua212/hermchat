@@ -472,10 +472,11 @@ fun ChatScreen(
                 }
             }
 
-            // 状态提示：错误 / 超步数一切 / Loop 中间态 / 语音状态短显
+            // 状态提示：错误 / 超步数一切 / 自动降级切回 / Loop 中间态 / 语音状态短显
             AnimatedVisibility(
                 visible = uiState.error != null ||
                     uiState.loopEscalate != null ||
+                    uiState.connectionRestore != null ||
                     voiceStatus != null ||
                     (loopLabel != null && hasStreamingText),
                 enter = fadeIn(),
@@ -483,6 +484,7 @@ fun ChatScreen(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)) {
                     val escalate = uiState.loopEscalate
+                    val restore = uiState.connectionRestore
                     if (escalate != null) {
                         Row(
                             modifier = Modifier
@@ -512,6 +514,26 @@ fun ChatScreen(
                                 Text(escalate.actionLabel)
                             }
                         }
+                    } else if (restore != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = uiState.error ?: "已改用备选",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { viewModel.restoreConnectionDegrade() }) {
+                                Text(restore.actionLabel)
+                            }
+                        }
                     } else {
                         uiState.error?.let { error ->
                             Text(
@@ -524,7 +546,12 @@ fun ChatScreen(
                             )
                         }
                     }
-                    if (loopLabel != null && hasStreamingText && escalate == null && uiState.error == null) {
+                    if (loopLabel != null &&
+                        hasStreamingText &&
+                        escalate == null &&
+                        restore == null &&
+                        uiState.error == null
+                    ) {
                         Text(
                             text = loopLabel,
                             color = MaterialTheme.colorScheme.primary,

@@ -209,6 +209,15 @@ private fun PrefsRoot(
         },
         onClick = onOpenGateway,
     )
+    PrefsLeafRow(
+        title = "连接失败自动降级",
+        trailing = {
+            Switch(
+                checked = prefs.connectionAutoDegrade,
+                onCheckedChange = store::setConnectionAutoDegrade,
+            )
+        },
+    )
     PrefsFolderRow(
         title = "资源库",
         summary = "Agent · 本地模型 · 搜索下载",
