@@ -16,6 +16,7 @@
 | 本地 LLM | 模型按需下载；内存不足拒绝加载 |
 | AGPL 声明 | App「关于」页含许可与源代码链接；附加许可与商用边界见仓库 [COMMERCIAL.md](../COMMERCIAL.md) |
 | 本机工具 | 写操作确认卡（`ToolRisk.WRITE`）；`clipboard.read` 为 `READ_ONLY` 可静默；解析默认未授权；执行前写工具须 `needConfirm=true` |
+| Agent 拒违法 | Prompt 硬拒绝 + 端侧 `LocalSafetyGuard`：高置信违法意图不调模型工具链，直接短拒并说明原因；防卫/知情提问不拦 |
 | 网络角色 | **出站客户端**：连用户配置的 Agent/API；产品不做公网入站网关（见 COMMERCIAL.md） |
 
 ## 明文通道

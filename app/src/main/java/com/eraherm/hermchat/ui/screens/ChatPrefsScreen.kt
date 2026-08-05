@@ -76,6 +76,7 @@ private sealed interface PrefsFolder {
     data object Speak : PrefsFolder
     data object Shortcuts : PrefsFolder
     data object Gateway : PrefsFolder
+    data object Search : PrefsFolder
 }
 
 @Composable
@@ -124,6 +125,7 @@ fun ChatPrefsScreen(
                             onOpenSpeak = { folder = PrefsFolder.Speak },
                             onOpenShortcuts = { folder = PrefsFolder.Shortcuts },
                             onOpenGateway = { folder = PrefsFolder.Gateway },
+                            onOpenSearch = { folder = PrefsFolder.Search },
                             onOpenLibrary = onOpenLibrary,
                             onOpenAbout = onOpenAbout,
                         )
@@ -150,6 +152,10 @@ fun ChatPrefsScreen(
                             store = app.chatPrefsStore,
                         )
                         PrefsFolder.Gateway -> PrefsGatewayDetail(
+                            prefs = chatPrefs,
+                            store = app.chatPrefsStore,
+                        )
+                        PrefsFolder.Search -> PrefsSearchDetail(
                             prefs = chatPrefs,
                             store = app.chatPrefsStore,
                         )
@@ -186,6 +192,7 @@ private fun PrefsRoot(
     onOpenSpeak: () -> Unit,
     onOpenShortcuts: () -> Unit,
     onOpenGateway: () -> Unit,
+    onOpenSearch: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenAbout: () -> Unit,
 ) {
@@ -209,14 +216,16 @@ private fun PrefsRoot(
         },
         onClick = onOpenGateway,
     )
-    PrefsLeafRow(
-        title = "连接失败自动降级",
-        trailing = {
-            Switch(
-                checked = prefs.connectionAutoDegrade,
-                onCheckedChange = store::setConnectionAutoDegrade,
+    PrefsFolderRow(
+        title = "搜索",
+        summary = buildString {
+            val keys = listOfNotNull(
+                prefs.bochaApiKey.takeIf { it.isNotBlank() }?.let { "博查" },
+                prefs.tavilyApiKey.takeIf { it.isNotBlank() }?.let { "Tavily" },
             )
+            if (keys.isEmpty()) append("零配置") else append(keys.joinToString(" · "))
         },
+        onClick = onOpenSearch,
     )
     PrefsFolderRow(
         title = "资源库",
@@ -434,6 +443,28 @@ private fun PrefsGatewayDetail(
                 onCheckedChange = store::setMemoryEnabled,
             )
         },
+    )
+}
+
+@Composable
+private fun PrefsSearchDetail(
+    prefs: ChatPrefs,
+    store: ChatPrefsStore,
+) {
+    Text("搜索", style = MaterialTheme.typography.titleMedium)
+    OutlinedTextField(
+        value = prefs.bochaApiKey,
+        onValueChange = store::setBochaApiKey,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text("博查 API Key") },
+    )
+    OutlinedTextField(
+        value = prefs.tavilyApiKey,
+        onValueChange = store::setTavilyApiKey,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text("Tavily API Key") },
     )
 }
 

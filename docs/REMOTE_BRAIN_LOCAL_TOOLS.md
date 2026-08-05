@@ -8,8 +8,8 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 │   ├── 本地：LocalRuntimeClient（默认 Qwen2.5 0.5B；AgentProfile.localModelId）
 │   └── API：OpenAiCompatClient（DeepSeek 等）+ 短历史（可空）
 ├── GatewayRouter：默认云端；手选本地须风险确认
-├── Agent loop（API 路径）：tool_call → 确认卡 → 执行 → 回灌 → 再推理（最多 8 步）
-└── 本机手：闹钟 / 日历 / 打开链接 / 搜索 / 分享（一律确认卡）
+├── Agent loop（API 路径）：tool_call → 确认卡（写操作）→ 执行 → 回灌 → 再推理（最多 8 步）
+└── 本机手：闹钟 / 日历 / 开链 / 联网搜索摘要 / 分享 …
 ```
 
 **默认云端：** 已配 API 时一律走云脑 Loop。本地不会因「短寒暄」自动抢走。  
@@ -21,6 +21,19 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 **实验：** 同页「本地优先解析」——首轮本地试 tool JSON；失败改云端。续跑始终 API。
 
 本地权重：配置页下载，或 **资源库**「选用到当前」（详见 [LOCAL_MODEL.md](LOCAL_MODEL.md)）。
+
+## 联网搜索（web.search）
+
+`web.search` 在本机拉结果并回灌摘要（**只读，可静默**），不再弹浏览器；要开网页用 `url.open`。
+
+| 优先级 | 源 | 说明 |
+|--------|----|------|
+| 1 | 博查 | 设置 → 搜索 填了 Key 才启用 |
+| 2 | Tavily | 同上 |
+| 3 | SearXNG 公共实例 | **零配置默认** |
+| 4 | DuckDuckGo HTML | 兜底 |
+
+单次工具调用内失败自动换下一源；不改 Agent、不持久改「当前源」。细节见源码 `WebSearchRouter`。
 
 ## 路由方式
 
@@ -69,22 +82,11 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 | ③ 远端 Agent | ④ 端侧网关 |
 | ② 纯 API | ④ → ③ |
 
-也可在配置里写 `fallbackAgentId` 指定备用。气泡 provider 会标 `备用·名称`。
+也可在配置里写 `fallbackAgentId` 指定备用。气泡 provider 会标 `备用·名称`。  
+长期换档靠顶栏手动切换当前 Agent（不做持久自动降级）。
 
-## ③ 连接失败自动降级（可选）
-
-与上节 **本轮** `AgentFailover` 分离：设置根目录「连接失败自动降级」开关（**默认关**）。
-
-| 项 | 行为 |
-|----|------|
-| 触发 | 当前档为 ③（WebSocket / Hermes / CUSTOM），连接或发送失败 |
-| 入口 | 设置根目录开关「连接失败自动降级」（**默认关**） |
-| 切档 | `agentStore.setCurrentId` 持久切换；优先 `fallbackAgentId`，否则 **④ → ② → ①** |
-| 提示 | 顶栏一行「已改用「…」」+「切回 …」；无对话框 |
-| 切回 | 一点切回原 ③；本会话暂停自动降级，直到再次连上成功 |
-| 手动选 ③ | 等同切回：清降级态并暂停自动 |
-
-顶栏 Agent 切换仍是默认兜底（开关关闭时唯一路径）。
+**打开官网：** 已知域名 → `url.open`；未知 → 先 `web.search`「名 官网」再 `url.open`（端侧 `LocalUrlOpenPlanner` + Prompt 动作链）；搜不到则短提示。详见 `LocalToolsPrompt`。  
+**拒违法：** Prompt 霸王条款 + `LocalSafetyGuard` 高置信拦截；拒绝时说明原因，不执行工具。见 [SECURITY.md](SECURITY.md)。
 
 ## Agent loop 行为
 
@@ -95,7 +97,7 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 5. **回灌**「【本机工具结果】…」给 API → 收尾或再 tool；续跑若再吐坏 JSON 同样挽救一次  
 6. 步数上限 8；超限切 ③；取消确认则中止 loop  
 
-本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search` / `share.text` / `app.open` / `phone.dial` / `maps.search` / `email.compose` / `memory.recall`（本机关键词，只读）/ `memory.remember`（本机写入，须确认）；`clipboard.read`（只读可静默）；`clipboard.write`（须确认）。  
+本机工具：`alarm.create` / `calendar.create` / `url.open` / `web.search`（联网摘要，只读可静默；SearXNG→DDG，可选博查/Tavily）/ `share.text` / `app.open` / `phone.dial` / `maps.search` / `email.compose` / `memory.recall`（本机关键词，只读）/ `memory.remember`（本机写入，须确认）；`clipboard.read`（只读可静默）；`clipboard.write`（须确认）。  
 本地记忆见 [MEMORY.md](MEMORY.md)。本地路径本身不做完整 loop；续跑始终走 API（需已配 DeepSeek 等）。
 
 ## Agent 感（Loop 呈现）

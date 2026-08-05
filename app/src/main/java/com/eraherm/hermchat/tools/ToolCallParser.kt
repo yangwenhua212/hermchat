@@ -114,7 +114,7 @@ object ToolCallParser {
         CalendarTool.NAME -> "创建日历事件"
         AlarmTool.NAME -> "设置提醒"
         OpenUrlTool.NAME -> "打开链接"
-        WebSearchTool.NAME -> "打开搜索"
+        WebSearchTool.NAME -> "搜索"
         ShareTextTool.NAME -> "分享文本"
         ClipboardReadTool.NAME -> "读取剪贴板"
         ClipboardWriteTool.NAME -> "写入剪贴板"

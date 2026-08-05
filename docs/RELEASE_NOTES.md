@@ -1,14 +1,13 @@
-# HxSync 0.1.28（开发预览）
+# HxSync 0.1.29（开发预览）
 
 **用途**：作者自用与协作者试用预览包。
 
 ## 本版重点
 
-- **连接失败自动降级**（设置根目录开关，默认关）：③ 连接/发送失败时持久切到 ④>②>①；顶栏「已改用…」可切回
-- 与本轮 `AgentFailover`（不改当前档）分离；可选 `fallbackAgentId`
-- 文档同步：README / PRODUCT / REMOTE / ACCEPTANCE / NEXT_IMPL / ROADMAP / UI
-
-延续 0.1.27：表述收口、maps/email、Loop 阶段文案。
+- **移除**「连接失败自动降级」（③ 不再持久切档）
+- **联网搜索**：`web.search` 回灌摘要；SearXNG→DuckDuckGo；可选博查/Tavily Key
+- **打开官网**：已知域名直开；未知先搜再开（`url.open` 动作链）
+- **拒违法**：Prompt + `LocalSafetyGuard` 高置信拦截并说明原因
 
 ## 安装
 
@@ -21,6 +20,10 @@
 ---
 
 ## 历史版本
+
+### 0.1.28
+
+- 曾加入连接失败自动降级；随后从主线移除
 
 ### 0.1.27
 

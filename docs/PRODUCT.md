@@ -17,7 +17,7 @@
 | ① | **本地小模型** | 纯端侧推理（默认 Qwen2.5 0.5B 免令牌，可换 TinyLlama / Gemma） | 无网 / 隐私 / 零成本；简单问答 | ★★☆ | 0 元 | ❌ 纯文本（编排可顺带闹钟等意图） | 「本地」+ 资源库选用 | ✅ 主干 |
 | ② | **直连大模型 API** | 云端大模型（DeepSeek/OpenAI） | 有网、无 Agent 服务时的保底；永远能聊 | ★★★★ | 按 token | ❌ API 本身无工具（纯聊天） | 「HTTP 兼容」且关本机工具 | ✅ 主干 |
 | ③ | **远端 Agent 服务** | Hermes / 自建 / Bridge 完整引擎 | **主力**：长记忆、复杂推理、多工具、跨设备 | ★★★★★ | 服务器固定成本 | ✅ 经 Agent 服务间接操控 | WebSocket；Hermes 走配置助手/扫码（手动列表不单列） | ✅ 主干（主线） |
-| ④ | **端侧 Agent 网关** | App 内轻量 Agent loop：默认云脑 + 多步工具确认回灌；识图附件；本机记忆；可选「本地优先解析」 | 出门平替：尽量聪明的手机 Agent；可再挂 ③ | ★★★★ | API token | ✅ 闹钟/日历/开链/搜索/分享/应用/拨号/地图/邮件/记忆（须确认或静默读） | **端侧网关**+ 资源库选本地兜底 | ✅ **聪明优先** + 工具 loop |
+| ④ | **端侧 Agent 网关** | App 内轻量 Agent loop：默认云脑 + 多步工具确认回灌；识图附件；本机记忆；可选「本地优先解析」 | 出门平替：尽量聪明的手机 Agent；可再挂 ③ | ★★★★ | API token | ✅ 闹钟/日历/开链/联网搜索摘要/分享/应用/拨号/地图/邮件/记忆（写须确认；搜索/读可静默） | **端侧网关**+ 资源库选本地兜底 | ✅ **聪明优先** + 工具 loop |
 
 ```
                  ┌─────────────────────────────────┐
@@ -41,7 +41,7 @@
 
 细节：③ 见 [CONNECT_AGENTS.md](CONNECT_AGENTS.md)；④ 见 [REMOTE_BRAIN_LOCAL_TOOLS.md](REMOTE_BRAIN_LOCAL_TOOLS.md)；① / 资源库见 [LOCAL_MODEL.md](LOCAL_MODEL.md)；长记忆见 [MEMORY.md](MEMORY.md)。
 
-**④ 已通**：`HybridGatewayClient` + `GatewayRouter`（自动/手动路由）+ **API 路径 Agent loop**（tool 确认后回灌续跑，最多 6 步）。本机工具须确认。**④↔③** 发送失败时本轮自动改用备用 Agent（`AgentFailover`，不改当前档）。可选 **连接失败自动降级**（设置根目录开关，默认关）：③ 连接/发送失败时持久切到 ④>②>①，顶栏可一键切回。
+**④ 已通**：`HybridGatewayClient` + `GatewayRouter`（自动/手动路由）+ **API 路径 Agent loop**（tool 确认后回灌续跑，最多 6 步）。本机工具须确认。**④↔③** 发送失败时本轮自动改用备用 Agent（`AgentFailover`，不改当前档）。长期切档靠顶栏手动切换。
 
 ## EraHerm 分工
 

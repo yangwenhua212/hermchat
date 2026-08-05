@@ -7,12 +7,14 @@ object LocalToolPlanner {
     fun plan(userText: String): ToolCall? {
         val text = userText.trim()
         if (text.isEmpty()) return null
+        if (LocalSafetyGuard.shouldBlockTools(text)) return null
         // 多步（查天气再提醒等）交给云脑 Loop，避免端侧抢先只出闹钟
         if (looksMultiStep(text)) return null
         return LocalAlarmPlanner.plan(text)
             ?: LocalDialPlanner.plan(text)
             ?: LocalMapsPlanner.plan(text)
             ?: LocalEmailPlanner.plan(text)
+            ?: LocalUrlOpenPlanner.plan(text)
             ?: LocalAppOpenPlanner.plan(text)
             ?: LocalMemoryPlanner.plan(text)
             ?: LocalCalendarPlanner.plan(text)
