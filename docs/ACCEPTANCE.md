@@ -45,57 +45,9 @@
 
 ## 踩坑速查
 
-| 现象 | 原因 | 处理 |
-|------|------|------|
-| 添加 Agent 闪回聊天 | 旧版 ViewModel 残留 completedProfile | ≥本次修复：sessionKey + 进页重置 |
-| `10.0.2.2` 真机不通 | 仅模拟器 | 改电脑局域网 IP |
-| 通知一直「正在听」却无反应 | 模型还在下 / 引擎未起 | 看进度；点「停止听」；设置关后台监听 |
-| HTTP 多轮失忆 | 未用 Hermes Session 且旧版不带历史 | HTTP 兼容现带短历史；Hermes 靠 Session-Id |
-| 签名冲突 | debug/release 证书不同 | 先卸载 |
-| 网关下了模型仍不走本地 | 旧版写死 270M / API 名当权重 id | ≥0.1.13：`localModelId` + 资源库选用 |
-| 网关气泡先弱文案再叠一段 API | 自动 escalate 时本地已 emit | 已取消闲聊自动走本地；默认云端 |
-| 闲聊误走本地 / 路由三选一难懂 | AUTO 寒暄分流 | ≥本次：默认云端；「使用本地模型」风险确认；可只配一侧 |
-| ④ 闹钟 Loop 用不了 | 话术未命中 / 秒级戳 / 只开时钟 UI / 多步被本地抢 | ≥本次：加宽 planner；秒→毫秒；SKIP_UI；多步让云脑 |
-| tool JSON 吐错就断 | 无重试 | ≥本次：坏格式/假装已执行 → 自动纠正一轮 |
-| ④ 工具偏少 | 仅闹钟日历等 | ≥本次：+ app.open / phone.dial / maps.search / email.compose / memory |
-| 跨会话不记得偏好 | 无记忆层 | ≥本次：④ 本机极简记忆（关键词召回；见 MEMORY.md） |
-| 传 PDF/文件却像发图片 | PDF 渲成 JPEG 后按 IMAGE 展示 | ≥本次：PDF 按「PDF · 文件名」；仍用首页图识图 |
-| HTTP 断线后回复重复一截 | 吐字后仍重试整段流 | ≥本次：已吐字不重试 |
-| 云端一直转圈无字 | 首包无限等 | ≥本次：12s 无首包 → ④ 改本地或 AgentFailover |
-| 确认闹钟显示成功但不响 | 无通知/精确闹钟权限却假成功 | ≥本次：缺权限明确失败并引导设置 |
-| 通知栏有 HxSync 提醒但系统闹钟没有 | 系统时钟唤起失败后静默回退通知 | ≥本次：优先 SET_ALARM/厂商时钟包；回退文案标明「不进系统闹钟」 |
-| 一退出 App 连接就断 | 连接绑在 Activity ViewModel，onCleared 关 socket | ≥本次：Application 会话 + 保活通知 |
-| 自动朗读读到一半停 | QUEUE_ADD 句间 abandon 焦点；Edge 回退每句 flush；离页 DisposableEffect.stop | ≥本次：句间不重抢焦点；回退 QUEUE_ADD；卸聊天页不停播 |
-| 「打开抖音」却开网页 | LocalUrlOpenPlanner KNOWN_SITES 先于 app.open | ≥本次：有 App 别名且无「官网」词时让路 app.open |
-| 发送后输入框转圈不能打字 | 忙碌态锁死 Composer | ≥本次：思考在机器人气泡，输入框可继续打字 |
-| 顶栏挂一整段回复占空间 | 语音 Status 塞了回复摘要且不消失 | ≥本次：短状态 + 单行 + 自动消失 |
-| 新建对话后旧聊找不到 | 旧版整表清空 messages | ≥本次：多会话 Room；历史列表回看 |
-| 配置助手不认裸 Key | 只认 sk-/带「Key:」标签 | ≥本次：整段粘贴密钥可识别 |
-| 本地模型下载中断重来 / 不能暂停 | 每次删 `.part`、无 Range | ≥本次：暂停保留断点，可继续 |
-| 主题只改气泡不改背景 | Atmosphere 未接 theme | ≥本次：主题渐变 + 可图片背景 |
-| 系统返回直接回桌面 | 未接 BackHandler，Activity 直接 finish | ≥本次：与页内「返回」同路径 |
-| 点喇叭没声音 | 中文包/焦点竞态/ASSISTANT 硬拦 | ≥本次：MEDIA 焦点、按 utterance 释放；可云端 speech |
-| 本地模型下载 HTTP 401 | Gemma 门控、未填 HF 令牌或未同意许可 | ≥本次：默认改 Qwen/TinyLlama 免令牌；Gemma 仍提示填令牌 |
-| 下载 TinyLlama/Qwen 后进聊天闪退 | 进聊天 `ensureConnected` 预加载 MediaPipe，原生 OOM 杀进程 | ≥本次：懒加载；按模型体积分级内存门槛；`largeHeap` |
-| TinyLlama 中文乱码 | 模型本身偏英文，非 UI/编码故障 | ≥本次：目录标明「英文为主」；中文请用 Qwen2.5 |
-| 对 TinyLlama 说英文却回中文 | App 写死「用简体中文回答」 | ≥本次：TinyLlama 改英文 system prompt，跟用户语言 |
-| 手动配置 Hermes 与 HTTP 重复占位 | 类型列表多一项 | ≥本次：手动列表隐藏 Hermes；助手/扫码/旧档仍可用 |
+**完整踩坑表已独立：** [PITFALLS.md](PITFALLS.md)（按连接 / 工具 / 朗读 / 本地模型 / UI / 基建分类）。
 
-| 历史会话只能堆不能删 | 列表无删除入口 | ≥本次：历史项旁删除 |
-| 历史一股脑全 Agent | 列表 observeAll | ≥本次：按当前 Agent 过滤；旧无归属会话首次绑定时认领 |
-| 顶栏英文 Unable to resolve host | 直接展示异常 message | ≥本次：UserFacingError 中文短句 |
-| 已改系统朗读仍显示云端 404 | lastError 粘住 + 同步读错误 | ≥本次：开读清错误；自动静默回退；错误走 SharedFlow |
-| Hermes 已配 Edge 小艺，手机云端仍 404 | 旧版对着 Hermes 聊天地址打 `/v1/audio/speech` | ≥本次：选「Edge 小艺」直连微软；与 `tts.provider: edge` + `zh-CN-XiaoyiNeural` 对齐 |
-| 流式末尾一根死杠 `|` | 文本拼接光标 | ≥本次：思考转圈、吐字/执行键盘图标 |
-| ④ 像纯 API 无 Agent | 单轮 chat、工具结果不回灌 | ≥本次：确认后回灌 DeepSeek 续跑（loop≤8） |
-| ④ Loop 黑盒像死机 | 无阶段反馈 | ≥本次：`LoopStep` 一行中间态（分析/执行/观察） |
-| 确认后 Loop 与 UI 脱节 | 确认在独立协程、取消易留半截 | ≥本次：写工具 `suspend` 等待确认；取消 resume 拒绝并清 loop |
-| 远端 payload 未确认就执行 | needConfirm 展示前已被置 true | ≥本次：解析默认未授权；仅确认后 / READ_ONLY 可执行 |
-| ④ 超步数只能干瞪眼 | 仅错误文案 | ≥本次：一键切已存 ③；无则去添加 |
-| 读剪贴板也要确认卡 | 无 READ_ONLY 工具 | ≥本次：`clipboard.read` 静默；`clipboard.write` 仍确认 |
-| 想用本地试解析工具却无入口 | 旧政策「① 永不驱动 Loop」 | ≥本次：设置「本地优先解析」+ 开前警告；失败「已改用云端」 |
-| 顶栏 Unable to resolve host… | 异常原文直接展示 | ≥本次：UserFacingError →「找不到服务器…」 |
-| 历史混在一起 | 列表未按 Agent 过滤 | ≥本次：只显示当前 Agent 会话 |
+本页只保留验收清单与下面日记；新坑请写入 `PITFALLS.md`，日记可点一句「见 PITFALLS」。
 
 ## 日记
 

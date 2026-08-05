@@ -16,9 +16,10 @@ alwaysApply: true
 | ④ 端侧网关 / 本机工具 | `docs/REMOTE_BRAIN_LOCAL_TOOLS.md` |
 | ③ 连接 / 协议 | `docs/CONNECT_AGENTS.md`（及相关协议文档） |
 | 发版 / versionCode | `docs/RELEASE.md`、`docs/RELEASE_NOTES.md`、`README.md` 版本号 |
-| 真机验收相关 | `docs/ACCEPTANCE.md`（清单或踩坑表） |
+| 真机验收相关 | `docs/ACCEPTANCE.md`（清单 / 日记） |
+| 开发踩坑 / 已知 Bug | **`docs/PITFALLS.md`（独立踩坑表，优先追加）**；日记可在 ACCEPTANCE 点一句 |
 | UI 文案规范 | 遵守 `docs/UI.md`；说明长文进 docs，不堆进 App |
-| 自动朗读行为 | 遵守 `.cursor/rules/auto-speak.mdc`；同步 `docs/UI.md` / `CONNECT_AGENTS` / `ACCEPTANCE` |
+| 自动朗读行为 | 遵守 `.cursor/rules/auto-speak.mdc`；同步 `docs/UI.md` / `CONNECT_AGENTS` / `PITFALLS` |
 
 ## 要求
 
@@ -26,5 +27,5 @@ alwaysApply: true
 2. 只改相关段落，不整篇重写；保持简洁，细节放专题文档。  
 3. 用户未要求「提交」时，文档可与代码同批改完，是否 commit 仍听用户。  
 4. 纯重构且对外行为不变时，可只改技术注释；行为或入口变了必须改说明文档。  
-5. **每一次功能优化 / bugfix 与文档同一轮完成**：至少更新相关专题文档 + `RELEASE_NOTES` 或 `ACCEPTANCE`（踩坑/日记）之一；禁止「只交代码、文档另说」。  
+5. **每一次功能优化 / bug fix 与文档同一轮完成**：至少更新相关专题文档 + **`docs/PITFALLS.md`（新坑必记）** 或 `RELEASE_NOTES` / `ACCEPTANCE` 日记之一；禁止「只交代码、文档另说」。  
 6. 修别人引入的回归时，顺带修正文档里被夸大或已过时的说法（如「边流式」与 escalate 冲突时要写清条件）。
