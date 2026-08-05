@@ -15,6 +15,7 @@ import com.eraherm.hermchat.data.network.AIClientFactory
 import com.eraherm.hermchat.tools.ToolCallParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -31,15 +32,19 @@ import java.util.concurrent.atomic.AtomicReference
 class VoiceCloudBridge(
     private val app: HermChatApp,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val rootJob = SupervisorJob()
+    private val scope = CoroutineScope(rootJob + Dispatchers.Main.immediate)
     private val mutex = Mutex()
     private val foregroundSender = AtomicReference<((String) -> Unit)?>(null)
+    private var collectJob: Job? = null
+    private var turnJob: Job? = null
     private var started = false
 
     fun start() {
         if (started) return
         started = true
-        scope.launch {
+        collectJob?.cancel()
+        collectJob = scope.launch {
             app.voiceEventBus.events.collect { event ->
                 if (event is VoiceEvent.Transcript && event.autoSend) {
                     val text = event.text.trim()
@@ -60,7 +65,8 @@ class VoiceCloudBridge(
     }
 
     private fun handleAutoSend(text: String) {
-        scope.launch {
+        turnJob?.cancel()
+        turnJob = scope.launch {
             mutex.withLock {
                 val fg = foregroundSender.get()
                 if (fg != null) {

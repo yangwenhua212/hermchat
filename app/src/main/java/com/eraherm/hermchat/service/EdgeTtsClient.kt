@@ -6,6 +6,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
+import com.eraherm.hermchat.data.network.SharedHttpClients
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
@@ -188,7 +189,7 @@ class EdgeTtsClient(
             return "${fmt.format(Date())} GMT+0000 (Coordinated Universal Time)"
         }
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        private fun defaultClient(): OkHttpClient = SharedHttpClients.api.newBuilder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)

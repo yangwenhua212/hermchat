@@ -17,7 +17,6 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -222,10 +221,6 @@ class OpenAiCompatClient(
 
         fun newSessionId(): String = UUID.randomUUID().toString()
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .writeTimeout(10, TimeUnit.SECONDS)
-            .build()
+        private fun defaultClient(): OkHttpClient = SharedHttpClients.streamingApi()
     }
 }

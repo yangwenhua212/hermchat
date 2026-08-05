@@ -25,7 +25,6 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
@@ -60,7 +59,8 @@ class HermesBridgeClient(
     private val rpcSeq = AtomicLong(1)
 
     private val intentionalClose = AtomicBoolean(false)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val rootJob = SupervisorJob()
+    private val scope = CoroutineScope(rootJob + Dispatchers.IO)
     private var reconnectJob: Job? = null
 
     override suspend fun ensureConnected() {
@@ -124,6 +124,7 @@ class HermesBridgeClient(
         intentionalClose.set(true)
         reconnectJob?.cancel()
         reconnectJob = null
+        rootJob.cancel()
         webSocket?.close(1000, "client close")
         webSocket = null
         _connected.value = false
@@ -481,11 +482,6 @@ class HermesBridgeClient(
             return HermesBridgeClient(endpoint, preferred)
         }
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .writeTimeout(8, TimeUnit.SECONDS)
-            .pingInterval(30, TimeUnit.SECONDS)
-            .build()
+        private fun defaultClient(): OkHttpClient = SharedHttpClients.websocket(pingSeconds = 30)
     }
 }

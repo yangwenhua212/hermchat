@@ -1,5 +1,6 @@
 package com.eraherm.hermchat.tools.search
 
+import com.eraherm.hermchat.data.network.SharedHttpClients
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -109,7 +110,7 @@ class DuckDuckGoHtmlProvider(
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        fun defaultClient(): OkHttpClient = SharedHttpClients.api.newBuilder()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)

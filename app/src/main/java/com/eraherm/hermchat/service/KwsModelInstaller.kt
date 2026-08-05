@@ -1,10 +1,10 @@
 package com.eraherm.hermchat.service
 
 import android.content.Context
+import com.eraherm.hermchat.data.network.SharedHttpClients
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /** Downloads Chinese KWS model files into app filesDir (first-run / offline wake). */
 class KwsModelInstaller(
@@ -81,12 +81,6 @@ class KwsModelInstaller(
             "https://huggingface.co/csukuangfj/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01/resolve/main",
         )
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.MINUTES)
-            .writeTimeout(5, TimeUnit.MINUTES)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .build()
+        private fun defaultClient(): OkHttpClient = SharedHttpClients.download
     }
 }

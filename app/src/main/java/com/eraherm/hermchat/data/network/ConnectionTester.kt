@@ -13,7 +13,6 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 class ConnectionTester(
@@ -153,11 +152,7 @@ class ConnectionTester(
     companion object {
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 
-        private val sharedClient: OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(12, TimeUnit.SECONDS)
-            .writeTimeout(8, TimeUnit.SECONDS)
-            .build()
+        private val sharedClient: OkHttpClient = SharedHttpClients.connectionTest()
 
         fun sanitizeKey(raw: String): String =
             raw.trim().trimStart(')', '(', ' ', '\u00A0')

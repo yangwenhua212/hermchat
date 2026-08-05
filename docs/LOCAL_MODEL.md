@@ -15,7 +15,7 @@
 | `LocalRuntimeClient` | ✅ 统一流式出口 |
 | 本机工具（日历/闹钟） | ✅ 经现有确认卡 |
 | 模型按需下载 | ✅ **不打进 APK**；默认 **Qwen2.5 0.5B（免 HF 令牌）**；可选 TinyLlama / Gemma |
-| 暂停 / 断点续传 | ✅ 保留 `.part` + HTTP `Range`；资源库与配置页可「暂停 / 继续」 |
+| 暂停 / 断点续传 | ✅ 保留 `.part` + HTTP `Range`；资源库与配置页可「暂停 / 继续」；下载挂 `LocalModelStore`（离页不取消） |
 | 资源库管理（已装列表、删除、HF 搜索 litert `.task`） | ✅ 设置「资源库」或顶栏 Agent 下拉 |
 | 选用到 Agent | ✅ 资源库「选用到当前」；配置页目录选择（LOCAL=`model`，GATEWAY=`localModelId`） |
 | 内存门槛 | ✅ 按模型体积分级（Qwen≈3.5GB 总 / TinyLlama≈5.5GB 总）；不足则拒载并提示，不硬崩 |
@@ -36,7 +36,7 @@
 2. 资源库选 **Qwen2.5 0.5B（免令牌）** → 直接点 **下载**（不必填令牌）  
 3. 若要 Gemma：填 **Hugging Face 令牌**，并在模型页 Agree  
    - https://huggingface.co/settings/tokens  
-4. 下载中可 **暂停**；再点 **继续** 从断点接着拉  
+4. 下载中可 **暂停**；再点 **继续** 从断点接着拉；离开资源库页**不会**取消下载  
 5. **测试** → 命名 → 聊天；无模型也可先测「编排已就绪」，日程/闹钟仍可用  
 
 ### 下载为什么慢？

@@ -1,5 +1,6 @@
 package com.eraherm.hermchat.tools.search
 
+import com.eraherm.hermchat.data.network.SharedHttpClients
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -83,7 +84,7 @@ class SearxngProvider(
             "https://priv.au",
         )
 
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        fun defaultClient(): OkHttpClient = SharedHttpClients.api.newBuilder()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)

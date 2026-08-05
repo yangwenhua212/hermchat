@@ -2,7 +2,7 @@ package com.eraherm.hermchat.data.local
 
 import android.content.Context
 import android.net.Uri
-import okhttp3.OkHttpClient
+import com.eraherm.hermchat.data.network.SharedHttpClients
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
@@ -25,7 +25,7 @@ class WallpaperStore(
 ) {
     private val appContext = context.applicationContext
     private val root = File(appContext.filesDir, "chat_bg").also { it.mkdirs() }
-    private val client = OkHttpClient.Builder()
+    private val client = SharedHttpClients.download.newBuilder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .build()

@@ -1,11 +1,11 @@
 package com.eraherm.hermchat.service
 
 import android.content.Context
+import com.eraherm.hermchat.data.network.SharedHttpClients
 import com.eraherm.hermchat.data.network.TransferProgress
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /** Downloads small Chinese streaming ASR model for offline command dictation. */
 class AsrModelInstaller(
@@ -114,12 +114,6 @@ class AsrModelInstaller(
             "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/resolve/main",
         )
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.MINUTES)
-            .writeTimeout(5, TimeUnit.MINUTES)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .build()
+        private fun defaultClient(): OkHttpClient = SharedHttpClients.download
     }
 }

@@ -2,9 +2,16 @@ package com.eraherm.hermchat.data.local
 
 import android.content.Context
 import com.eraherm.hermchat.data.network.TransferProgress
+import com.eraherm.hermchat.util.UserFacingError
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -21,9 +28,21 @@ class LocalModelStore(
     private val appContext = context.applicationContext
     private val root = File(appContext.filesDir, "local_llm")
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var downloadJob: Job? = null
+    private val downloadGeneration = java.util.concurrent.atomic.AtomicInteger(0)
 
     private val _custom = MutableStateFlow(loadCustom())
     val customCatalog: StateFlow<Map<String, ModelEntry>> = _custom.asStateFlow()
+
+    private val _downloadBusyId = MutableStateFlow<String?>(null)
+    val downloadBusyId: StateFlow<String?> = _downloadBusyId.asStateFlow()
+
+    private val _downloadProgress = MutableStateFlow<TransferProgress?>(null)
+    val downloadProgress: StateFlow<TransferProgress?> = _downloadProgress.asStateFlow()
+
+    private val _downloadStatus = MutableStateFlow<String?>(null)
+    val downloadStatus: StateFlow<String?> = _downloadStatus.asStateFlow()
 
     private val stopFlags = ConcurrentHashMap<String, AtomicBoolean>()
     @Volatile
@@ -91,13 +110,70 @@ class LocalModelStore(
         _custom.value = next
     }
 
+    /**
+     * Application 级下载：离开资源库页不会取消。
+     * 再点同一/另一模型会先 pause 再开新任务。
+     */
+    fun startDownload(modelId: String, label: String, hfToken: String = hfToken()) {
+        if (downloadJob?.isActive == true) {
+            pauseDownload(_downloadBusyId.value)
+        }
+        val gen = downloadGeneration.incrementAndGet()
+        downloadJob = scope.launch {
+            _downloadBusyId.value = modelId
+            _downloadProgress.value = null
+            _downloadStatus.value = null
+            val result = try {
+                ensureInstalled(
+                    modelId = modelId,
+                    hfToken = hfToken,
+                    isActive = { isActive && gen == downloadGeneration.get() },
+                ) { p ->
+                    if (gen == downloadGeneration.get()) {
+                        _downloadProgress.value = p
+                    }
+                }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                Result.failure(IllegalStateException(PAUSED_MESSAGE))
+            }
+            if (gen != downloadGeneration.get()) return@launch
+            _downloadBusyId.value = null
+            _downloadProgress.value = null
+            _downloadStatus.value = result.fold(
+                onSuccess = {
+                    val warn = DeviceCapability.refuseReason(
+                        appContext,
+                        expectedBytes(modelId),
+                    )
+                    if (warn != null) "已下载 $label。$warn" else "已下载 $label"
+                },
+                onFailure = { err ->
+                    if (err.message == PAUSED_MESSAGE) {
+                        PAUSED_MESSAGE
+                    } else {
+                        UserFacingError.of(err, "下载失败")
+                    }
+                },
+            )
+            downloadJob = null
+        }
+    }
+
     /** 暂停当前（或指定）下载：断开连接并保留 `.part`，可再点继续。 */
     fun pauseDownload(modelId: String? = null) {
-        val id = modelId ?: activeModelId
+        val id = modelId ?: activeModelId ?: _downloadBusyId.value
+        downloadGeneration.incrementAndGet()
         if (id != null) {
             stopFlags[id]?.set(true)
         }
         runCatching { activeConnection?.disconnect() }
+        downloadJob?.cancel()
+        downloadJob = null
+        _downloadBusyId.value = null
+        _downloadProgress.value = null
+        if (id != null) {
+            _downloadStatus.value = PAUSED_MESSAGE
+        }
     }
 
     fun ensureInstalled(

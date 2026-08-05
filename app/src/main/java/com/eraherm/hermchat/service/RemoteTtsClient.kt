@@ -2,6 +2,7 @@ package com.eraherm.hermchat.service
 
 import com.eraherm.hermchat.data.network.ConnectionTester
 import com.eraherm.hermchat.data.network.HermesEndpoint
+import com.eraherm.hermchat.data.network.SharedHttpClients
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -63,7 +64,7 @@ class RemoteTtsClient(
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        private fun defaultClient(): OkHttpClient = SharedHttpClients.api.newBuilder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(90, TimeUnit.SECONDS)
             .build()

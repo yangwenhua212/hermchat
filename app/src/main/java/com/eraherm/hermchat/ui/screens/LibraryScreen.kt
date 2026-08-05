@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,7 +44,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eraherm.hermchat.HermChatApp
-import com.eraherm.hermchat.data.local.DeviceCapability
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.data.model.AgentProfile
@@ -54,8 +54,6 @@ import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.Line
 import com.eraherm.hermchat.ui.theme.SoftGray
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -82,28 +80,28 @@ fun LibraryScreen(
         app.localModelStore.listStatuses()
     }
     val scope = rememberCoroutineScope()
-    var busyId by remember { mutableStateOf<String?>(null) }
-    var progress by remember { mutableStateOf<TransferProgress?>(null) }
-    var statusMessage by remember { mutableStateOf<String?>(null) }
+    val busyId by app.localModelStore.downloadBusyId.collectAsStateWithLifecycle()
+    val progress by app.localModelStore.downloadProgress.collectAsStateWithLifecycle()
+    val storeStatus by app.localModelStore.downloadStatus.collectAsStateWithLifecycle()
+    var uiStatus by remember { mutableStateOf<String?>(null) }
+    val statusMessage = uiStatus ?: storeStatus
     var hfToken by remember { mutableStateOf(app.localModelStore.hfToken()) }
     var searchQuery by remember { mutableStateOf("qwen") }
     var searchResults by remember { mutableStateOf<List<LocalModelStore.ModelEntry>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
-    var downloadJob by remember { mutableStateOf<Job?>(null) }
 
     fun refreshModels() {
         modelTick += 1
     }
 
+    LaunchedEffect(busyId) {
+        if (busyId == null) refreshModels()
+    }
+
     fun pauseDownload() {
-        val id = busyId
-        if (id != null) app.localModelStore.pauseDownload(id)
-        downloadJob?.cancel()
-        downloadJob = null
-        busyId = null
-        progress = null
+        app.localModelStore.pauseDownload(busyId)
+        uiStatus = null
         refreshModels()
-        statusMessage = LocalModelStore.PAUSED_MESSAGE
     }
 
     BackHandler {
@@ -111,47 +109,9 @@ fun LibraryScreen(
     }
 
     fun startDownload(modelId: String, label: String) {
-        downloadJob?.cancel()
-        downloadJob = scope.launch {
-            busyId = modelId
-            progress = null
-            statusMessage = null
-            val result = try {
-                withContext(Dispatchers.IO) {
-                    app.localModelStore.ensureInstalled(
-                        modelId = modelId,
-                        hfToken = hfToken,
-                        isActive = { isActive },
-                    ) { p ->
-                        scope.launch(Dispatchers.Main.immediate) {
-                            progress = p
-                        }
-                    }
-                }
-            } catch (_: kotlinx.coroutines.CancellationException) {
-                Result.failure(IllegalStateException(LocalModelStore.PAUSED_MESSAGE))
-            }
-            busyId = null
-            progress = null
-            downloadJob = null
-            refreshModels()
-            statusMessage = result.fold(
-                onSuccess = {
-                    val warn = DeviceCapability.refuseReason(
-                        app,
-                        app.localModelStore.expectedBytes(modelId),
-                    )
-                    if (warn != null) "已下载 $label。$warn" else "已下载 $label"
-                },
-                onFailure = { err ->
-                    if (err.message == LocalModelStore.PAUSED_MESSAGE) {
-                        LocalModelStore.PAUSED_MESSAGE
-                    } else {
-                        com.eraherm.hermchat.util.UserFacingError.of(err, "下载失败")
-                    }
-                },
-            )
-        }
+        uiStatus = null
+        app.localModelStore.setHfToken(hfToken)
+        app.localModelStore.startDownload(modelId, label, hfToken)
     }
 
     AtmosphereBackground {
@@ -271,7 +231,7 @@ fun LibraryScreen(
                                     },
                                     onPause = { pauseDownload() },
                                     onAssign = {
-                                        statusMessage = assignModelToCurrentAgent(
+                                        uiStatus = assignModelToCurrentAgent(
                                             app = app,
                                             agents = agents,
                                             currentId = currentId,
@@ -282,7 +242,7 @@ fun LibraryScreen(
                                     onDelete = {
                                         app.localModelStore.uninstallAndForget(status.entry.id)
                                         refreshModels()
-                                        statusMessage = "已移除 ${status.entry.label}"
+                                        uiStatus = "已移除 ${status.entry.label}"
                                     },
                                 )
                             }
@@ -311,16 +271,16 @@ fun LibraryScreen(
                                 onClick = {
                                     scope.launch {
                                         searching = true
-                                        statusMessage = null
+                                        uiStatus = null
                                         val result = withContext(Dispatchers.IO) {
                                             HfModelSearch.search(searchQuery, hfToken)
                                         }
                                         searching = false
                                         result.onSuccess {
                                             searchResults = it
-                                            if (it.isEmpty()) statusMessage = "没有找到 .task 模型"
+                                            if (it.isEmpty()) uiStatus = "没有找到 .task 模型"
                                         }.onFailure {
-                                            statusMessage = com.eraherm.hermchat.util.UserFacingError.of(it, "搜索失败")
+                                            uiStatus = com.eraherm.hermchat.util.UserFacingError.of(it, "搜索失败")
                                         }
                                     }
                                 },
@@ -384,7 +344,7 @@ fun LibraryScreen(
                                         TextButton(onClick = {
                                             app.localModelStore.register(entry)
                                             refreshModels()
-                                            statusMessage = "已加入目录，可在「本地模型」下载"
+                                            uiStatus = "已加入目录，可在「本地模型」下载"
                                         }) { Text("仅加入目录") }
                                     }
                                 }

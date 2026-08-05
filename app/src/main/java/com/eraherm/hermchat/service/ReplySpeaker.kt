@@ -38,7 +38,8 @@ class ReplySpeaker(
     private val edge: EdgeTtsClient = EdgeTtsClient(),
 ) {
     private val appContext = context.applicationContext
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val rootJob = SupervisorJob()
+    private val scope = CoroutineScope(rootJob + Dispatchers.Main.immediate)
     private var remoteJob: Job? = null
     private var mediaPlayer: MediaPlayer? = null
     private var lastError: String? = null
@@ -155,6 +156,12 @@ class ReplySpeaker(
         stopRemote()
         local.stop()
         _speakingMessageId.value = null
+    }
+
+    /** 进程退出前可调用；平时用 [stop] 即可。 */
+    fun shutdown() {
+        stop()
+        rootJob.cancel()
     }
 
     fun lastErrorMessage(): String? = lastError ?: local.lastErrorMessage()

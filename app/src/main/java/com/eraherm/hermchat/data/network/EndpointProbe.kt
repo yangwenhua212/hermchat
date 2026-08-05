@@ -8,8 +8,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
 
 data class ProbeHit(
     val endpoint: String,
@@ -21,13 +19,7 @@ data class ProbeHit(
  */
 class EndpointProbe(
     context: Context,
-    private val tester: ConnectionTester = ConnectionTester(
-        OkHttpClient.Builder()
-            .connectTimeout(2, TimeUnit.SECONDS)
-            .readTimeout(2, TimeUnit.SECONDS)
-            .writeTimeout(2, TimeUnit.SECONDS)
-            .build(),
-    ),
+    private val tester: ConnectionTester = ConnectionTester(SharedHttpClients.probe),
 ) {
     private val appContext = context.applicationContext
 

@@ -5,6 +5,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import com.eraherm.hermchat.data.network.SharedHttpClients
 import java.util.concurrent.TimeUnit
 
 /** Tavily Search：https://api.tavily.com/search */
@@ -60,7 +61,7 @@ class TavilyProvider(
     companion object {
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        fun defaultClient(): OkHttpClient = SharedHttpClients.api.newBuilder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .callTimeout(25, TimeUnit.SECONDS)
