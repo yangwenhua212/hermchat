@@ -124,6 +124,7 @@ HxSync 反向设计：**简单配置 + 界面归属用户 + 四档能力对等�
 - 更细的省钱路由  
 - 复杂 Skill Store、GUI 自动化、iOS  
 - **远期**：无账号订阅（商店凭证 / 可备份 License，不用 device_id 扛恢复）、超时降级加强、服务商市场（手动配置永久保留）——见仓库 [README.md](../README.md)「远期规划」  
+- **并行探索（不替代主线）**：HxSync for Robotics（实体机器人竖切 / 更远端侧 VLA）——另开功能域，复用 Loop 与确认卡；见 [ROADMAP.md](ROADMAP.md#并行探索hxsync-for-robotics具身--另开一条能力线)  
 
 ## 产品约束（精简）
 
@@ -132,4 +133,4 @@ HxSync 反向设计：**简单配置 + 界面归属用户 + 四档能力对等�
 
 ## 成功标准
 
-自己用得爽：家用 **③ 连电脑 Hermes**；出门用 **④ 云脑 Loop** 办本机事。点滴记 [ACCEPTANCE.md](ACCEPTANCE.md)；v0.3 切片见 [ROADMAP.md](ROADMAP.md)。
+自己用得爽：家用 **③ 连电脑 Hermes**；出门用 **④ 云脑 Loop** 办本机事。点滴记 [ACCEPTANCE.md](ACCEPTANCE.md)；v0.3 切片见 [ROADMAP.md](ROADMAP.md)。机器人具身是**额外能力线**，不替代上述成功标准。
