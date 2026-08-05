@@ -70,6 +70,8 @@ class ReplySpeaker(
     private var streamCursor: Int = 0
     private var streamRaw: String = ""
     private var streamChunkIndex: Int = 0
+    /** 流式回退系统 TTS 时：仅首句 flush，后续 QUEUE_ADD，避免一句盖一句。 */
+    private var streamLocalFlushUsed: Boolean = false
     private val streamEdgeChannel = Channel<String>(Channel.UNLIMITED)
     private var streamEdgeJob: Job? = null
 
@@ -119,6 +121,7 @@ class ReplySpeaker(
         streamCursor = 0
         streamRaw = ""
         streamChunkIndex = 0
+        streamLocalFlushUsed = false
         _speakingMessageId.value = messageId
         val engine = chatPrefsStore.prefsFlow.value.speakEngine
         if (engine == SpeakEngine.EDGE ||
@@ -132,6 +135,10 @@ class ReplySpeaker(
     /** 流式正文更新（传当前全文）。 */
     fun onStreamText(messageId: String, fullText: String) {
         if (messageId != streamMessageId) return
+        // 纠正格式 / 超时改本地会清空正文：重置游标，否则新文读不到
+        if (fullText.length < streamCursor) {
+            streamCursor = 0
+        }
         streamRaw = fullText
         pumpStream(forceFlush = false)
     }
@@ -176,6 +183,7 @@ class ReplySpeaker(
         streamCursor = 0
         streamRaw = ""
         streamChunkIndex = 0
+        streamLocalFlushUsed = false
         streamEdgeJob?.cancel()
         streamEdgeJob = null
         while (streamEdgeChannel.tryReceive().isSuccess) Unit
@@ -286,7 +294,14 @@ class ReplySpeaker(
                 stopRemotePlayer()
                 if (fallbackLocal) {
                     lastError = null
-                    speakLocal(text, messageId, reportError = true, flush = true)
+                    val flush = if (streamMessageId != null) {
+                        val first = !streamLocalFlushUsed
+                        streamLocalFlushUsed = true
+                        first
+                    } else {
+                        true
+                    }
+                    speakLocal(text, messageId, reportError = true, flush = flush)
                 } else if (chatPrefsStore.prefsFlow.value.speakEngine == SpeakEngine.AUTO) {
                     lastError = null
                 } else {

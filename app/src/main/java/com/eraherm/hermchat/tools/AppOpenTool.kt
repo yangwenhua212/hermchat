@@ -93,7 +93,15 @@ class AppOpenTool(
             "支付宝" to listOf("com.eg.android.AlipayGphone"),
             "alipay" to listOf("com.eg.android.AlipayGphone"),
             "淘宝" to listOf("com.taobao.taobao"),
-            "抖音" to listOf("com.ss.android.ugc.aweme"),
+            "抖音" to listOf(
+                "com.ss.android.ugc.aweme",
+                "com.ss.android.ugc.aweme.lite",
+            ),
+            "douyin" to listOf(
+                "com.ss.android.ugc.aweme",
+                "com.ss.android.ugc.aweme.lite",
+            ),
+            "抖音极速版" to listOf("com.ss.android.ugc.aweme.lite"),
             "设置" to listOf("com.android.settings"),
             "settings" to listOf("com.android.settings"),
             "相机" to listOf(

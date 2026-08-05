@@ -408,10 +408,14 @@ fun ChatScreen(
                         val id = streamId!!
                         streamId = null
                         app.replySpeaker.endStreamSpeak(id)
-                        app.replySpeaker.noteAutoHandled(id)
+                        // streaming-tmp 会复用于工具续跑，勿记入已处理，否则后半段不读
+                        if (!id.startsWith("streaming-")) {
+                            app.replySpeaker.noteAutoHandled(id)
+                        }
                     } else if (!streaming && last != null &&
                         content.isNotBlank() &&
                         !last.id.startsWith("welcome-") &&
+                        !last.id.startsWith("streaming-") &&
                         !app.replySpeaker.isAutoHandled(last.id)
                     ) {
                         // 非流式整段落盘：只读这一次，立刻记入已处理
@@ -427,10 +431,6 @@ fun ChatScreen(
                 }
             }
         }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose { app.replySpeaker.stop() }
     }
 
     AtmosphereBackground(

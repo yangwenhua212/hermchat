@@ -201,7 +201,10 @@ class TtsSpeaker(
             liveUtterances.clear()
             runCatching { engine.stop() }
         }
-        requestAudioFocus()
+        // QUEUE_ADD 中途勿 abandon 焦点，否则国产机常丢未播队列 → 读一半就停
+        if (flush || liveUtterances.isEmpty()) {
+            requestAudioFocus()
+        }
         val utteranceId = UUID.randomUUID().toString()
         liveUtterances.add(utteranceId)
         _speakingMessageId.value = messageId

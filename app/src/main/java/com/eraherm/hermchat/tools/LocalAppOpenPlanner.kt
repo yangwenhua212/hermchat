@@ -15,6 +15,7 @@ object LocalAppOpenPlanner {
             .removeSuffix("一下")
             .removeSuffix("App")
             .removeSuffix("APP")
+            .removeSuffix("app")
             .removeSuffix("应用")
             .trim()
         if (app.isBlank() || app.length > 20) return null

@@ -6,6 +6,9 @@ import java.util.UUID
 /**
  * 「打开 DeepSeek 官网 / 打开 https://…」→ [OpenUrlTool]；
  * 未知站点 → [WebSearchTool]（带 follow_up=url.open，搜完自动开链）。
+ *
+ * 注意：与 [LocalAppOpenPlanner] 互斥——「打开抖音/淘宝」等已有 App 别名且未提官网时
+ * 必须返回 null，否则会抢先打开网页。
  */
 object LocalUrlOpenPlanner {
     /** 常见站点别名 → 完整 URL（小写 key）。 */
@@ -54,27 +57,66 @@ object LocalUrlOpenPlanner {
         if (target.contains("搜索") || target.contains("查一下") || target.contains("搜一下")) {
             return null
         }
-        resolveKnown(target)?.let { return openCall(it) }
+        val wantsWebsite = wantsWebsiteIntent(text, target)
         val stripped = target
             .replace(Regex("(?:的)?(?:官网|网站|主页|网页)$"), "")
             .trim()
-        if (stripped.isNotBlank() && stripped != target) {
-            resolveKnown(stripped)?.let { return openCall(it) }
+        // 「打开抖音 / 打开抖音app」：有 App 别名且未提官网 → 交给 LocalAppOpenPlanner
+        if (!wantsWebsite && matchesInstallableApp(stripped.ifBlank { target })) {
+            return null
+        }
+        if (wantsWebsite) {
+            resolveKnown(stripped.ifBlank { target })?.let { return openCall(it) }
+            resolveKnown(target)?.let { return openCall(it) }
+            resolveKnown(text)?.let { return openCall(it) }
+        } else {
+            // 无官网词：仅打开「无对应 App」的已知站（如 DeepSeek）或裸域名
+            if (!matchesInstallableApp(stripped.ifBlank { target })) {
+                resolveKnown(target)?.let { return openCall(it) }
+                if (stripped.isNotBlank() && stripped != target) {
+                    resolveKnown(stripped)?.let { return openCall(it) }
+                }
+            }
         }
         val domainSource = stripped.ifBlank { target }
         val domain = BARE_DOMAIN.find(domainSource)?.groupValues?.getOrNull(1)
         if (domain != null && looksLikeWebsiteDomain(domain)) {
             return openCall("https://$domain/")
         }
-        if (text.contains("官网") || text.contains("网站") || text.contains("主页")) {
-            resolveKnown(text)?.let { return openCall(it) }
-            // 未知产品名：先搜「名称 官网」，再链式 url.open
+        if (wantsWebsite) {
             val name = productNameForSearch(stripped.ifBlank { target }, text)
             if (name.isNotBlank()) {
                 return searchThenOpenCall(name)
             }
         }
         return null
+    }
+
+    private fun wantsWebsiteIntent(text: String, target: String): Boolean =
+        text.contains("官网") ||
+            text.contains("网站") ||
+            text.contains("主页") ||
+            text.contains("网页") ||
+            target.contains("官网") ||
+            target.contains("网站") ||
+            target.contains("主页") ||
+            target.contains("网页")
+
+    /** 与 [AppOpenTool.ALIASES] 重叠的名字（含抖音/淘宝等）勿抢 url.open。 */
+    private fun matchesInstallableApp(raw: String): Boolean {
+        val key = raw.trim()
+            .removeSuffix("一下")
+            .removeSuffix("App")
+            .removeSuffix("APP")
+            .removeSuffix("app")
+            .removeSuffix("应用")
+            .trim()
+            .lowercase()
+        if (key.isBlank()) return false
+        return AppOpenTool.ALIASES.keys.any { alias ->
+            val a = alias.lowercase()
+            key == a || key.contains(a) || a.contains(key)
+        }
     }
 
     private fun productNameForSearch(stripped: String, full: String): String {

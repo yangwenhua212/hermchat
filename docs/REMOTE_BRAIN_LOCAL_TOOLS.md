@@ -85,7 +85,8 @@ App 内**轻量真 Agent**：云端 API（如 DeepSeek）可多步工具循环�
 也可在配置里写 `fallbackAgentId` 指定备用。气泡 provider 会标 `备用·名称`。  
 长期换档靠顶栏手动切换当前 Agent（不做持久自动降级）。
 
-**打开官网：** 已知域名 → `url.open`；未知 → 先 `web.search`「名 官网」再 `url.open`（端侧 `LocalUrlOpenPlanner` + Prompt 动作链）；搜不到则短提示。详见 `LocalToolsPrompt`。  
+**打开官网：** 已知域名 → `url.open`；未知 → 先 `web.search`「名 官网」再 `url.open`。  
+**打开 App：** 「打开抖音 / 打开淘宝」等走 `app.open`（端侧 `LocalUrlOpenPlanner` 遇 App 别名且未提「官网」时让路）；「打开抖音官网」才开网页。详见 `LocalToolsPrompt` / `LocalAppOpenPlanner`。
 **拒违法：** Prompt 霸王条款 + `LocalSafetyGuard` 高置信拦截；拒绝时说明原因，不执行工具。见 [SECURITY.md](SECURITY.md)。
 
 ## Agent loop 行为

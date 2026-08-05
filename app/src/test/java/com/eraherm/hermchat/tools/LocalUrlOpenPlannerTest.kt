@@ -49,6 +49,27 @@ class LocalUrlOpenPlannerTest {
     }
 
     @Test
+    fun openDouyinAppNotWebsite() {
+        assertNull(LocalUrlOpenPlanner.plan("打开抖音"))
+        assertNull(LocalUrlOpenPlanner.plan("打开抖音app"))
+        val app = LocalAppOpenPlanner.plan("打开抖音app")
+        assertNotNull(app)
+        assertEquals(AppOpenTool.NAME, app!!.name)
+        assertEquals("抖音", app.arguments["app"])
+        val viaPlanner = LocalToolPlanner.plan("打开抖音app")
+        assertNotNull(viaPlanner)
+        assertEquals(AppOpenTool.NAME, viaPlanner!!.name)
+    }
+
+    @Test
+    fun openDouyinOfficialStillUrl() {
+        val call = LocalUrlOpenPlanner.plan("打开抖音官网")
+        assertNotNull(call)
+        assertEquals(OpenUrlTool.NAME, call!!.name)
+        assertEquals("https://www.douyin.com/", call.arguments["url"])
+    }
+
+    @Test
     fun toolPlannerPrefersUrlOverApp() {
         val call = LocalToolPlanner.plan("打开DeepSeek官网")
         assertNotNull(call)
