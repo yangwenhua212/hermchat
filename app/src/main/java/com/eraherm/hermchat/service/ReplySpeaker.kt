@@ -8,10 +8,12 @@ import com.eraherm.hermchat.data.local.ChatPrefsStore
 import com.eraherm.hermchat.data.local.SpeakEngine
 import com.eraherm.hermchat.data.model.AgentKind
 import com.eraherm.hermchat.util.UserFacingError
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -25,14 +27,7 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 统一朗读入口。
- *
- * - [SpeakEngine.EDGE]：微软 Edge TTS（与 Hermes `tts.provider: edge` 同路，默认小艺）
- * - [SpeakEngine.REMOTE]：自填 OpenAI 兼容 TTS 基址
- * - [SpeakEngine.AUTO]：自定义地址 → Edge → 系统
- * - [SpeakEngine.SYSTEM]：手机系统 TTS
- *
- * Hermes 聊天 API 本身通常不提供 `/v1/audio/speech`；Edge 由手机直连微软，不必经 Hermes。
+ * 统一朗读入口；支持流式按句开读（系统 QUEUE_ADD / Edge 句级排队）。
  */
 class ReplySpeaker(
     context: Context,
@@ -55,10 +50,18 @@ class ReplySpeaker(
     private val _userErrors = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val userErrors: SharedFlow<String> = _userErrors.asSharedFlow()
 
+    // ── 流式按句 ──
+    private var streamMessageId: String? = null
+    private var streamCursor: Int = 0
+    private var streamRaw: String = ""
+    private var streamChunkIndex: Int = 0
+    private val streamEdgeChannel = Channel<String>(Channel.UNLIMITED)
+    private var streamEdgeJob: Job? = null
+
     init {
         scope.launch {
             local.speakingMessageId.collect { id ->
-                if (mediaPlayer == null) {
+                if (mediaPlayer == null && streamEdgeJob?.isActive != true) {
                     _speakingMessageId.value = id
                 }
             }
@@ -66,22 +69,23 @@ class ReplySpeaker(
     }
 
     fun speak(text: String, messageId: String? = null) {
+        endStreamInternal(flush = false)
         lastError = null
         when (chatPrefsStore.prefsFlow.value.speakEngine) {
             SpeakEngine.SYSTEM -> {
                 stopRemote()
-                speakLocal(text, messageId, reportError = true)
+                speakLocal(text, messageId, reportError = true, flush = true)
             }
             SpeakEngine.EDGE -> {
                 remoteJob?.cancel()
                 remoteJob = scope.launch {
-                    speakEdge(text, messageId, fallbackLocal = false)
+                    speakEdge(text, messageId, fallbackLocal = true)
                 }
             }
             SpeakEngine.REMOTE -> {
                 remoteJob?.cancel()
                 remoteJob = scope.launch {
-                    speakCustomOrAgent(text, messageId, fallbackLocal = false)
+                    speakCustomOrAgent(text, messageId, fallbackLocal = true)
                 }
             }
             SpeakEngine.AUTO -> {
@@ -93,6 +97,37 @@ class ReplySpeaker(
         }
     }
 
+    /** 开始流式朗读（新助手气泡）。 */
+    fun beginStreamSpeak(messageId: String) {
+        stop()
+        streamMessageId = messageId
+        streamCursor = 0
+        streamRaw = ""
+        streamChunkIndex = 0
+        _speakingMessageId.value = messageId
+        val engine = chatPrefsStore.prefsFlow.value.speakEngine
+        if (engine == SpeakEngine.EDGE ||
+            engine == SpeakEngine.REMOTE ||
+            engine == SpeakEngine.AUTO
+        ) {
+            startEdgePump(messageId)
+        }
+    }
+
+    /** 流式正文更新（传当前全文）。 */
+    fun onStreamText(messageId: String, fullText: String) {
+        if (messageId != streamMessageId) return
+        streamRaw = fullText
+        pumpStream(forceFlush = false)
+    }
+
+    /** 流式结束：读完尾巴。 */
+    fun endStreamSpeak(messageId: String) {
+        if (messageId != streamMessageId) return
+        pumpStream(forceFlush = true)
+        streamMessageId = null
+    }
+
     fun toggle(text: String, messageId: String) {
         if (_speakingMessageId.value == messageId && (local.speaking.value || mediaPlayer != null)) {
             stop()
@@ -102,6 +137,7 @@ class ReplySpeaker(
     }
 
     fun stop() {
+        endStreamInternal(flush = false)
         stopRemote()
         local.stop()
         _speakingMessageId.value = null
@@ -111,8 +147,77 @@ class ReplySpeaker(
 
     fun openSystemTtsSettings(): Boolean = local.openSystemTtsSettings()
 
-    private fun speakLocal(text: String, messageId: String?, reportError: Boolean) {
-        local.speak(text, messageId)
+    private fun endStreamInternal(flush: Boolean) {
+        if (flush && streamMessageId != null) {
+            pumpStream(forceFlush = true)
+        }
+        streamMessageId = null
+        streamCursor = 0
+        streamRaw = ""
+        streamChunkIndex = 0
+        streamEdgeJob?.cancel()
+        streamEdgeJob = null
+        while (streamEdgeChannel.tryReceive().isSuccess) Unit
+    }
+
+    private fun pumpStream(forceFlush: Boolean) {
+        val messageId = streamMessageId ?: return
+        val (sentences, next) = SentenceSplitter.takeNew(
+            fullText = streamRaw,
+            fromIndex = streamCursor,
+            forceFlush = forceFlush,
+        )
+        streamCursor = next
+        if (sentences.isEmpty()) return
+        val engine = chatPrefsStore.prefsFlow.value.speakEngine
+        for (sentence in sentences) {
+            val cleaned = TtsSpeaker.prepare(sentence)
+            if (cleaned.isBlank()) continue
+            when (engine) {
+                SpeakEngine.SYSTEM -> {
+                    val flush = streamChunkIndex == 0
+                    speakLocal(cleaned, messageId, reportError = streamChunkIndex == 0, flush = flush)
+                    streamChunkIndex++
+                }
+                SpeakEngine.EDGE, SpeakEngine.REMOTE, SpeakEngine.AUTO -> {
+                    streamEdgeChannel.trySend(cleaned)
+                    streamChunkIndex++
+                }
+            }
+        }
+    }
+
+    private fun startEdgePump(messageId: String) {
+        streamEdgeJob?.cancel()
+        streamEdgeJob = scope.launch {
+            for (sentence in streamEdgeChannel) {
+                if (streamMessageId != messageId) break
+                val prefs = chatPrefsStore.prefsFlow.value
+                when (prefs.speakEngine) {
+                    SpeakEngine.SYSTEM -> Unit
+                    SpeakEngine.EDGE -> {
+                        if (!speakEdge(sentence, messageId, fallbackLocal = true)) {
+                            // 已回退系统
+                        }
+                    }
+                    SpeakEngine.REMOTE -> {
+                        speakCustomOrAgent(sentence, messageId, fallbackLocal = true)
+                    }
+                    SpeakEngine.AUTO -> {
+                        speakAuto(sentence, messageId)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun speakLocal(
+        text: String,
+        messageId: String?,
+        reportError: Boolean,
+        flush: Boolean,
+    ) {
+        local.speakChunk(text, messageId, flush = flush)
         if (reportError) {
             local.lastErrorMessage()?.let { emitError(it) }
         }
@@ -132,20 +237,19 @@ class ReplySpeaker(
             if (ok) return
         }
         if (speakEdge(text, messageId, fallbackLocal = false)) return
-        speakLocal(text, messageId, reportError = true)
+        speakLocal(text, messageId, reportError = true, flush = true)
     }
 
-    /** @return true 若已成功开播 */
     private suspend fun speakEdge(
         text: String,
         messageId: String?,
         fallbackLocal: Boolean,
     ): Boolean {
-        stopRemote()
-        local.stop()
+        stopRemotePlayer()
+        // 流式句级：不要 local.stop() 清掉系统回退队列
         val voice = chatPrefsStore.prefsFlow.value.ttsVoice
             .ifBlank { EdgeTtsClient.DEFAULT_VOICE }
-        val dest = File(appContext.cacheDir, "tts_edge.mp3")
+        val dest = File(appContext.cacheDir, "tts_edge_${System.nanoTime()}.mp3")
         _speakingMessageId.value = messageId
         val result = withContext(Dispatchers.IO) {
             edge.synthesizeToFile(text = text, dest = dest, voice = voice)
@@ -153,19 +257,18 @@ class ReplySpeaker(
         return result.fold(
             onSuccess = { file ->
                 lastError = null
-                playFile(file, messageId)
+                playFileAwait(file, messageId)
                 true
             },
             onFailure = { err ->
                 stopRemotePlayer()
-                _speakingMessageId.value = null
                 if (fallbackLocal) {
                     lastError = null
-                    speakLocal(text, messageId, reportError = true)
+                    speakLocal(text, messageId, reportError = true, flush = true)
                 } else if (chatPrefsStore.prefsFlow.value.speakEngine == SpeakEngine.AUTO) {
-                    // AUTO 上层会再回退系统
                     lastError = null
                 } else {
+                    _speakingMessageId.value = null
                     emitError(UserFacingError.of(err, "Edge 朗读失败"))
                 }
                 false
@@ -178,8 +281,7 @@ class ReplySpeaker(
         messageId: String?,
         fallbackLocal: Boolean,
     ) {
-        stopRemote()
-        local.stop()
+        stopRemotePlayer()
         val prefs = chatPrefsStore.prefsFlow.value
         val customEndpoint = prefs.ttsEndpoint.trim()
         if (customEndpoint.isNotBlank()) {
@@ -193,7 +295,7 @@ class ReplySpeaker(
             )
             if (ok) return
             if (fallbackLocal) {
-                speakLocal(text, messageId, reportError = true)
+                speakLocal(text, messageId, reportError = true, flush = true)
             } else {
                 emitError("自定义 TTS 失败，请检查地址与 Key")
             }
@@ -202,7 +304,7 @@ class ReplySpeaker(
 
         val agent = currentAgent()
         if (agent == null) {
-            if (fallbackLocal) speakLocal(text, messageId, reportError = true)
+            if (fallbackLocal) speakLocal(text, messageId, reportError = true, flush = true)
             else emitError("请选 Edge 小艺，或填写自定义 TTS 地址")
             return
         }
@@ -210,7 +312,7 @@ class ReplySpeaker(
             agent.kind == AgentKind.WEBSOCKET ||
             remoteUnsupported.contains(agent.id)
         ) {
-            if (fallbackLocal) speakLocal(text, messageId, reportError = true)
+            if (fallbackLocal) speakLocal(text, messageId, reportError = true, flush = true)
             else emitError("请选 Edge 小艺（与 Hermes edge 同路），或填写自定义 TTS 地址")
             return
         }
@@ -223,7 +325,7 @@ class ReplySpeaker(
                     endpoint.startsWith("http", ignoreCase = true)
                 )
         if (!canRemote) {
-            if (fallbackLocal) speakLocal(text, messageId, reportError = true)
+            if (fallbackLocal) speakLocal(text, messageId, reportError = true, flush = true)
             else emitError("请选 Edge 小艺，或填写自定义 TTS 地址")
             return
         }
@@ -237,7 +339,7 @@ class ReplySpeaker(
             markUnsupportedKey = agent.id,
         )
         if (!ok) {
-            if (fallbackLocal) speakLocal(text, messageId, reportError = true)
+            if (fallbackLocal) speakLocal(text, messageId, reportError = true, flush = true)
             else emitError("聊天地址没有朗读接口。Hermes 的 Edge 请在设置里选「Edge 小艺」")
         }
     }
@@ -252,7 +354,7 @@ class ReplySpeaker(
         markUnsupportedKey: String? = null,
     ): Boolean {
         _speakingMessageId.value = messageId
-        val dest = File(appContext.cacheDir, "tts_reply.mp3")
+        val dest = File(appContext.cacheDir, "tts_reply_${System.nanoTime()}.mp3")
         val result = withContext(Dispatchers.IO) {
             remote.synthesizeToFile(
                 endpoint = endpoint,
@@ -266,7 +368,7 @@ class ReplySpeaker(
         return result.fold(
             onSuccess = { file ->
                 lastError = null
-                playFile(file, messageId)
+                playFileAwait(file, messageId)
                 true
             },
             onFailure = { err ->
@@ -280,43 +382,52 @@ class ReplySpeaker(
         )
     }
 
-    private fun playFile(file: File, messageId: String?) {
-        stopRemotePlayer()
-        try {
-            val player = MediaPlayer()
-            mediaPlayer = player
-            player.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
-            player.setDataSource(file.absolutePath)
-            player.setOnCompletionListener {
-                stopRemotePlayer()
-                if (_speakingMessageId.value == messageId) {
-                    _speakingMessageId.value = null
-                }
-            }
-            player.setOnErrorListener { _, _, _ ->
-                emitError("音频播放失败")
-                stopRemotePlayer()
-                _speakingMessageId.value = null
-                true
-            }
-            player.prepare()
-            player.start()
-            _speakingMessageId.value = messageId
-        } catch (e: Exception) {
-            emitError(UserFacingError.of(e, "音频播放失败"))
+    private suspend fun playFileAwait(file: File, messageId: String?) {
+        val done = CompletableDeferred<Unit>()
+        withContext(Dispatchers.Main) {
             stopRemotePlayer()
-            _speakingMessageId.value = null
+            try {
+                val player = MediaPlayer()
+                mediaPlayer = player
+                player.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
+                player.setDataSource(file.absolutePath)
+                player.setOnCompletionListener {
+                    stopRemotePlayer()
+                    if (_speakingMessageId.value == messageId) {
+                        // 句级队列可能还有下一句
+                    }
+                    done.complete(Unit)
+                }
+                player.setOnErrorListener { _, _, _ ->
+                    emitError("音频播放失败")
+                    stopRemotePlayer()
+                    done.complete(Unit)
+                    true
+                }
+                player.prepare()
+                player.start()
+                _speakingMessageId.value = messageId
+            } catch (e: Exception) {
+                emitError(UserFacingError.of(e, "音频播放失败"))
+                stopRemotePlayer()
+                done.complete(Unit)
+            }
         }
+        done.await()
+        runCatching { file.delete() }
     }
 
     private fun stopRemote() {
         remoteJob?.cancel()
         remoteJob = null
+        streamEdgeJob?.cancel()
+        streamEdgeJob = null
+        while (streamEdgeChannel.tryReceive().isSuccess) Unit
         stopRemotePlayer()
     }
 

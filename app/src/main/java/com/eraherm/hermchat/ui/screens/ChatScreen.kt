@@ -366,38 +366,51 @@ fun ChatScreen(
     }
 
     // ──────────────────────────────────────────────
-    // TTS 朗读 + 键盘焦点（3 合 1）
+    // TTS 朗读 + 键盘焦点
     // ──────────────────────────────────────────────
     LaunchedEffect(chatPrefs.inputMode, chatPrefs.autoSpeakReplies) {
-        // 键盘自动聚焦
         if (chatPrefs.inputMode == InputMode.TEXT_FIRST) {
             runCatching { textFocus.requestFocus() }
         }
-        // 流式开始停朗读
-        launch {
-            snapshotFlow { uiState.isStreaming }.collect { streaming ->
-                if (streaming) app.replySpeaker.stop()
-            }
-        }
-        // 仅在「本轮生成刚结束」时自动朗读；切回聊天页不重读旧消息
         if (chatPrefs.autoSpeakReplies) {
             launch {
-                var wasStreaming = uiState.isStreaming
+                var streamId: String? = null
                 snapshotFlow {
-                    uiState.isStreaming to uiState.messages.lastOrNull()
-                }.distinctUntilChanged().collect { (streaming, last) ->
-                    val justFinished = wasStreaming && !streaming
-                    wasStreaming = streaming
-                    if (!justFinished || last == null) return@collect
-                    if (last.role != MessageRole.ASSISTANT) return@collect
-                    if (last.content.isBlank() ||
-                        last.id.startsWith("welcome-") ||
-                        last.id == lastAutoSpokenId
+                    val last = uiState.messages.lastOrNull()
+                    Triple(
+                        uiState.isStreaming,
+                        last?.takeIf { it.role == MessageRole.ASSISTANT },
+                        last?.content.orEmpty(),
+                    )
+                }.distinctUntilChanged().collect { (streaming, last, content) ->
+                    if (streaming && last != null &&
+                        content.isNotBlank() &&
+                        !last.id.startsWith("welcome-")
                     ) {
-                        return@collect
+                        if (streamId != last.id) {
+                            streamId = last.id
+                            lastAutoSpokenId = last.id
+                            app.replySpeaker.beginStreamSpeak(last.id)
+                        }
+                        app.replySpeaker.onStreamText(last.id, content)
+                    } else if (!streaming && streamId != null) {
+                        val id = streamId!!
+                        streamId = null
+                        app.replySpeaker.endStreamSpeak(id)
+                    } else if (!streaming && last != null &&
+                        content.isNotBlank() &&
+                        !last.id.startsWith("welcome-") &&
+                        last.id != lastAutoSpokenId
+                    ) {
+                        lastAutoSpokenId = last.id
+                        app.replySpeaker.speak(content, last.id)
                     }
-                    lastAutoSpokenId = last.id
-                    app.replySpeaker.speak(last.content, last.id)
+                }
+            }
+        } else {
+            launch {
+                snapshotFlow { uiState.isStreaming }.collect { streaming ->
+                    if (streaming) app.replySpeaker.stop()
                 }
             }
         }
