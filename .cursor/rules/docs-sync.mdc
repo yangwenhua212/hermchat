@@ -18,6 +18,7 @@ alwaysApply: true
 | 发版 / versionCode | `docs/RELEASE.md`、`docs/RELEASE_NOTES.md`、`README.md` 版本号 |
 | 真机验收相关 | `docs/ACCEPTANCE.md`（清单或踩坑表） |
 | UI 文案规范 | 遵守 `docs/UI.md`；说明长文进 docs，不堆进 App |
+| 自动朗读行为 | 遵守 `.cursor/rules/auto-speak.mdc`；同步 `docs/UI.md` / `CONNECT_AGENTS` / `ACCEPTANCE` |
 
 ## 要求
 

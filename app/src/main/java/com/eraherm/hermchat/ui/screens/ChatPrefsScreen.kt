@@ -345,6 +345,21 @@ private fun PrefsSpeakDetail(
     ) {
         Text("打开系统语音包设置")
     }
+    val app = LocalContext.current.applicationContext as HermChatApp
+    var tryStatus by remember { mutableStateOf<String?>(null) }
+    Button(
+        onClick = {
+            app.replySpeaker.speak("你好，这是系统朗读试听。", "tts-try")
+            tryStatus = app.replySpeaker.lastErrorMessage() ?: "已开始试听"
+        },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Text("试听当前引擎")
+    }
+    tryStatus?.let {
+        Text(it, style = MaterialTheme.typography.bodyMedium)
+    }
 }
 
 @Composable

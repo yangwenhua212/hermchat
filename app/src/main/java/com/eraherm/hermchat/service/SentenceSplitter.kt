@@ -17,7 +17,7 @@ object SentenceSplitter {
         fullText: String,
         fromIndex: Int,
         forceFlush: Boolean = false,
-        minChars: Int = 8,
+        minChars: Int = 2,
     ): Pair<List<String>, Int> {
         if (fromIndex >= fullText.length) {
             return emptyList<String>() to fromIndex

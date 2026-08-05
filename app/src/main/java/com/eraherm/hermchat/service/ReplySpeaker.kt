@@ -47,6 +47,20 @@ class ReplySpeaker(
     private val _speakingMessageId = MutableStateFlow<String?>(null)
     val speakingMessageId: StateFlow<String?> = _speakingMessageId.asStateFlow()
 
+    /** 自动朗读已处理过的助手消息（跨页面进出仍保留，避免回聊天又读一遍）。 */
+    private val autoHandledMessageIds = ConcurrentHashMap.newKeySet<String>()
+
+    fun noteAutoHandled(messageId: String) {
+        if (messageId.isNotBlank()) autoHandledMessageIds.add(messageId)
+    }
+
+    fun isAutoHandled(messageId: String): Boolean =
+        messageId.isNotBlank() && autoHandledMessageIds.contains(messageId)
+
+    fun clearAutoHandled(messageId: String) {
+        autoHandledMessageIds.remove(messageId)
+    }
+
     private val _userErrors = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val userErrors: SharedFlow<String> = _userErrors.asSharedFlow()
 
@@ -218,6 +232,7 @@ class ReplySpeaker(
         flush: Boolean,
     ) {
         local.speakChunk(text, messageId, flush = flush)
+        // speak 是同步入队的；失败立刻有 lastError
         if (reportError) {
             local.lastErrorMessage()?.let { emitError(it) }
         }

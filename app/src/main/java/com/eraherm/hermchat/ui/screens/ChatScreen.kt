@@ -139,7 +139,6 @@ fun ChatScreen(
     var draft by remember { mutableStateOf("") }
     var draftAttachment by remember { mutableStateOf<ChatAttachment?>(null) }
     var voiceStatus by remember { mutableStateOf<String?>(null) }
-    var lastAutoSpokenId by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var stickToBottom by remember { mutableStateOf(true) }
@@ -375,6 +374,7 @@ fun ChatScreen(
         if (chatPrefs.autoSpeakReplies) {
             launch {
                 var streamId: String? = null
+                var primed = false
                 snapshotFlow {
                     val last = uiState.messages.lastOrNull()
                     Triple(
@@ -383,13 +383,24 @@ fun ChatScreen(
                         last?.content.orEmpty(),
                     )
                 }.distinctUntilChanged().collect { (streaming, last, content) ->
+                    // 进页/重启收集器：已有助手气泡一律视为已读过，禁止「回来又自动读一遍」
+                    if (!primed) {
+                        val liveId = if (streaming) last?.id else null
+                        uiState.messages
+                            .asSequence()
+                            .filter { it.role == MessageRole.ASSISTANT }
+                            .filter { !it.id.startsWith("welcome-") }
+                            .filter { it.id != liveId }
+                            .forEach { app.replySpeaker.noteAutoHandled(it.id) }
+                        primed = true
+                    }
                     if (streaming && last != null &&
                         content.isNotBlank() &&
-                        !last.id.startsWith("welcome-")
+                        !last.id.startsWith("welcome-") &&
+                        !app.replySpeaker.isAutoHandled(last.id)
                     ) {
                         if (streamId != last.id) {
                             streamId = last.id
-                            lastAutoSpokenId = last.id
                             app.replySpeaker.beginStreamSpeak(last.id)
                         }
                         app.replySpeaker.onStreamText(last.id, content)
@@ -397,12 +408,14 @@ fun ChatScreen(
                         val id = streamId!!
                         streamId = null
                         app.replySpeaker.endStreamSpeak(id)
+                        app.replySpeaker.noteAutoHandled(id)
                     } else if (!streaming && last != null &&
                         content.isNotBlank() &&
                         !last.id.startsWith("welcome-") &&
-                        last.id != lastAutoSpokenId
+                        !app.replySpeaker.isAutoHandled(last.id)
                     ) {
-                        lastAutoSpokenId = last.id
+                        // 非流式整段落盘：只读这一次，立刻记入已处理
+                        app.replySpeaker.noteAutoHandled(last.id)
                         app.replySpeaker.speak(content, last.id)
                     }
                 }

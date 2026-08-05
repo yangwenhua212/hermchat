@@ -1,0 +1,26 @@
+---
+description: 自动朗读只读 AI 刚生成的那一次，禁止回页重读
+globs: **/ChatScreen.kt,**/ReplySpeaker.kt,**/TtsSpeaker.kt
+alwaysApply: true
+---
+
+# 自动朗读：只读「刚打字出来」的那一次
+
+## 产品规则（不可破）
+
+- **自动朗读**只在助手**本轮正在生成**时触发（流式按句，或非流式整段落盘各一次）。
+- **禁止**：离开聊天页再回来、打开历史、切换设置返回、重组 `LaunchedEffect` 后，对**已经读过/已经落盘**的助手气泡再自动朗读。
+- **允许**：用户点气泡喇叭手动再读；与自动朗读无关。
+
+## 实现要求
+
+1. 进页或重启自动朗读收集器时先 **prime**：把当前已有助手消息标为 `autoHandled`（正在流式生成的那条除外）。
+2. 已 `autoHandled` 的 `messageId` **不得**再 `beginStreamSpeak` / 自动 `speak`。
+3. `autoHandled` 必须挂在 **Application 级**（如 `ReplySpeaker`），不能只用 Compose `remember`（离页即丢会导致回页重读）。
+4. 流式结束或非流式自动读完后立刻 `noteAutoHandled`。
+5. 改自动朗读逻辑时同步更新 `docs/UI.md`、`docs/CONNECT_AGENTS.md` / `docs/ACCEPTANCE.md` 相关句。
+
+## 反例
+
+- 用 `remember { lastAutoSpokenId }` 判断是否读过 → 回页重置 → 又读一遍。
+- 对「最后一条助手且 id 不同」无条件 `speak`，不区分历史与新生成。

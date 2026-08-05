@@ -7,6 +7,9 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -15,32 +18,37 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 系统 TTS。
- * utteranceId 必须用独立 UUID，禁止复用 messageId（否则 stop 回调会掐掉新开的朗读）。
+ *
+ * 要点：
+ * - utteranceId 用独立 UUID，勿用 messageId
+ * - stop/flush 的旧 onStop 不得清理新 utterance（用 live 集合过滤）
+ * - 绑定系统「首选引擎」包名（国产机测听有声、App 无声常见因绑错引擎）
+ * - KEY_PARAM_STREAM 必须用 String
  */
 class TtsSpeaker(
     context: Context,
 ) : TextToSpeech.OnInitListener {
     private val appContext = context.applicationContext
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var tts: TextToSpeech? = null
+    private var boundEngine: String? = null
     private val ready = AtomicBoolean(false)
     private val initFinished = AtomicBoolean(false)
     private val pending = MutableStateFlow<PendingSpeak?>(null)
     private var lastError: String? = null
     private var focusRequest: AudioFocusRequest? = null
-    private val activeUtteranceId = AtomicReference<String?>(null)
-    private val queuedUtterances = AtomicInteger(0)
+    private val liveUtterances = ConcurrentHashMap.newKeySet<String>()
 
     private val audioManager: AudioManager =
         appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private val speechAttrs: AudioAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
 
@@ -52,13 +60,48 @@ class TtsSpeaker(
 
     fun ensureStarted() {
         if (tts != null) return
-        // 用默认引擎；系统设置测听有声而 App 无声时，多半是 utterance/焦点问题而非引擎缺失
-        tts = TextToSpeech(appContext, this)
+        createEngine(preferredEnginePackage())
+    }
+
+    private fun createEngine(enginePackage: String?) {
+        ready.set(false)
+        initFinished.set(false)
+        runCatching { tts?.shutdown() }
+        tts = null
+        boundEngine = enginePackage
+        tts = if (!enginePackage.isNullOrBlank()) {
+            TextToSpeech(appContext, this, enginePackage)
+        } else {
+            TextToSpeech(appContext, this)
+        }
+    }
+
+    private fun preferredEnginePackage(): String? {
+        return runCatching {
+            Settings.Secure.getString(
+                appContext.contentResolver,
+                "tts_default_synth",
+            )?.takeIf { it.isNotBlank() }
+        }.getOrNull()
+            ?: runCatching {
+                // 部分机型
+                @Suppress("DEPRECATION")
+                Settings.Secure.getString(
+                    appContext.contentResolver,
+                    Settings.Secure.TTS_DEFAULT_SYNTH,
+                )?.takeIf { it.isNotBlank() }
+            }.getOrNull()
     }
 
     override fun onInit(status: Int) {
         val engine = tts ?: return
         if (status != TextToSpeech.SUCCESS) {
+            // 指定引擎失败则回退默认构造
+            if (!boundEngine.isNullOrBlank()) {
+                lastError = "首选引擎不可用，改用默认"
+                createEngine(null)
+                return
+            }
             lastError = "TTS 引擎初始化失败"
             ready.set(false)
             initFinished.set(true)
@@ -66,11 +109,16 @@ class TtsSpeaker(
         }
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                engine.setAudioAttributes(speechAttrs)
-            }
+            engine.setAudioAttributes(speechAttrs)
         } catch (_: Exception) {
-            // 旧机型忽略
+            runCatching {
+                engine.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
+            }
         }
 
         val lang = pickChineseLocale(engine)
@@ -78,20 +126,19 @@ class TtsSpeaker(
         if (setResult == TextToSpeech.LANG_MISSING_DATA ||
             setResult == TextToSpeech.LANG_NOT_SUPPORTED
         ) {
-            // 仍标记 ready 再试一次默认语言：部分国产机 isLanguageAvailable 误报
             runCatching { engine.setLanguage(Locale.getDefault()) }
-            lastError = "中文语音包可能未就绪，将尝试系统默认语音"
         }
 
+        // 不强行换 voice：国产「系统语音引擎」测听用的就是默认声线
         pickChineseVoice(engine)?.let { voice ->
             runCatching { engine.voice = voice }
         }
 
-        engine.setSpeechRate(1.05f)
+        engine.setSpeechRate(1.0f)
         engine.setPitch(1.0f)
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
-                if (utteranceId != null) {
+                if (utteranceId != null && liveUtterances.contains(utteranceId)) {
                     _speaking.value = true
                 }
             }
@@ -115,25 +162,25 @@ class TtsSpeaker(
         })
         ready.set(true)
         initFinished.set(true)
-        if (lastError?.contains("可能未就绪") != true) {
-            lastError = null
-        }
+        lastError = null
         val queued = pending.value
         pending.value = null
         queued?.let { speakInternal(it.text, it.messageId, flush = true) }
     }
 
-    /** 整段朗读（替换队列）。 */
     fun speak(text: String, messageId: String? = null) {
         speakInternal(text, messageId, flush = true)
     }
 
-    /** 追加一句（流式按句）；首句用 [flush]=true。 */
     fun speakChunk(text: String, messageId: String?, flush: Boolean) {
         speakInternal(text, messageId, flush = flush)
     }
 
     private fun speakInternal(text: String, messageId: String?, flush: Boolean) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post { speakInternal(text, messageId, flush) }
+            return
+        }
         ensureStarted()
         val cleaned = prepare(text)
         if (cleaned.isBlank()) {
@@ -150,30 +197,31 @@ class TtsSpeaker(
         }
         val engine = tts ?: return
         if (flush) {
-            queuedUtterances.set(0)
-            activeUtteranceId.set(null)
+            // 先清 live，再 stop：旧 onStop 因不在 live 中被忽略，不会掐新朗读
+            liveUtterances.clear()
             runCatching { engine.stop() }
         }
         requestAudioFocus()
-        // 关键 UUID：切勿用 messageId，否则 stop→onStop 会误清刚发起的同一条朗读
         val utteranceId = UUID.randomUUID().toString()
-        activeUtteranceId.set(utteranceId)
+        liveUtterances.add(utteranceId)
         _speakingMessageId.value = messageId
         lastError = null
-        queuedUtterances.incrementAndGet()
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
-            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC)
+            // 必须 String；putInt 在部分机型会导致无声
+            putString(
+                TextToSpeech.Engine.KEY_PARAM_STREAM,
+                AudioManager.STREAM_MUSIC.toString(),
+            )
         }
         val mode = if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
         val result = engine.speak(cleaned, mode, params, utteranceId)
         if (result != TextToSpeech.SUCCESS) {
+            liveUtterances.remove(utteranceId)
             lastError = "TTS speak 失败 ($result)"
-            queuedUtterances.updateAndGet { (it - 1).coerceAtLeast(0) }
             _speaking.value = false
-            if (queuedUtterances.get() == 0) {
+            if (liveUtterances.isEmpty()) {
                 _speakingMessageId.value = null
-                activeUtteranceId.compareAndSet(utteranceId, null)
                 abandonAudioFocus()
             }
         } else {
@@ -190,8 +238,7 @@ class TtsSpeaker(
     }
 
     fun stop() {
-        activeUtteranceId.set(null)
-        queuedUtterances.set(0)
+        liveUtterances.clear()
         runCatching { tts?.stop() }
         _speaking.value = false
         _speakingMessageId.value = null
@@ -226,15 +273,12 @@ class TtsSpeaker(
 
     private fun finishUtterance(utteranceId: String?, error: String?) {
         if (utteranceId == null) return
-        // 队列中任一句结束都减计数；不要要求必须等于 active（ADD 时 active 已是后一句）
-        val left = queuedUtterances.updateAndGet { (it - 1).coerceAtLeast(0) }
+        if (!liveUtterances.remove(utteranceId)) {
+            // 过期 stop/done（flush 清队列后），忽略
+            return
+        }
         if (error != null) lastError = error
-        if (left == 0) {
-            activeUtteranceId.compareAndSet(utteranceId, null)
-            // 若 active 已是别的 id，仍清 speaking
-            if (activeUtteranceId.get() == null || activeUtteranceId.get() == utteranceId) {
-                activeUtteranceId.set(null)
-            }
+        if (liveUtterances.isEmpty()) {
             _speaking.value = false
             _speakingMessageId.value = null
             abandonAudioFocus()
@@ -262,7 +306,6 @@ class TtsSpeaker(
             .filter { it.locale.language.equals("zh", ignoreCase = true) }
             .sortedByDescending { it.quality }
             .firstOrNull()
-        // 若全是 NOT_INSTALLED，返回 null，沿用 setLanguage 的默认声线（系统测听常走这条）
     }
 
     private fun requestAudioFocus(): Boolean {
@@ -313,7 +356,8 @@ class TtsSpeaker(
             t = t.replace(Regex("""\{[^{}]*"type"\s*:\s*"tool_call"[^{}]*\}""", RegexOption.DOT_MATCHES_ALL), "")
             t = t.replace(Regex("""\{[^{}]*"name"\s*:\s*"(alarm|calendar)\.[^"]+"[^{}]*\}""", RegexOption.DOT_MATCHES_ALL), "")
             t = t.replace(Regex("`{1,3}[^`]*`{1,3}"), " ")
-            t = t.replace(Regex("""[*#_>~\[\]()]"""), " ")
+            // 勿剥中文标点；只清 markdown 噪声
+            t = t.replace(Regex("""[*#>`]"""), " ")
             t = t.replace(Regex("""\s+"""), " ").trim()
             if (t.length > 3500) t = t.take(3500)
             return t
