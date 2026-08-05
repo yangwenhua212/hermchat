@@ -66,7 +66,7 @@ HxSync 内置四档模式，用户可按场景自由切换：
 - **识图**走支持 vision 的通道（②/④ API、Hermes HTTP、③ Bridge）；本地小模型不看图。
 - API Key 使用 `EncryptedSharedPreferences` 加密存储。
 
-上手：[CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md) · 验收：[ACCEPTANCE.md](docs/ACCEPTANCE.md) · 踩坑：[PITFALLS.md](docs/PITFALLS.md) · 安全：[SECURITY.md](docs/SECURITY.md)
+上手：[CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md) · 验收：[ACCEPTANCE.md](docs/ACCEPTANCE.md)（含[最小真机矩阵](docs/ACCEPTANCE.md#最小真机矩阵扩用户前)） · 踩坑：[PITFALLS.md](docs/PITFALLS.md) · 安全：[SECURITY.md](docs/SECURITY.md)
 
 ## 技术架构（当前）
 
@@ -190,7 +190,7 @@ A：App 本体保持 **AGPL-3.0**（含版权方附加许可说明）。商业�
 | [CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md) | 连接配置 |
 | [LOCAL_MODEL.md](docs/LOCAL_MODEL.md) | 本地模型 / 资源库 |
 | [REMOTE_BRAIN_LOCAL_TOOLS.md](docs/REMOTE_BRAIN_LOCAL_TOOLS.md) | 端侧网关 + 本机工具 |
-| [ACCEPTANCE.md](docs/ACCEPTANCE.md) | 真机验收清单 / 日记 |
+| [ACCEPTANCE.md](docs/ACCEPTANCE.md) | 真机验收清单 / 日记 / **最小真机矩阵** |
 | [PITFALLS.md](docs/PITFALLS.md) | 开发踩坑与已知 Bug（协作者首选） |
 | [SECURITY.md](docs/SECURITY.md) | 安全 |
 | [RELEASE.md](docs/RELEASE.md) | 签名与发版 |
