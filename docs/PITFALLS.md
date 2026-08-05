@@ -62,12 +62,12 @@
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
-| 点喇叭没声音 | 中文包 / utterance 竞态 / 音频属性 | 绑首选引擎；STREAM 用 String；忽略过期 onStop |
+| 点喇叭没声音 | 中文包 / utterance 竞态 / 音频属性 | 绑首选引擎；STREAM 用 String；忽略过期 onStop（≥0.1.31） |
 | 系统设置能播、App 无声 | 绑错引擎 / `putInt(STREAM)` / stop 竞态 | ≥0.1.31 加固；设置页「试听」 |
 | 自动朗读离开再进又读一遍 | `remember` 的 lastSpoken 离页丢失 | Application 级 `autoHandled` + 进页 prime（见 `.cursor/rules/auto-speak.mdc`） |
-| 自动朗读读到一半停 | QUEUE_ADD 句间 abandon 焦点；Edge 回退每句 flush；离页 `DisposableEffect.stop` | 句间不重抢焦点；回退 QUEUE_ADD；卸聊天页不停播 |
-| 已改系统朗读仍显示云端 404 | `lastError` 粘住 | 开读清错误；自动静默回退；错误 SharedFlow |
-| Hermes 已配 Edge，手机云端仍 404 | 对着 Hermes 聊天地址打 `/v1/audio/speech` | 选「Edge 小艺」直连微软 |
+| 自动朗读读到一半停 | QUEUE_ADD 句间 abandon 焦点；Edge 回退每句 flush；离页 `DisposableEffect.stop` | ✅ **0.1.33 已闭环**：句间不重抢焦点；回退 QUEUE_ADD；卸聊天页不停播 |
+| 已改系统朗读仍显示云端 404 | `lastError` 粘住 + 同步读错误 | 开读清错误；自动静默回退；错误 SharedFlow（与「选 Edge」无关） |
+| Hermes 电脑已配 Edge，手机点喇叭仍 404 | App 曾用「自定义/远端」对着 **Hermes 聊天地址**打 `/v1/audio/speech`（Hermes 不提供该口） | 手机 **设置 → 朗读** 选「Edge 小艺」（直连微软，与电脑 `tts.provider: edge` **同协议、不同进程**）。**App 没有「连接 Agent → TTS」第二套开关**；电脑 yaml 改不了手机引擎 |
 
 详见：[CONNECT_AGENTS.md](CONNECT_AGENTS.md)、[UI.md](UI.md)
 
@@ -79,7 +79,7 @@
 |------|------|------|
 | 本地模型下载 HTTP 401 | Gemma 门控、未填 HF 令牌 | 默认 Qwen/TinyLlama 免令牌；Gemma 仍要令牌 |
 | 下载中断重来 / 不能暂停 | 无 Range、删 `.part` | 暂停保留断点，可继续 |
-| 离开资源库页下载被取消 | Job 挂在 Compose `rememberCoroutineScope` | 下载挂 `LocalModelStore`（离页不取消） |
+| 离开资源库页下载被取消 | Job 挂在 Compose `rememberCoroutineScope` | ✅ **0.1.32 已闭环**：下载挂 `LocalModelStore`，离页不取消；暂停仍有效 |
 | 下载 TinyLlama/Qwen 后进聊天闪退 | 进聊天预加载 MediaPipe OOM | 懒加载；分级内存门槛；`largeHeap` |
 | TinyLlama 中文乱码 | 模型偏英文 | 目录标明；中文用 Qwen2.5 |
 | 对 TinyLlama 说英文却回中文 | App 写死简体中文 system | TinyLlama 改跟用户语言 |
@@ -113,9 +113,15 @@
 
 | 现象 / 风险 | 原因 | 处理 |
 |------|------|------|
-| 多处各自 `OkHttpClient` | Cursor 冗余 | `SharedHttpClients` 共享连接池 |
-| Bridge `close` 后仍可能有重连 Job | 只 cancel `reconnectJob` | `close` 取消根 `SupervisorJob`（实例勿复用） |
-| VoiceCloudBridge 与前台会话双连接 | 后台独立 `AIClientFactory.create` | 尚未合并；改连接逻辑时两边都要测 |
+| 多处各自 `OkHttpClient` | Cursor 冗余 | ✅ **0.1.32 已闭环**：`SharedHttpClients`（`api` / `probe` / `download` / `streaming` / `websocket`）派生复用，超时按客户端单独覆盖 |
+| Bridge `close` 后仍可能有重连 Job | 只 cancel `reconnectJob` | ✅ **0.1.32 已闭环**：`HermesBridgeClient.close()` 取消根 `SupervisorJob`（实例勿复用）；`ReplySpeaker` / `VoiceCloudBridge` turn 亦可取消 |
+| VoiceCloudBridge 与前台会话双连接 | 后台独立 `AIClientFactory.create` | **未合并（刻意留白）**；本轮只加了 collect/turn 可取消作安全绳。改连接逻辑时两边都要测；合并后须验「关后台不影响前台会话」 |
+
+### 本轮收口备注（0.1.32 / 0.1.33）
+
+- **0.1.32**：共享 OkHttp、Bridge close 根 Job、模型下载离页继续。  
+- **0.1.33**：朗读中途不停、打开抖音走 App。  
+- **下一轮**：VoiceCloudBridge 与 `AgentSessionHolder` 共用一条连接（见上表末行）。
 
 ---
 
