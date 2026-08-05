@@ -66,7 +66,7 @@ HxSync 内置四档模式，用户可按场景自由切换：
 - **识图**走支持 vision 的通道（②/④ API、Hermes HTTP、③ Bridge）；本地小模型不看图。
 - API Key 使用 `EncryptedSharedPreferences` 加密存储。
 
-上手：[CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md) · 验收：[ACCEPTANCE.md](docs/ACCEPTANCE.md)（含[最小真机矩阵](docs/ACCEPTANCE.md#最小真机矩阵扩用户前)） · 踩坑：[PITFALLS.md](docs/PITFALLS.md) · 安全：[SECURITY.md](docs/SECURITY.md)
+上手：[CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md) · 验收：[ACCEPTANCE.md](docs/ACCEPTANCE.md)（含[最小真机矩阵](docs/ACCEPTANCE.md#最小真机矩阵扩用户前)） · 踩坑：[PITFALLS.md](docs/PITFALLS.md) · 愿景边界：[VISION.md](VISION.md) · 安全：[SECURITY.md](docs/SECURITY.md)
 
 ## 技术架构（当前）
 
@@ -138,7 +138,8 @@ APK：`app/build/outputs/apk/release/app-release.apk`（**正式 release 签名*
 - **近期待做（竖切）**：一台 ROS 2 小车 + 少量 `robot.*` 工具 + 确认后执行；协议薄层接到现有架构。  
 - **更远**：端侧 VLA / 多机协同仅作探索，不绑当前版本号。  
 
-细则与「不做什么」见 [ROADMAP.md](docs/ROADMAP.md#并行探索hxsync-for-robotics具身--另开一条能力线)。
+细则与「不做什么」见 [ROADMAP.md](docs/ROADMAP.md#并行探索hxsync-for-robotics具身--另开一条能力线)。  
+总调与开闭原则见仓库根目录 [VISION.md](../VISION.md)。
 
 ### 订阅与恢复（远期 · 无账号）
 
@@ -196,6 +197,7 @@ A：App 本体保持 **AGPL-3.0**（含版权方附加许可说明）。商业�
 
 | 文档 | 说明 |
 |------|------|
+| [VISION.md](VISION.md) | **愿景与架构边界**（主线翼 / 具身并行探索） |
 | [PRODUCT.md](docs/PRODUCT.md) | 产品与四档设计 |
 | [CONNECT_AGENTS.md](docs/CONNECT_AGENTS.md) | 连接配置 |
 | [LOCAL_MODEL.md](docs/LOCAL_MODEL.md) | 本地模型 / 资源库 |

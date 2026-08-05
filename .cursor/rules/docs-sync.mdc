@@ -11,6 +11,7 @@ alwaysApply: true
 
 | 改动类型 | 优先更新 |
 |----------|----------|
+| 愿景 / 架构边界 | 仓库根目录 `VISION.md`（主线翼与具身并行；开闭原则） |
 | 四档能力 / 路由 / Agent 行为 | `docs/PRODUCT.md`、`README.md` 档位表 |
 | ① 本地模型 / 资源库 | `docs/LOCAL_MODEL.md` |
 | ④ 端侧网关 / 本机工具 | `docs/REMOTE_BRAIN_LOCAL_TOOLS.md` |
