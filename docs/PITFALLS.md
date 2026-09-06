@@ -67,6 +67,7 @@
 | 自动朗读离开再进 / 切换对话又读一遍 | 旧修复只在**进页** prime 一次；页面存活期间切换对话/Agent，新会话的存量历史最后一条从未标记 → 被当新回复读 | Application 级 `autoHandled` + 按**会话作用域**标记：首帧/切对话/重启收集器都等消息帧就绪后全量标（见 `.cursor/rules/auto-speak.mdc`）。**代码已修，待发版真机验证** |
 | 自动朗读读到一半停 | QUEUE_ADD 句间 abandon 焦点；Edge 回退每句 flush；离页 `DisposableEffect.stop` | ✅ **0.1.33 已闭环**：句间不重抢焦点；回退 QUEUE_ADD；卸聊天页不停播 |
 | Edge 朗读完气泡「停止朗读」图标滞留 | MediaPlayer 播完只 `stopRemotePlayer()`，未回收 `speakingMessageId`；system 读完的同步还被 `streamEdgeJob?.isActive` 条件抑制 | 完成/错误/异常回调在 `streamMessageId == null` 时清 `speakingMessageId`；`local.speakingMessageId` 无条件直同步（local 与 Edge 互斥）。**代码已修，待发版真机验证** |
+| 提醒只降级通知、不进系统闹钟 | 国产时钟（小米等）对 `ACTION_SET_ALARM` + `EXTRA_SKIP_UI` 静默写入不响应（有时钟 App 也失败）；原实现失败原因被吞 | 双轨：有精确闹钟权限先 SKIP_UI 静默写，失败/无权限再**不带 SKIP_UI** 弹系统界面；成功消息提示确认保存；降级消息带分诊原因（未找到时钟应用 vs 启动被拒）。**代码已修，待发版真机验证** |
 | 已改系统朗读仍显示云端 404 | `lastError` 粘住 + 同步读错误 | 开读清错误；自动静默回退；错误 SharedFlow（与「选 Edge」无关） |
 | Hermes 电脑已配 Edge，手机点喇叭仍 404 | App 曾用「自定义/远端」对着 **Hermes 聊天地址**打 `/v1/audio/speech`（Hermes 不提供该口） | 手机 **设置 → 朗读** 选「Edge 小艺」（直连微软，与电脑 `tts.provider: edge` **同协议、不同进程**）。**App 没有「连接 Agent → TTS」第二套开关**；电脑 yaml 改不了手机引擎 |
 

@@ -68,7 +68,7 @@ class AlarmTool(
                         toolCallId = call.id,
                         name = name,
                         success = true,
-                        message = "已请求系统闹钟「$message」· $whenText",
+                        message = clockSuccessMessage("请求系统闹钟", message, whenText),
                     )
                 }
             }
@@ -80,7 +80,7 @@ class AlarmTool(
                         toolCallId = call.id,
                         name = name,
                         success = true,
-                        message = "已请求系统倒计时「$message」· $whenText",
+                        message = clockSuccessMessage("请求系统倒计时", message, whenText),
                     )
                 }
             }
@@ -91,7 +91,7 @@ class AlarmTool(
                     toolCallId = call.id,
                     name = name,
                     success = true,
-                    message = "已请求系统闹钟「$message」· $whenText",
+                    message = clockSuccessMessage("请求系统闹钟", message, whenText),
                 )
             }
 
@@ -118,10 +118,13 @@ class AlarmTool(
         val base = Intent(AlarmClock.ACTION_SET_TIMER).apply {
             putExtra(AlarmClock.EXTRA_LENGTH, lengthSec)
             putExtra(AlarmClock.EXTRA_MESSAGE, message)
-            // true：尽量直接写入，避免只打开时钟 UI、用户没点保存就以为失败
-            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
         }
-        return launchClockIntent(base)
+        // 有精确闹钟权限 → 优先 SKIP_UI 静默写入；无权限/被拒 → 不带 SKIP_UI 弹系统界面
+        return if (canScheduleExact()) {
+            launchClockIntent(skipUi(base)) || launchClockIntent(base)
+        } else {
+            launchClockIntent(base) || launchClockIntent(skipUi(base))
+        }
     }
 
     private fun trySetAlarm(message: String, hour: Int, minute: Int): Boolean {
@@ -129,10 +132,39 @@ class AlarmTool(
             putExtra(AlarmClock.EXTRA_HOUR, hour)
             putExtra(AlarmClock.EXTRA_MINUTES, minute)
             putExtra(AlarmClock.EXTRA_MESSAGE, message)
-            putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             putExtra(AlarmClock.EXTRA_VIBRATE, true)
         }
-        return launchClockIntent(base)
+        return if (canScheduleExact()) {
+            launchClockIntent(skipUi(base)) || launchClockIntent(base)
+        } else {
+            launchClockIntent(base) || launchClockIntent(skipUi(base))
+        }
+    }
+
+    private fun skipUi(intent: Intent): Intent =
+        Intent(intent).apply { putExtra(AlarmClock.EXTRA_SKIP_UI, true) }
+
+    private fun canScheduleExact(): Boolean {
+        if (Build.VERSION.SDK_INT < 31) return true
+        return runCatching {
+            (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
+                .canScheduleExactAlarms()
+        }.getOrDefault(false)
+    }
+
+    /** 最近一次系统时钟唤起失败的原因（分诊用，成功时清空）。 */
+    private var lastClockFailReason: String? = null
+
+    /** 最近一次成功唤起是否带 SKIP_UI（false=弹了系统界面，需提示用户确认保存）。 */
+    private var lastOpenedSkipUi: Boolean? = null
+
+    private fun clockSuccessMessage(action: String, message: String, whenText: String): String {
+        val confirm = if (lastOpenedSkipUi == false) {
+            "（如弹出界面，请在系统时钟里确认保存）"
+        } else {
+            ""
+        }
+        return "已$action「$message」· $whenText$confirm"
     }
 
     /** 默认解析 + 常见时钟包名点名，提高国产机命中率。 */
@@ -148,13 +180,24 @@ class AlarmTool(
                 )
             }
         }
+        var noHandler = true
         for (intent in variants) {
             if (!canHandle(intent)) continue
+            noHandler = false
             val ok = runCatching {
                 context.startActivity(intent)
                 true
+            }.onFailure { e ->
+                lastClockFailReason = e.message?.take(40) ?: "启动系统时钟被拒绝"
             }.getOrDefault(false)
-            if (ok) return true
+            if (ok) {
+                lastClockFailReason = null
+                lastOpenedSkipUi = template.hasExtra(AlarmClock.EXTRA_SKIP_UI)
+                return true
+            }
+        }
+        if (noHandler) {
+            lastClockFailReason = "系统未找到可用的时钟应用（可能被停用/卸载）"
         }
         return false
     }
@@ -220,7 +263,7 @@ class AlarmTool(
                 toolCallId = toolCallId,
                 name = name,
                 success = false,
-                message = "需要「精确闹钟」权限才能用 HxSync 通知提醒；系统时钟也未能打开。请在设置里允许后再试",
+                message = "需要「精确闹钟」权限才能用 HxSync 通知提醒；系统时钟也未能打开（${lastClockFailReason ?: "未知原因"}）。请在设置里允许后再试",
             )
         }
 
@@ -245,7 +288,7 @@ class AlarmTool(
                 toolCallId = toolCallId,
                 name = name,
                 success = true,
-                message = "未能打开系统时钟，已用 HxSync 通知提醒「$message」· " +
+                message = "未能打开系统时钟（${lastClockFailReason ?: "未知原因"}），已用 HxSync 通知提醒「$message」· " +
                     "${ToolCallParser.formatTime(triggerAt)}（不会出现在系统闹钟列表）",
             )
         } catch (e: SecurityException) {
