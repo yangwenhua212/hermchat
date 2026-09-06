@@ -112,7 +112,7 @@ AI 请求 → 风险检测 → 用户确认 → 执行
 | Human Confirmation (确认卡) | ✅ 已完成 |
 | MCP Memory | ✅ 已完成 |
 | 本地模型支持 (资源库下载) | ✅ 已完成 |
-| **Agent Bridge（③ 调用 ④）** | 🚧 开发中（v0.2.0） |
+| **Agent Bridge（③ 调用 ④）** | 🚧 v0.2.0 进行中：客户端入站 `tool_call` 帧 + 确认卡来源标注 + `tool_result` 回传已通（待真机）；demo 见 `scripts/demo_bridge.py` |
 | 多设备 Gateway | 📋 规划中 |
 | Agent Marketplace | 📋 规划中 |
 ---

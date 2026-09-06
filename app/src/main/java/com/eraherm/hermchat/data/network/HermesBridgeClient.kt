@@ -1,6 +1,7 @@
 package com.eraherm.hermchat.data.network
 
 import com.eraherm.hermchat.data.model.ToolCall
+import com.eraherm.hermchat.data.model.ToolOrigin
 import com.eraherm.hermchat.tools.ToolCallParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -407,7 +408,7 @@ class HermesBridgeClient(
     private fun dispatchToolCall(root: JSONObject, params: JSONObject) {
         val name = params.optString("name").ifEmpty { root.optString("name") }
         if (name.isBlank()) return
-        val call = ToolCallParser.parse(params.toString()) ?: return
+        val call = ToolCallParser.parse(params.toString())?.copy(origin = ToolOrigin.REMOTE) ?: return
         _toolRequests.tryEmit(call)
         // 若正处于某轮发送中（Agent 在等结果回灌），同时转给该流
         val id = correlationId(root, params)

@@ -64,11 +64,28 @@ Agent 可在回复中夹带（或单独发送）JSON：
 }
 ```
 
-App 弹出确认卡；用户点「允许」后执行，并回传：
+> **v0.2.0**：App 已支持**独立 `tool_call` 帧**入站（会话级，随时可下发，不依赖某轮回复流）。收到后弹确认卡（标注「🌐 远程 AI 请求 · Agent名」），用户点「允许」后执行，并回传：
 
 ```json
 {"type":"tool_result","id":"uuid","ok":true,"content":"已创建日程…"}
 ```
+
+`tool_result` 会唤醒等待中的 Agent 流程（demo 见 `scripts/demo_bridge.py`，跑起来对手机说「提醒我 10 分钟后喝水」即可端到端验证）。
+
+**App 当前可被远程调用的工具**（`need_confirm` 按风险分级，写操作一律弹确认卡）：
+
+| 工具 | 用途 | 典型 arguments |
+|------|------|----------------|
+| `alarm.create` | 系统闹钟/倒计时 | `message`、`triggerMs`（毫秒） |
+| `calendar.create` | 写系统日历 | `title`、`beginMs`、`endMs` |
+| `web.search` | 联网搜索 | `query` |
+| `app.open` | 打开应用 | `app`（如 `wechat`/`douyin`） |
+| `phone.dial` | 拨号 | `number` |
+| `clipboard.read` | 读剪贴板（只读静默） | — |
+| `maps.search` | 地图搜索 | `query` |
+| `email.compose` | 写邮件 | `to`、`subject`、`body` |
+
+未知工具 / 未授权写操作：手机端一律拒绝并回传失败，不会静默执行。
 
 无结构化 `tool_call` 时，客户端也会把「明天下午3点提醒我开会」这类话术解析成待确认的日历工具（本地兜底）。
 

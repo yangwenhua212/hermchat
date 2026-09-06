@@ -87,6 +87,7 @@ import com.eraherm.hermchat.data.local.ShortcutAction
 import com.eraherm.hermchat.data.local.ShortcutDef
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.data.model.Message
+import com.eraherm.hermchat.data.model.ToolOrigin
 import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.data.network.AttachmentSupport
 import com.eraherm.hermchat.service.VoiceEvent
@@ -743,6 +744,11 @@ fun ChatScreen(
         ConfirmCard(
             toolCall = call,
             busy = uiState.toolExecuting,
+            sourceText = if (call.origin == ToolOrigin.REMOTE) {
+                "🌐 远程 AI 请求 · ${uiState.agentName ?: "Agent"}"
+            } else {
+                null
+            },
             onAllow = {
                 val permissions = viewModel.permissionsForPendingTool()
                 if (permissions.isEmpty()) {
