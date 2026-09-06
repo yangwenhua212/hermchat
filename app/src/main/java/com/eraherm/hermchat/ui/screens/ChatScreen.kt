@@ -86,6 +86,7 @@ import com.eraherm.hermchat.data.local.InputMode
 import com.eraherm.hermchat.data.local.ShortcutAction
 import com.eraherm.hermchat.data.local.ShortcutDef
 import com.eraherm.hermchat.data.model.AgentProfile
+import com.eraherm.hermchat.data.model.Message
 import com.eraherm.hermchat.data.model.MessageRole
 import com.eraherm.hermchat.data.network.AttachmentSupport
 import com.eraherm.hermchat.service.VoiceEvent
@@ -374,25 +375,40 @@ fun ChatScreen(
         if (chatPrefs.autoSpeakReplies) {
             launch {
                 var streamId: String? = null
-                var primed = false
+                // 已做过「存量标记」的会话作用域。首帧 / 切换对话 / 收集器重启都会触发
+                // 重新标记，保证任何「历史存量」助手消息都不会被当成新回复自动朗读，
+                // 只有当前会话期间新产生的回复才会开口。
+                var markedScope: String? = null
+                var scopeMarkPending = true
                 snapshotFlow {
                     val last = uiState.messages.lastOrNull()
-                    Triple(
-                        uiState.isStreaming,
-                        last?.takeIf { it.role == MessageRole.ASSISTANT },
-                        last?.content.orEmpty(),
+                    SpeakObserve(
+                        conversationId = uiState.activeConversationId,
+                        streaming = uiState.isStreaming,
+                        lastAssistant = last?.takeIf { it.role == MessageRole.ASSISTANT },
+                        content = last?.content.orEmpty(),
+                        messages = uiState.messages,
                     )
-                }.distinctUntilChanged().collect { (streaming, last, content) ->
-                    // 进页/重启收集器：已有助手气泡一律视为已读过，禁止「回来又自动读一遍」
-                    if (!primed) {
-                        val liveId = if (streaming) last?.id else null
-                        uiState.messages
-                            .asSequence()
-                            .filter { it.role == MessageRole.ASSISTANT }
-                            .filter { !it.id.startsWith("welcome-") }
-                            .filter { it.id != liveId }
-                            .forEach { app.replySpeaker.noteAutoHandled(it.id) }
-                        primed = true
+                }.distinctUntilChanged().collect { snap ->
+                    val streaming = snap.streaming
+                    val last = snap.lastAssistant
+                    val content = snap.content
+                    // 进入新会话作用域：等消息帧就绪（列表为空或已属于该会话，
+                    // 避免 combine 错配帧把上一会话的消息算进来）后，把存量助手消息视为已读过。
+                    if (scopeMarkPending || markedScope != snap.conversationId) {
+                        val msgs = snap.messages
+                        val frameReady = msgs.isEmpty() ||
+                            msgs.any { it.conversationId == snap.conversationId }
+                        if (frameReady) {
+                            val liveId = if (streaming) last?.id else null
+                            msgs.asSequence()
+                                .filter { it.role == MessageRole.ASSISTANT }
+                                .filter { !it.id.startsWith("welcome-") }
+                                .filter { it.id != liveId }
+                                .forEach { app.replySpeaker.noteAutoHandled(it.id) }
+                            markedScope = snap.conversationId
+                            scopeMarkPending = false
+                        }
                     }
                     if (streaming && last != null &&
                         content.isNotBlank() &&
@@ -868,3 +884,16 @@ private fun DoubaoComposer(
         }
     }
 }
+
+/**
+ * 自动朗读收集器的观察快照。
+ * 把会话 id 与整份消息列表纳入 key：切换对话/Agent 后消息整体替换，
+ * 必须触发一次「存量标记」，避免历史最后一条被当成新回复重读。
+ */
+private data class SpeakObserve(
+    val conversationId: String?,
+    val streaming: Boolean,
+    val lastAssistant: Message?,
+    val content: String,
+    val messages: List<Message>,
+)

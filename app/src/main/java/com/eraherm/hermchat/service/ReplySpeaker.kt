@@ -76,11 +76,11 @@ class ReplySpeaker(
     private var streamEdgeJob: Job? = null
 
     init {
+        // local 与 Edge/远程播放天然互斥（统一入口 speak/beginStreamSpeak 会先停另一方），
+        // 直接同步即可：system TTS 读完 local 会清空，这里跟着清，气泡停止图标不滞留。
         scope.launch {
             local.speakingMessageId.collect { id ->
-                if (mediaPlayer == null && streamEdgeJob?.isActive != true) {
-                    _speakingMessageId.value = id
-                }
+                _speakingMessageId.value = id
             }
         }
     }
@@ -435,14 +435,19 @@ class ReplySpeaker(
                 player.setDataSource(file.absolutePath)
                 player.setOnCompletionListener {
                     stopRemotePlayer()
-                    if (_speakingMessageId.value == messageId) {
-                        // 句级队列可能还有下一句
+                    // 非流式整读 / 流式末句（streamMessageId 已清）：播完即收回播放态，
+                    // 否则气泡「停止朗读」图标会滞留到下一次朗读
+                    if (streamMessageId == null && _speakingMessageId.value == messageId) {
+                        _speakingMessageId.value = null
                     }
                     done.complete(Unit)
                 }
                 player.setOnErrorListener { _, _, _ ->
                     emitError("音频播放失败")
                     stopRemotePlayer()
+                    if (_speakingMessageId.value == messageId) {
+                        _speakingMessageId.value = null
+                    }
                     done.complete(Unit)
                     true
                 }
@@ -452,6 +457,9 @@ class ReplySpeaker(
             } catch (e: Exception) {
                 emitError(UserFacingError.of(e, "音频播放失败"))
                 stopRemotePlayer()
+                if (_speakingMessageId.value == messageId) {
+                    _speakingMessageId.value = null
+                }
                 done.complete(Unit)
             }
         }

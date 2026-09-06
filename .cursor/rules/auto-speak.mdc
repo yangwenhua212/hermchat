@@ -16,11 +16,12 @@ alwaysApply: true
 
 ## 实现要求
 
-1. 进页或重启自动朗读收集器时先 **prime**：把当前已有助手消息标为 `autoHandled`（正在流式生成的那条除外）。
+1. 自动朗读收集器按**会话作用域**做存量标记（不只进页一次）：首帧、切换对话/Agent、重启收集器时，等消息帧就绪（列表为空或已属于当前 `conversationId`，防 combine 错配帧）后，把该会话已有助手消息标为 `autoHandled`（正在流式生成的那条除外）。这样**任何历史存量都不会被当新回复朗读**，只有当前会话期间新产生的回复才开口。
 2. 已 `autoHandled` 的 `messageId` **不得**再 `beginStreamSpeak` / 自动 `speak`。
 3. `autoHandled` 必须挂在 **Application 级**（如 `ReplySpeaker`），不能只用 Compose `remember`（离页即丢会导致回页重读）。
 4. 流式结束或非流式自动读完后立刻 `noteAutoHandled`。
-5. 改自动朗读逻辑时同步更新 `docs/UI.md`、`docs/CONNECT_AGENTS.md` / `docs/ACCEPTANCE.md` 相关句。
+5. **播放态回收**：任意引擎读完/失败/停止后，若没有排队内容（`streamMessageId == null`），必须把 `speakingMessageId` 置 `null`——否则气泡「停止朗读」图标滞留。Edge/远程走 `MediaPlayer` 完成回调清，system TTS 由 local 状态同步清（`ReplySpeaker` 对 `local.speakingMessageId` 直接同步，勿加抑制条件，local 与 Edge 播放天然互斥）。
+6. 改自动朗读逻辑时同步更新 `docs/UI.md`、`docs/CONNECT_AGENTS.md` / `docs/ACCEPTANCE.md` 相关句。
 
 ## 反例
 

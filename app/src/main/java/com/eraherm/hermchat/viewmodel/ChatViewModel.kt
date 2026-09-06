@@ -41,6 +41,7 @@ import com.eraherm.hermchat.tools.ToolRegistry
 import com.eraherm.hermchat.tools.WebSearchTool
 import com.eraherm.hermchat.tools.search.SearchResultUrls
 import com.eraherm.hermchat.util.UserFacingError
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -51,6 +52,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -186,7 +188,8 @@ class ChatViewModel(
             (isPdfAttach || ChatAttachmentStore.isImageMime(mime))
         val isTextAttach = hasAttach &&
             !isPdfAttach &&
-            ChatAttachmentStore.isTextMime(mime, nameLower)
+            (ChatAttachmentStore.isTextMime(mime, nameLower) ||
+                ChatAttachmentStore.isOfficeFile(mime, nameLower))
         val attachKind = when {
             isTextAttach -> AttachmentKind.TEXT
             isPdfAttach -> AttachmentKind.PDF
@@ -291,10 +294,13 @@ class ChatViewModel(
 
                 val imageDataUrl = if (isVisionAttach) {
                     // PDF 首页落盘为 JPEG；元数据 mime 仍是 application/pdf
-                    store.toDataUrl(
-                        path = attachmentPath!!,
-                        mime = if (isPdfAttach) "image/jpeg" else mime.ifBlank { "image/jpeg" },
-                    )
+                    // 大图 base64 编码挪 IO 线程，避免卡主线程
+                    withContext(Dispatchers.IO) {
+                        store.toDataUrl(
+                            path = attachmentPath!!,
+                            mime = if (isPdfAttach) "image/jpeg" else mime.ifBlank { "image/jpeg" },
+                        )
+                    }
                 } else {
                     null
                 }
