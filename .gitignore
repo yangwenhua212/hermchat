@@ -73,3 +73,7 @@ dist/
 .gradle-home/
 
 tmp/
+
+# Python
+__pycache__/
+*.pyc
