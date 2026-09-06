@@ -1,5 +1,7 @@
 package com.eraherm.hermchat.data.network
 
+import com.eraherm.hermchat.data.model.ToolCall
+import com.eraherm.hermchat.tools.ToolCallParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -7,8 +9,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.isActive
@@ -48,6 +53,10 @@ class HermesBridgeClient(
 
     private val _connected = MutableStateFlow(false)
     override val connected: StateFlow<Boolean> = _connected.asStateFlow()
+
+    /** 会话级入站工具请求：远程 Agent 随时可能下发（不依赖某轮发送流）。 */
+    private val _toolRequests = MutableSharedFlow<ToolCall>(extraBufferCapacity = 8)
+    val toolRequests: SharedFlow<ToolCall> = _toolRequests.asSharedFlow()
 
     private val mutex = Mutex()
     private var webSocket: WebSocket? = null
@@ -387,6 +396,25 @@ class HermesBridgeClient(
                     .ifEmpty { "Agent 错误" }
                 dispatchError(json, params, message)
             }
+
+            // 远程 Agent 独立下发工具请求帧（BRIDGE_PROTOCOL 工具调用节）
+            method == "tool_call" || method.endsWith("tool_call") -> {
+                dispatchToolCall(json, params)
+            }
+        }
+    }
+
+    private fun dispatchToolCall(root: JSONObject, params: JSONObject) {
+        val name = params.optString("name").ifEmpty { root.optString("name") }
+        if (name.isBlank()) return
+        val call = ToolCallParser.parse(params.toString()) ?: return
+        _toolRequests.tryEmit(call)
+        // 若正处于某轮发送中（Agent 在等结果回灌），同时转给该流
+        val id = correlationId(root, params)
+        if (id != null) {
+            streamHandlers[id]?.invoke(BridgeStreamEvent.ToolRequest(call))
+        } else if (streamHandlers.size == 1) {
+            streamHandlers.values.first().invoke(BridgeStreamEvent.ToolRequest(call))
         }
     }
 
@@ -461,6 +489,8 @@ class HermesBridgeClient(
         data class Delta(val text: String) : BridgeStreamEvent
         data object Done : BridgeStreamEvent
         data class Error(val message: String) : BridgeStreamEvent
+        /** 远程 Agent 下发的工具请求（独立 tool_call 帧）。 */
+        data class ToolRequest(val call: ToolCall) : BridgeStreamEvent
     }
 
     companion object {

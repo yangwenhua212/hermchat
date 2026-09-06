@@ -20,6 +20,10 @@ class AgentSessionHolder {
     var agentKind: AgentKind? = null
         private set
 
+    /** 新 client attach 后通知（v0.2.0 Bridge：订阅远程工具请求等）。 */
+    @Volatile
+    var onClientAttached: ((StreamingChatClient) -> Unit)? = null
+
     fun matches(agent: AgentProfile): Boolean =
         client != null && agentId == agent.id
 
@@ -27,6 +31,7 @@ class AgentSessionHolder {
         client = created
         agentId = agent.id
         agentKind = agent.kind
+        onClientAttached?.invoke(created)
     }
 
     fun release(close: Boolean = true) {

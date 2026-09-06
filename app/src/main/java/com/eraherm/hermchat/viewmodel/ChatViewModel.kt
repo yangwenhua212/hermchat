@@ -26,6 +26,7 @@ import com.eraherm.hermchat.data.network.HybridGatewayClient
 import com.eraherm.hermchat.data.network.StreamFirstChunk
 import com.eraherm.hermchat.data.network.collectWithFirstChunkTimeout
 import com.eraherm.hermchat.data.network.paceForDisplay
+import com.eraherm.hermchat.data.network.HermesBridgeClient
 import com.eraherm.hermchat.data.network.StreamingChatClient
 import com.eraherm.hermchat.service.BridgeKeepAliveService
 import com.eraherm.hermchat.service.VoiceEvent
@@ -158,6 +159,10 @@ class ChatViewModel(
 
     init {
         (appContext as? HermChatApp)?.voiceCloudBridge?.bindForegroundSender(voiceSendHandler)
+        // v0.2.0 Agent Bridge：订阅远程 Agent 下发的独立 tool_call 帧（client 更换自动重挂）
+        // 用方法引用 lambda 而非类属性，避免 init 先于属性初始化
+        sessions.onClientAttached = { c -> watchBridgeTools(c) }
+        watchBridgeTools(sessions.client)
         agentJob = viewModelScope.launch {
             combine(agentStore.agents, agentStore.currentId) { agents, currentId ->
                 agents.find { it.id == currentId } ?: agents.firstOrNull()
@@ -584,6 +589,61 @@ class ChatViewModel(
         }
     }
 
+    // ──────────────────────────────────────────────
+    // v0.2.0 Agent Bridge：远程 Agent 下发手机工具
+    // ──────────────────────────────────────────────
+    private var toolRequestJob: Job? = null
+
+    private fun watchBridgeTools(client: StreamingChatClient?) {
+        val bridge = client as? HermesBridgeClient ?: return
+        toolRequestJob?.cancel()
+        toolRequestJob = viewModelScope.launch {
+            bridge.toolRequests.collect { call ->
+                handleRemoteToolRequest(bridge, call)
+            }
+        }
+    }
+
+    /**
+     * 远程 tool_call 帧：确认卡 → 执行 → tool_result 回传。
+     * 结果只回远程 Agent（下一步由 Agent 决定），不触发本地 ④ Loop 续跑。
+     */
+    private suspend fun handleRemoteToolRequest(bridge: HermesBridgeClient, call: ToolCall) {
+        if (busy.value.isSending || busy.value.isStreaming || busy.value.toolExecuting) {
+            runCatching { bridge.sendToolResult(call.id, false, "手机正忙，请稍后再试") }
+            return
+        }
+        // 已有待确认操作（本地 Loop 或上一个远程请求）：拒绝，避免确认卡打架
+        if (toolDecisionCont != null || pendingToolCall.value != null) {
+            runCatching { bridge.sendToolResult(call.id, false, "有待确认的操作，请稍后再试") }
+            return
+        }
+        val risk = toolRegistry.riskFor(call.name)
+        val allowed = if (risk.requiresUserConfirm) awaitToolConfirmation(call) else true
+        if (!allowed) {
+            runCatching { bridge.sendToolResult(call.id, false, "user_denied") }
+            return
+        }
+        pendingToolCall.value = null
+        busy.update { it.copy(toolExecuting = true, error = null) }
+        val result = toolRegistry.execute(call.copy(needConfirm = true))
+        busy.update { it.copy(toolExecuting = false) }
+        messageRepository.save(
+            Message(
+                id = UUID.randomUUID().toString(),
+                role = MessageRole.SYSTEM,
+                content = if (result.success) {
+                    "✅ ${result.message}"
+                } else {
+                    "⚠️ 远程操作失败：${result.message}"
+                },
+                providerLabel = "bridge",
+                createdAt = System.currentTimeMillis(),
+            ),
+        )
+        runCatching { bridge.sendToolResult(result.toolCallId, result.success, result.message) }
+    }
+
     fun clearError() {
         busy.update {
             it.copy(
@@ -703,6 +763,9 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        // 旧 VM 销毁即摘钩；新 VM init 会重挂（Activity 重建顺序保证不误伤）
+        sessions.onClientAttached = null
+        toolRequestJob?.cancel()
         (appContext as? HermChatApp)?.voiceCloudBridge?.unbindForegroundSender(voiceSendHandler)
         sendJob?.cancel()
         agentJob?.cancel()
