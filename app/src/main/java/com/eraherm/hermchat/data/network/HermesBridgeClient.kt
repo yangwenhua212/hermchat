@@ -98,6 +98,8 @@ class HermesBridgeClient(
                 is BridgeStreamEvent.Delta -> trySend(event.text)
                 is BridgeStreamEvent.Done -> close()
                 is BridgeStreamEvent.Error -> close(Exception(event.message))
+                // 工具请求已通过 toolRequests SharedFlow 全局分发（ChatViewModel 订阅），流层无需动作
+                is BridgeStreamEvent.ToolRequest -> Unit
             }
         }
         streamHandlers[requestId] = handler
