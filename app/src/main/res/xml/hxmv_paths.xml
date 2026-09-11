@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- HxMV 成品先下到缓存再交给系统播放器；只暴露这一个目录 -->
+    <cache-path name="hxmv" path="hxmv/" />
+</paths>

@@ -14,6 +14,7 @@ import com.eraherm.hermchat.ui.screens.AboutScreen
 import com.eraherm.hermchat.ui.screens.AgentSetupScreen
 import com.eraherm.hermchat.ui.screens.ChatPrefsScreen
 import com.eraherm.hermchat.ui.screens.ChatScreen
+import com.eraherm.hermchat.ui.screens.HxmvScreen
 import com.eraherm.hermchat.ui.screens.LibraryScreen
 import com.eraherm.hermchat.ui.screens.SetupAssistScreen
 import com.eraherm.hermchat.ui.screens.WakeWordSetupScreen
@@ -26,6 +27,7 @@ private sealed interface AppDestination {
     data object ChatPrefs : AppDestination
     data object Library : AppDestination
     data object About : AppDestination
+    data object Hxmv : AppDestination
 }
 
 @Composable
@@ -105,6 +107,13 @@ fun HermChatAppRoot() {
                 onBack = { destination = AppDestination.Chat },
                 onOpenAbout = { destination = AppDestination.About },
                 onOpenLibrary = { destination = AppDestination.Library },
+                onOpenHxmv = { destination = AppDestination.Hxmv },
+            )
+        }
+
+        AppDestination.Hxmv -> {
+            HxmvScreen(
+                onBack = { destination = AppDestination.ChatPrefs },
             )
         }
 

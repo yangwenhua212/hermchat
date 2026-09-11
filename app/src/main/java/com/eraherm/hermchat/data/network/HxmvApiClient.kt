@@ -1,0 +1,235 @@
+package com.eraherm.hermchat.data.network
+
+import com.eraherm.hermchat.data.local.HxmvConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+
+/** 实例自检（GET /api/health）：客户端"发现 HxMV"就看这一个接口。 */
+data class HxmvHealth(
+    val version: String,
+    val server: String,
+    val ffmpeg: Boolean,
+    val providers: Map<String, Boolean>,
+    val projects: List<String>,
+    val needsToken: Boolean,
+)
+
+/** 一个可下载的成品。url 由客户端自己按 base+runId+name 拼，不在推送里夹带凭据。 */
+data class HxmvArtifact(
+    val name: String,
+    val kind: String,
+    val size: Long,
+    val url: String,
+) {
+    val label: String
+        get() = when (kind) {
+            "final" -> "成片"
+            "asset" -> "参考图"
+            else -> "镜头"
+        }
+}
+
+/** 事件（服务端 SSE 与历史回放同构）。 */
+data class HxmvEvent(
+    val type: String,
+    val action: String? = null,
+    val taskState: String? = null,
+    val detail: String? = null,
+    val attempts: Int? = null,
+    val costUnits: Double? = null,
+    val artifacts: List<HxmvArtifact> = emptyList(),
+    val reused: Int? = null,
+    val text: String? = null,
+)
+
+class HxmvUnauthorizedException : IOException("令牌不对或未设置")
+
+/**
+ * HxMV 客户端。远端与本机（Termux）走同一套接口，只有 baseUrl 不同。
+ *
+ * 接口（见 HxMV 仓库 docs/CLIENT.md）：
+ *   GET  /api/health                       发现实例 + 能力
+ *   POST /api/run {goal,provider,project}  提交生产 → run_id
+ *   GET  /api/stream?run_id=&token=        SSE 实时事件
+ *   GET  /api/artifact?run_id=&name=       取产物
+ */
+class HxmvApiClient(
+    private val client: OkHttpClient = SharedHttpClients.streamingApi(),
+    private val io: OkHttpClient = SharedHttpClients.api,
+) {
+    suspend fun health(config: HxmvConfig): HxmvHealth {
+        val json = JSONObject(get(config, "/api/health"))
+        val providers = mutableMapOf<String, Boolean>()
+        json.optJSONObject("providers")?.let { obj ->
+            obj.keys().forEach { key -> providers[key] = obj.optJSONObject(key)?.optBoolean("ready") == true }
+        }
+        val projects = mutableListOf<String>()
+        json.optJSONArray("projects")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                arr.optJSONObject(i)?.optString("id")?.takeIf { it.isNotBlank() }?.let { projects += it }
+            }
+        }
+        return HxmvHealth(
+            version = json.optString("version"),
+            server = json.optString("server"),
+            ffmpeg = json.optBoolean("ffmpeg"),
+            providers = providers,
+            projects = projects,
+            needsToken = json.optBoolean("needs_token"),
+        )
+    }
+
+    /** 不改动本地配置地探一个地址（用于"检测连接"和本机模式探测）。 */
+    suspend fun healthAt(baseUrl: String, token: String): HxmvHealth =
+        health(HxmvConfig(baseUrl = baseUrl.trim().trimEnd('/'), token = token.trim()))
+
+    suspend fun submit(config: HxmvConfig, goal: String, project: String?): String {
+        val body = JSONObject()
+            .put("goal", goal)
+            .put("provider", config.provider.wire)
+            .put("project", project.orEmpty())
+        val json = JSONObject(post(config, "/api/run", body.toString()))
+        return json.optString("run_id").takeIf { it.isNotBlank() }
+            ?: throw IOException("提交未返回任务号")
+    }
+
+    /** SSE：先回放已落盘事件，再实时推送；连接结束即 flow 结束。 */
+    fun stream(config: HxmvConfig, runId: String): Flow<HxmvEvent> = callbackFlow {
+        val req = Request.Builder()
+            .url(withToken("${config.baseUrl}/api/stream?run_id=$runId", config.token))
+            .header("Accept", "text/event-stream")
+            .get()
+            .build()
+        val call = client.newCall(req)
+        val reader = launch(Dispatchers.IO) {
+            try {
+                call.execute().use { response ->
+                    if (response.code == 401) throw HxmvUnauthorizedException()
+                    if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                    val source = response.body?.source() ?: throw IOException("空响应")
+                    while (!source.exhausted()) {
+                        val line = source.readUtf8Line() ?: break
+                        if (!line.startsWith("data:")) continue
+                        val payload = line.removePrefix("data:").trim()
+                        if (payload.isEmpty()) continue
+                        runCatching { parseEvent(JSONObject(payload), runId, config) }
+                            .getOrNull()?.let { trySend(it) }
+                    }
+                }
+                close()
+            } catch (e: Exception) {
+                close(e)
+            }
+        }
+        awaitClose {
+            call.cancel()
+            reader.cancel()
+        }
+    }
+
+    suspend fun download(config: HxmvConfig, artifact: HxmvArtifact, dest: File) {
+        val req = Request.Builder().url(withToken(artifact.url, config.token)).get().build()
+        val call = io.newBuilder().readTimeout(5, TimeUnit.MINUTES).build().newCall(req)
+        call.execute().use { response ->
+            if (response.code == 401) throw HxmvUnauthorizedException()
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            val body = response.body ?: throw IOException("空响应")
+            dest.parentFile?.mkdirs()
+            dest.outputStream().use { out -> body.byteStream().copyTo(out) }
+        }
+    }
+
+    fun artifactUrl(config: HxmvConfig, runId: String, name: String): String =
+        "${config.baseUrl}/api/artifact?run_id=$runId&name=$name"
+
+    private fun withToken(url: String, token: String): String {
+        if (token.isBlank()) return url
+        val sep = if (url.contains('?')) "&" else "?"
+        return "$url$sep" + "token=${java.net.URLEncoder.encode(token, "UTF-8")}"
+    }
+
+    private fun parseEvent(json: JSONObject, runId: String, config: HxmvConfig): HxmvEvent? {
+        val type = json.optString("type")
+        if (type.isBlank()) return null
+        val artifacts = mutableListOf<HxmvArtifact>()
+        json.optJSONArray("artifacts")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val name = obj.optString("name")
+                if (name.isBlank()) continue
+                artifacts += HxmvArtifact(
+                    name = name,
+                    kind = obj.optString("kind", "shot"),
+                    size = obj.optLong("size"),
+                    url = obj.optString("url").takeIf { it.isNotBlank() }
+                        ?: artifactUrl(config, runId, name),
+                )
+            }
+        }
+        return HxmvEvent(
+            type = type,
+            action = json.optString("action").takeIf { it.isNotBlank() },
+            taskState = json.optString("decision").takeIf { it.isNotBlank() },
+            detail = metricsLine(json),
+            attempts = json.optInt("attempts").takeIf { json.has("attempts") },
+            costUnits = json.optDouble("cost_units").takeIf { json.has("cost_units") },
+            artifacts = artifacts,
+            reused = json.optInt("n_reused").takeIf { json.has("n_reused") },
+            text = json.optString("text").takeIf { it.isNotBlank() },
+        )
+    }
+
+    /** 一行实测指标：分辨率 · 时长 · 一致度（不堆技术细节）。 */
+    private fun metricsLine(json: JSONObject): String? {
+        val measured = json.optJSONObject("measured")?.optJSONObject("metrics") ?: return null
+        val parts = mutableListOf<String>()
+        val w = measured.optInt("width")
+        val h = measured.optInt("height")
+        if (w > 0 && h > 0) parts += "${w}x$h"
+        measured.optDouble("duration").takeIf { it > 0 }?.let { parts += String.format("%.1f秒", it) }
+        measured.optDouble("consistency").takeIf { it > 0 }?.let {
+            parts += String.format("一致度%.2f", it)
+        }
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    }
+
+    private fun get(config: HxmvConfig, path: String): String {
+        val req = Request.Builder()
+            .url(withToken(config.baseUrl + path, config.token))
+            .get()
+            .build()
+        return io.newCall(req).execute().use { response ->
+            if (response.code == 401) throw HxmvUnauthorizedException()
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            response.body?.string().orEmpty()
+        }
+    }
+
+    private fun post(config: HxmvConfig, path: String, body: String): String {
+        val req = Request.Builder()
+            .url(config.baseUrl + path)
+            .header("X-Hxmv-Token", config.token)
+            .post(body.toRequestBody(JSON))
+            .build()
+        return io.newCall(req).execute().use { response ->
+            if (response.code == 401) throw HxmvUnauthorizedException()
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            response.body?.string().orEmpty()
+        }
+    }
+
+    private companion object {
+        val JSON = "application/json; charset=utf-8".toMediaType()
+    }
+}

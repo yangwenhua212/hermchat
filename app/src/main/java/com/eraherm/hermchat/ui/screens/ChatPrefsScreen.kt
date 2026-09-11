@@ -84,9 +84,11 @@ fun ChatPrefsScreen(
     onBack: () -> Unit,
     onOpenAbout: () -> Unit = {},
     onOpenLibrary: () -> Unit = {},
+    onOpenHxmv: () -> Unit = {},
 ) {
     val app = LocalContext.current.applicationContext as HermChatApp
     val chatPrefs by app.chatPrefsStore.prefsFlow.collectAsStateWithLifecycle()
+    val hxmvConfig by app.hxmvPrefsStore.config.collectAsStateWithLifecycle()
     var folder by remember { mutableStateOf<PrefsFolder>(PrefsFolder.Root) }
 
     BackHandler {
@@ -128,6 +130,12 @@ fun ChatPrefsScreen(
                             onOpenSearch = { folder = PrefsFolder.Search },
                             onOpenLibrary = onOpenLibrary,
                             onOpenAbout = onOpenAbout,
+                            onOpenHxmv = onOpenHxmv,
+                            hxmvSummary = buildString {
+                                append(hxmvConfig.baseUrl.removePrefix("https://").removePrefix("http://"))
+                                append(" · ")
+                                append(hxmvConfig.provider.label)
+                            },
                         )
                         PrefsFolder.Input -> PrefsInputDetail(
                             prefs = chatPrefs,
@@ -195,7 +203,14 @@ private fun PrefsRoot(
     onOpenSearch: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenHxmv: () -> Unit,
+    hxmvSummary: String,
 ) {
+    PrefsFolderRow(
+        title = "HxMV 内容生产",
+        summary = hxmvSummary,
+        onClick = onOpenHxmv,
+    )
     PrefsFolderRow(
         title = "朗读",
         summary = buildString {

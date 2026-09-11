@@ -5,6 +5,7 @@ import com.eraherm.hermchat.data.local.AgentStore
 import com.eraherm.hermchat.data.local.AppDatabase
 import com.eraherm.hermchat.data.local.ChatPrefsStore
 import com.eraherm.hermchat.data.local.ConversationRepository
+import com.eraherm.hermchat.data.local.HxmvPrefsStore
 import com.eraherm.hermchat.data.local.MessageRepository
 import com.eraherm.hermchat.data.local.LocalModelStore
 import com.eraherm.hermchat.data.local.WakeSettingsStore
@@ -28,6 +29,7 @@ class HermChatApp : Application() {
     }
     val agentStore: AgentStore by lazy { AgentStore(this) }
     val wakeSettingsStore: WakeSettingsStore by lazy { WakeSettingsStore(this) }
+    val hxmvPrefsStore: HxmvPrefsStore by lazy { HxmvPrefsStore(this) }
     val chatPrefsStore: ChatPrefsStore by lazy { ChatPrefsStore(this) }
     val memoryStore: LocalMemoryStore by lazy {
         LocalMemoryStore(database.localMemoryDao(), chatPrefsStore)
