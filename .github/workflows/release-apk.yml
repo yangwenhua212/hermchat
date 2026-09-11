@@ -1,0 +1,76 @@
+name: Publish Release APK
+
+# 用法：把签名好的 APK 放到 HxMV 实例的分发目录（~/.hxmv/dl/），
+# 然后在仓库打 tag 并推送：
+#     git tag v0.1.35 && git push origin v0.1.35
+# 流程会自动从 HxMV 实例取包、校验、发 Release 并附上安装包。
+#
+# 为什么这么绕：Release 资产必须用 token 上传，而构建机（OVH）上不放 token；
+# 走 Actions 就能用仓库自带的 GITHUB_TOKEN，签名密钥也始终不进仓库。
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "版本 tag（形如 v0.1.35）"
+        required: true
+      apk_url:
+        description: "APK 下载地址（不填则按 tag 从 HxMV 实例取）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 解析版本
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: 取安装包
+        env:
+          VER: ${{ steps.ver.outputs.ver }}
+          URL_OVERRIDE: ${{ github.event.inputs.apk_url }}
+        run: |
+          set -e
+          URL="${URL_OVERRIDE:-https://hxmv.eraherm.com/dl/HxSync-${VER}.apk}"
+          ASSET="HxSync-${VER}-app-release.apk"
+          echo "来源：$URL"
+          curl -fsSL --retry 3 --max-time 600 -o "$ASSET" "$URL"
+          SIZE=$(stat -c%s "$ASSET")
+          echo "大小：$SIZE 字节"
+          if [ "$SIZE" -lt 10000000 ]; then echo "❌ 包太小，肯定不对"; exit 1; fi
+          # APK 是 zip：头四字节应为 PK\x03\x04，顺便证明下到的不是错误页
+          if [ "$(head -c 2 "$ASSET")" != "PK" ]; then echo "❌ 不是 APK（文件头不对）"; exit 1; fi
+          md5sum "$ASSET" | tee "$ASSET.md5"
+          echo "asset=$ASSET" >> "$GITHUB_ENV"
+
+      - name: 发 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VER: ${{ steps.ver.outputs.ver }}
+        run: |
+          cat > notes.md <<EOF
+          HxSync ${VER} 预览包（内部自用 / 协作者）。
+
+          - 新增：**HxMV 内容生产**页（设置 → HxMV 内容生产）——远端实例与手机本机（Termux）两种模式，
+            提交目标后实时看分镜/角色/场景/镜头/成片的进度与实测指标，成品可直接播放或存相册。
+          - 覆盖安装：与本仓库既有预览包同签名，直接覆盖；若你装的是 debug 包须先卸载。
+          - 来源：HxMV 分发目录取包并校验，见 .github/workflows/release-apk.yml。
+
+          md5：$(cat "${ASSET}.md5" | cut -d' ' -f1)
+          EOF
+          gh release create "$TAG" "$ASSET" \
+            --repo "${{ github.repository }}" \
+            --title "HxSync ${VER}" \
+            --notes-file notes.md
