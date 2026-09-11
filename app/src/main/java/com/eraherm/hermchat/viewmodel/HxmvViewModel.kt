@@ -39,6 +39,8 @@ data class HxmvUiState(
     val artifacts: List<HxmvArtifact> = emptyList(),
     val localInstanceFound: Boolean = false,
     val termuxInstalled: Boolean = false,
+    /** 实例要令牌但没填/填错 —— 页面要给一个「填令牌」的按钮，不能只说连不上。 */
+    val needsToken: Boolean = false,
     val message: String? = null,
 )
 
@@ -68,18 +70,25 @@ class HxmvViewModel(
 
     fun updateConfig(transform: (HxmvConfig) -> HxmvConfig) = prefs.update(transform)
 
-    /** 探测当前配置的实例。 */
+    /** 探测当前配置的实例。health 是公开接口，所以能分清「连不上」和「缺令牌」。 */
     fun checkConnection() {
         val cfg = prefs.config.value
         viewModelScope.launch {
-            val line = runCatching {
-                val health = api.health(cfg)
-                val host = cfg.baseUrl.removePrefix("https://").removePrefix("http://")
-                "已连接 $host · ${health.server}"
-            }.getOrElse { UserFacingError.of(it, "连不上 HxMV") }
+            val host = cfg.baseUrl.removePrefix("https://").removePrefix("http://")
+            val result = runCatching { api.health(cfg) }
+            val health = result.getOrNull()
+            val line = if (health == null) {
+                UserFacingError.of(result.exceptionOrNull() ?: IllegalStateException(), "连不上 HxMV")
+            } else when {
+                health.needsToken && cfg.token.isBlank() -> "已连接 $host · 需要令牌"
+                health.needsToken && !health.authed -> "已连接 $host · 令牌不对"
+                else -> "已连接 $host · ${health.server}"
+            }
+            val tokenProblem = health != null && health.needsToken && !health.authed
             _ui.value = _ui.value.copy(
-                connected = line.startsWith("已连接"),
+                connected = health != null && !tokenProblem,
                 statusLine = line,
+                needsToken = tokenProblem,
             )
             detectLocalInstance()
         }
@@ -93,6 +102,31 @@ class HxmvViewModel(
                 true
             }.getOrDefault(false)
             _ui.value = _ui.value.copy(localInstanceFound = found)
+        }
+    }
+
+    /** 手机部署第 ③ 步：手动检测本机（Termux 里）有没有 HxMV，有就直接切过去。 */
+    fun probeLocalNow() {
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(message = "正在检测本机 HxMV…", termuxInstalled = isTermuxInstalled())
+            val ok = runCatching {
+                api.healthAt(HxmvConfig.LOCAL_BASE, prefs.config.value.token)
+            }.isSuccess
+            if (ok) {
+                prefs.update { it.copy(baseUrl = HxmvConfig.LOCAL_BASE) }
+                _ui.value = _ui.value.copy(localInstanceFound = true, message = "本机 HxMV 已就绪")
+                checkConnection()
+            } else {
+                _ui.value = _ui.value.copy(localInstanceFound = false, message = "没检测到本机 HxMV")
+            }
+        }
+    }
+
+    /** 用户去装完 Termux 回来（页面重新可见）时刷新一下状态。 */
+    fun refreshTermux() {
+        val installed = isTermuxInstalled()
+        if (installed != _ui.value.termuxInstalled) {
+            _ui.value = _ui.value.copy(termuxInstalled = installed)
         }
     }
 

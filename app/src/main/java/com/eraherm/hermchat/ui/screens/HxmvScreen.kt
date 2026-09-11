@@ -25,10 +25,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +40,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -72,8 +77,19 @@ fun HxmvScreen(
     var goal by remember { mutableStateOf("") }
     var project by remember { mutableStateOf(config.project) }
     var showService by remember { mutableStateOf(false) }
+    var showTermuxDialog by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onBack)
+
+    // 用户去装完 Termux 再回来时刷新状态（③ 检测本机之前就能看到「Termux 已装好」）
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshTermux()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     ui.message?.let { text ->
         LaunchedEffect(text) {
@@ -97,6 +113,13 @@ fun HxmvScreen(
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(ui.statusLine, style = MaterialTheme.typography.bodyMedium)
+            if (ui.needsToken) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = { showService = true },
+                    shape = RoundedCornerShape(12.dp),
+                ) { Text("填令牌") }
+            }
             ui.message?.let {
                 Text(
                     it,
@@ -183,27 +206,69 @@ fun HxmvScreen(
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("手机部署（可选）", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (ui.localInstanceFound) "当前：手机本机跑" else "当前：服务器出片（不装也能用）",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(
+                    onClick = {
+                        if (ui.termuxInstalled) {
+                            viewModel.showMessage("Termux 已装好，走下一步")
+                        } else {
+                            showTermuxDialog = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                ) { Text(if (ui.termuxInstalled) "① Termux 已装好" else "① 装 Termux（手机运行环境）") }
+                OutlinedButton(
+                    onClick = {
+                        copyToClipboard(context, viewModel.termuxCommand())
+                        viewModel.showMessage("已复制，去 Termux 粘贴回车")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                ) { Text("② 复制一键安装命令") }
+                OutlinedButton(
+                    onClick = { viewModel.probeLocalNow() },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                ) { Text(if (ui.localInstanceFound) "③ 已连上本机 HxMV" else "③ 检测本机 HxMV") }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
+            Row(modifier = Modifier.fillMaxWidth()) {
                 TextButton(onClick = onBack) { Text("返回") }
-                TextButton(
-                    onClick = {
-                        if (!ui.termuxInstalled) {
-                            openInBrowser(context, TERMUX_URL)
-                            viewModel.showMessage("装好 Termux 再回来")
-                        } else {
-                            copyToClipboard(context, viewModel.termuxCommand())
-                            viewModel.showMessage("安装命令已复制")
-                        }
-                    },
-                ) { Text(if (ui.termuxInstalled) "复制安装命令" else "装到手机") }
             }
         }
+    }
+
+    if (showTermuxDialog) {
+        AlertDialog(
+            onDismissRequest = { showTermuxDialog = false },
+            title = { Text("装 Termux") },
+            text = {
+                Text(
+                    "Termux 是手机上的终端 App，开源项目，不是 HxSync。\n" +
+                        "HxMV 要靠它跑在你手机里（装完这一路就都在手机上了）。\n" +
+                        "点下面的按钮会打开它的官方下载页。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showTermuxDialog = false
+                        openInBrowser(context, TERMUX_URL)
+                    },
+                ) { Text("去下载 Termux") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTermuxDialog = false }) { Text("取消") }
+            },
+        )
     }
 
     if (showService) {

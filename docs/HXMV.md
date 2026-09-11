@@ -3,45 +3,50 @@
 HxSync 的「HxMV 内容生产」页：把 HxMV（自主内容生产闭环 Agent）当远端服务或手机本机服务来用。
 入口：设置 → **HxMV 内容生产**。
 
+## 第一次要做的两件事
+
+**1. 填令牌**（HxMV 实例默认要令牌，否则只显示「需要令牌」）
+右上角 **服务** → 填 HxMV 实例地址（默认 `https://hxmv.eraherm.com`）+ 令牌 → **保存并检测**。
+状态会变成「已连接 hxmv.eraherm.com · HxMV/0.6」。
+
+令牌在部署 HxMV 的机器上：`~/.hxmv/panel.env` 里的 `HXMV_WEB_TOKEN=`。
+
+**2. 不需要大模型 Key 也能跑**
+后端「本地真渲染」「模拟世界」开箱即用（不需要任何 API Key）。
+「智谱真视频」要智谱的 Key（免费额度）：在 HxMV 机器上执行
+`python3 -m hxmv --set-key zhipu <KEY>`。没有 Key 时会明确显示该后端不可用。
+
 ## 两种跑法（同一套接口，只有地址不同）
 
 | 模式 | 地址 | 说明 |
 |---|---|---|
-| 远端 | `https://hxmv.eraherm.com`（默认） | 服务器出片；手机只当遥控器 |
-| 手机本机 | `http://127.0.0.1:8668` | 手机里用 Termux 跑 HxMV；页面上会自动发现并提示「切换到手机本机」 |
+| 远端 | `https://hxmv.eraherm.com`（默认） | 服务器出片；手机只管提交和看片 |
+| 手机本机 | `http://127.0.0.1:8668` | 手机自己跑（Termux 里跑 HxMV），不依赖服务器 |
 
-## 手机本机怎么装（Termux）
+## 手机部署（页面里三步）
 
-1. 装 Termux（F-Droid 或 GitHub Releases；小米应用商店没有）。
-2. 页面右下「复制安装命令」→ 粘到 Termux 执行（脚本：装 python/ffmpeg、取代码、自检、配 Key、起面板）。
-3. 回到页面点「切换到手机本机」。
+| 步骤 | 做什么 |
+|---|---|
+| ① 装 Termux | 手机上装 Termux（应用商店或 GitHub Releases）；装完回页面会自动变成「Termux 已装好」 |
+| ② 复制一键安装命令 | 复制的命令粘到 Termux 里回车，脚本会装好 HxMV 并启动在本机 8668 |
+| ③ 检测本机 HxMV | 探测 `127.0.0.1:8668`，探到就自动把地址切到本机 |
 
-装好后建议：`termux-wake-lock` 保住后台；设置 → 应用 → Termux → 省电策略 → 无限制。
-产物默认写在 `~/storage/shared/HxMV/`（相册可见）。
+> 安装包不能被静默安装、命令也不能代你粘贴，所以这三步必须点一下——不是没做，是安卓不让。
 
-## 接口（客户端用）
+## 用起来
 
-见 HxMV 仓库 `docs/CLIENT.md`。本页用到：
-
-- `GET /api/health` — 发现实例 + 能力自检（版本/ffmpeg/编码器/各后端 Key 状态/项目）
-- `POST /api/run {goal,provider,project}` — 提交 → `run_id`
-- `GET /api/stream?run_id=&token=` — SSE 实时事件（任务 · 分数 · 实测指标）
-- `GET /api/artifact?run_id=&name=` — 取成品
-
-认证：`X-Hxmv-Token` 头（SSE 用 `?token=`）。令牌存在加密 prefs（`hermchat_hxmv`）。
-
-服务端可选配 `HXMV_NOTIFY_URL`，跑完主动推一份含成品链接的负载（客户端不在线也不丢成品）。
-
-## 成品
-
-- **播放**：下载到应用缓存 → 交给系统播放器（FileProvider，`app/src/main/res/xml/hxmv_paths.xml`）。
-- **保存**：写入系统相册 `Movies/HxSync`（Android 10+ 走 MediaStore，免存储权限）。
+1. 填「想做什么内容」，选后端，需要固定角色/场景就填「项目」（续做同项目不会重画已有画面）
+2. **开始生产** → 生产进度按 分镜 · 角色 · 场景 · 镜头 · 成片 逐行显示状态和实测指标
+3. **成品**：播放（系统播放器）/ 保存（进相册 `Movies/HxSync`）
 
 ## 排查
 
-| 现象 | 处理 |
+| 现象 | 原因 |
 |---|---|
-| 状态显示「连不上 HxMV」 | 检查地址/令牌；远端确认 `hxmv.eraherm.com` 可访问 |
-| 「令牌不对或未设置」 | 服务端设了 `HXMV_WEB_TOKEN` 时，页面「服务」里要填同值 |
-| 提交后一直「生产中」但无进度 | 服务端可能重启过（run 记录仍在磁盘）；页面重开即可看到历史 |
-| 播放没反应 | 系统里没有能播 mp4 的 App；改用「保存」到相册播放 |
+| 状态显示「需要令牌」 | 令牌没填：右上角 **服务** 填；或实例上 `HXMV_WEB_TOKEN` 被改过 |
+| 状态显示「令牌不对」 | 令牌填错 |
+| 状态显示「连不上 HxMV」 | 地址不对/网络不通（实例要不要令牌都能探测，所以这个是真的连不上） |
+| 「智谱真视频」跑不动 | 实例上没配智谱 Key |
+| ③ 检测不到本机 | Termux 里 HxMV 没起来；回 Termux 看脚本输出 |
+
+接口契约见 HxMV 仓库 `docs/CLIENT.md`。

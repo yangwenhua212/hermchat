@@ -23,6 +23,8 @@ data class HxmvHealth(
     val providers: Map<String, Boolean>,
     val projects: List<String>,
     val needsToken: Boolean,
+    /** 令牌是否被实例接受（health 是公开接口，靠这个字段区分"没填/填错"）。 */
+    val authed: Boolean,
 )
 
 /** 一个可下载的成品。url 由客户端自己按 base+runId+name 拼，不在推送里夹带凭据。 */
@@ -87,6 +89,7 @@ class HxmvApiClient(
             providers = providers,
             projects = projects,
             needsToken = json.optBoolean("needs_token"),
+            authed = json.optBoolean("authed"),
         )
     }
 
