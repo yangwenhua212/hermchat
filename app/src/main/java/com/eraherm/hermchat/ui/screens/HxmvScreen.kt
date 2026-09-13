@@ -5,8 +5,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -39,6 +45,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -51,6 +59,8 @@ import com.eraherm.hermchat.HermChatApp
 import com.eraherm.hermchat.data.local.HxmvConfig
 import com.eraherm.hermchat.data.local.HxmvProvider
 import com.eraherm.hermchat.data.network.HxmvArtifact
+import com.eraherm.hermchat.data.network.HxmvConfigState
+import com.eraherm.hermchat.data.network.HxmvRef
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.viewmodel.HxmvViewModel
@@ -58,6 +68,26 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val TERMUX_URL = "https://github.com/termux/termux-app/releases"
+
+/** 参考图的两类（值 = 服务端 kind）。 */
+private val REF_KINDS = listOf(
+    "character" to "角色",
+    "scene" to "场景",
+)
+
+/** 视频档位（值 = 服务端 config 里的 video_model）。 */
+private val VIDEO_MODELS = listOf(
+    "cogvideox-flash" to "免费档",
+    "cogvideox-2" to "0.5 元/次",
+    "cogvideox-3" to "1 元/次",
+)
+
+/** 视觉评审档位（vlm_model）。 */
+private val VLM_MODELS = listOf(
+    "glm-4v-flash" to "免费档",
+    "glm-4.6v-flashx" to "0.15 元/百万",
+    "glm-4.6v" to "1 元/百万",
+)
 
 /**
  * HxMV 内容生产页：远端实例与手机本机（Termux）同一套流程，只有地址不同。
@@ -78,6 +108,14 @@ fun HxmvScreen(
     var project by remember { mutableStateOf(config.project) }
     var showService by remember { mutableStateOf(false) }
     var showTermuxDialog by remember { mutableStateOf(false) }
+    var showConfig by remember { mutableStateOf(false) }
+    var refKind by remember { mutableStateOf("character") }
+    var refKey by remember { mutableStateOf("") }
+
+    // 选图走系统相册（GetContent image 类型），与聊天附件同一个走法
+    val pickRef = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) viewModel.uploadRef(uri, refKind, refKey)
+    }
 
     BackHandler(onBack = onBack)
 
@@ -109,6 +147,7 @@ fun HxmvScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 BrandMark(compact = true)
                 Spacer(modifier = Modifier.weight(1f))
+                TextButton(onClick = { showConfig = true; viewModel.loadRemoteConfig() }) { Text("配置") }
                 TextButton(onClick = { showService = true }) { Text("服务") }
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -208,6 +247,45 @@ fun HxmvScreen(
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
+                Text("参考图", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (config.project.isBlank()) "先填上面的项目名" else "当前项目：${config.project}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    REF_KINDS.forEach { (value, label) ->
+                        FilterChip(
+                            selected = refKind == value,
+                            onClick = { refKind = value },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = refKey,
+                    onValueChange = { refKey = it },
+                    label = { Text("名字（镜头里用的角色名/场景名）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(
+                    onClick = { pickRef.launch("image/*") },
+                    enabled = config.project.isNotBlank() && refKey.isNotBlank() && !ui.refBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                ) { Text(if (ui.refBusy) "处理中" else "选图上传") }
+                ui.refs.forEach { ref ->
+                    RefRow(
+                        ref = ref,
+                        load = viewModel::refImage,
+                        onDelete = { viewModel.deleteRef(ref) },
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
                 Text("手机部署（可选）", style = MaterialTheme.typography.titleMedium)
                 Text(
                     if (ui.localInstanceFound) "当前：手机本机跑" else "当前：服务器出片（不装也能用）",
@@ -282,6 +360,17 @@ fun HxmvScreen(
             },
         )
     }
+
+    if (showConfig) {
+        ConfigDialog(
+            state = ui.remoteConfig,
+            onDismiss = { showConfig = false },
+            onSave = { key, video, vlm ->
+                viewModel.saveRemoteConfig(key, video, vlm)
+                showConfig = false
+            },
+        )
+    }
 }
 
 @Composable
@@ -340,6 +429,107 @@ private fun ServiceDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
+}
+
+/** 一行参考图：缩略图 + 「类型 · 名字」 + 删除。 */
+@Composable
+private fun RefRow(
+    ref: HxmvRef,
+    load: suspend (HxmvRef) -> Bitmap?,
+    onDelete: () -> Unit,
+) {
+    var thumb by remember(ref.key, ref.url) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(ref.key, ref.url) { thumb = load(ref) }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val bitmap = thumb
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.size(44.dp),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Spacer(modifier = Modifier.size(44.dp))
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            "${ref.kindLabel} · ${ref.name}",
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onDelete) { Text("删除") }
+    }
+}
+
+/** 接口配置：Key 状态 + 视频/视觉档位（保存即生效，不用重启实例）。 */
+@Composable
+private fun ConfigDialog(
+    state: HxmvConfigState?,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String) -> Unit,
+) {
+    var key by remember { mutableStateOf("") }
+    var video by remember(state?.videoModel) { mutableStateOf(state?.videoModel.orEmpty()) }
+    var vlm by remember(state?.vlmModel) { mutableStateOf(state?.vlmModel.orEmpty()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("接口配置") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    when {
+                        state == null -> "正在读取…"
+                        state.keyConfigured -> "智谱 Key：已配置 ${state.keyMasked}"
+                        else -> "智谱 Key：未配置"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    label = { Text("智谱 Key（留空不改）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("视频模型", style = MaterialTheme.typography.bodyMedium)
+                ChipRow(options = VIDEO_MODELS, selected = video, onSelect = { video = it })
+                Text("视觉评审", style = MaterialTheme.typography.bodyMedium)
+                ChipRow(options = VLM_MODELS, selected = vlm, onSelect = { vlm = it })
+                Text(
+                    if (state?.visionReady == true) "视觉评审：已就绪" else "视觉评审：未就绪",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(key, video, vlm) }) { Text("保存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+@Composable
+private fun ChipRow(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        options.forEach { (value, label) ->
+            FilterChip(
+                selected = selected == value,
+                onClick = { onSelect(value) },
+                label = { Text(label) },
+            )
+        }
+    }
 }
 
 private fun openInBrowser(context: Context, url: String) {

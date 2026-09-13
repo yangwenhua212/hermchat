@@ -1,5 +1,6 @@
 package com.eraherm.hermchat.data.network
 
+import android.util.Base64
 import com.eraherm.hermchat.data.local.HxmvConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -57,6 +58,28 @@ data class HxmvEvent(
 
 class HxmvUnauthorizedException : IOException("令牌不对或未设置")
 
+/** 项目里的一张参考图（图生视频的首帧）。[url] 是相对地址，客户端补 baseUrl + token 取字节。 */
+data class HxmvRef(
+    val key: String,
+    val name: String,
+    val kind: String,
+    val exists: Boolean,
+    val size: Long,
+    val url: String,
+) {
+    val kindLabel: String get() = if (kind == "scene") "场景" else "角色"
+}
+
+/** 实例的接口配置状态（Key 只回脱敏串，明文永不回传）。 */
+data class HxmvConfigState(
+    val keyConfigured: Boolean,
+    val keyMasked: String,
+    val videoModel: String,
+    val vlmModel: String,
+    val visionReady: Boolean,
+    val visionModel: String,
+)
+
 /**
  * HxMV 客户端。远端与本机（Termux）走同一套接口，只有 baseUrl 不同。
  *
@@ -65,6 +88,11 @@ class HxmvUnauthorizedException : IOException("令牌不对或未设置")
  *   POST /api/run {goal,provider,project}  提交生产 → run_id
  *   GET  /api/stream?run_id=&token=        SSE 实时事件
  *   GET  /api/artifact?run_id=&name=       取产物
+ *   GET  /api/ref?project=                 项目参考图清单（角色/场景）
+ *   POST /api/ref {project,kind,key,image} 上传参考图（图生视频的首帧）
+ *   DELETE /api/ref?project=&kind=&key=    注销参考图
+ *   GET  /api/config                       接口配置状态（Key 只回脱敏串）
+ *   POST /api/config {provider,key?,…}     保存 Key / 切档位（立即生效）
  */
 class HxmvApiClient(
     private val client: OkHttpClient = SharedHttpClients.streamingApi(),
@@ -156,6 +184,114 @@ class HxmvApiClient(
     fun artifactUrl(config: HxmvConfig, runId: String, name: String): String =
         "${config.baseUrl}/api/artifact?run_id=$runId&name=$name"
 
+    /** 项目参考图清单（角色 + 场景）。 */
+    suspend fun refs(config: HxmvConfig, project: String): List<HxmvRef> {
+        if (project.isBlank()) return emptyList()
+        val json = JSONObject(get(config, "/api/ref?project=" + enc(project)))
+        val out = mutableListOf<HxmvRef>()
+        for ((bucket, kind) in listOf("characters" to "character", "scenes" to "scene")) {
+            val arr = json.optJSONArray(bucket) ?: continue
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val key = obj.optString("key")
+                if (key.isBlank()) continue
+                out += HxmvRef(
+                    key = key,
+                    name = obj.optString("name").takeIf { it.isNotBlank() } ?: key,
+                    kind = kind,
+                    exists = obj.optBoolean("exists"),
+                    size = obj.optLong("size"),
+                    url = obj.optString("url"),
+                )
+            }
+        }
+        return out
+    }
+
+    /**
+     * 上传一张参考图（图生视频的首帧）。
+     *
+     * 图片走 base64 JSON（服务端 ≤12MB，JPEG/PNG）；mode=auto 时设定表会自动裁上部主视觉。
+     * 返回一句给人看的摘要。
+     */
+    suspend fun uploadRef(
+        config: HxmvConfig,
+        project: String,
+        kind: String,
+        key: String,
+        bytes: ByteArray,
+        mime: String?,
+    ): String {
+        val type = (mime ?: "").takeIf { it.startsWith("image/") } ?: "image/jpeg"
+        val body = JSONObject()
+            .put("project", project)
+            .put("kind", kind)
+            .put("key", key)
+            .put("mode", "auto")
+            .put("image", "data:$type;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP))
+        val json = JSONObject(post(config, "/api/ref", body.toString()))
+        val saved = json.optString("key").takeIf { it.isNotBlank() } ?: key
+        return "已存为 $saved"
+    }
+
+    /** 注销一张参考图（档案里摘掉 + 删文件）。 */
+    suspend fun deleteRef(config: HxmvConfig, project: String, ref: HxmvRef): Boolean {
+        val path = "/api/ref?project=${enc(project)}&kind=${ref.kind}&key=${enc(ref.key)}"
+        return JSONObject(del(config, path)).optBoolean("removed")
+    }
+
+    /** 接口配置状态：Key 是否配好（脱敏串）+ 当前档位 + 视觉评审是否就绪。 */
+    suspend fun configState(config: HxmvConfig): HxmvConfigState {
+        val json = JSONObject(get(config, "/api/config"))
+        val opts = json.optJSONObject("options") ?: JSONObject()
+        val vision = json.optJSONObject("vision") ?: JSONObject()
+        var configured = false
+        var masked = ""
+        json.optJSONArray("providers")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                if (obj.optString("id") != "zhipu") continue
+                configured = obj.optBoolean("configured")
+                masked = obj.optString("masked")
+            }
+        }
+        return HxmvConfigState(
+            keyConfigured = configured,
+            keyMasked = masked,
+            videoModel = opts.optString("video_model"),
+            vlmModel = opts.optString("vlm_model"),
+            visionReady = vision.optBoolean("ready"),
+            visionModel = vision.optString("model"),
+        )
+    }
+
+    /** 保存 Key / 切档位（服务端写进实例本机配置，立即生效）。返回保存后的完整状态。 */
+    suspend fun saveConfig(
+        config: HxmvConfig,
+        key: String,
+        videoModel: String,
+        vlmModel: String,
+    ): HxmvConfigState {
+        val body = JSONObject().put("provider", "zhipu")
+        if (key.isNotBlank()) body.put("key", key.trim())
+        if (videoModel.isNotBlank()) body.put("video_model", videoModel)
+        if (vlmModel.isNotBlank()) body.put("vlm_model", vlmModel)
+        post(config, "/api/config", body.toString())
+        return configState(config)
+    }
+
+    /** 取参考图字节（清单缩略图用）。[path] 是清单里给的相对地址。 */
+    suspend fun fetchBytes(config: HxmvConfig, path: String): ByteArray {
+        val req = Request.Builder().url(withToken(config.baseUrl + path, config.token)).get().build()
+        return io.newCall(req).execute().use { response ->
+            if (response.code == 401) throw HxmvUnauthorizedException()
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            response.body?.bytes() ?: ByteArray(0)
+        }
+    }
+
+    private fun enc(text: String): String = java.net.URLEncoder.encode(text, "UTF-8")
+
     private fun withToken(url: String, token: String): String {
         if (token.isBlank()) return url
         val sep = if (url.contains('?')) "&" else "?"
@@ -224,6 +360,20 @@ class HxmvApiClient(
             .url(config.baseUrl + path)
             .header("X-Hxmv-Token", config.token)
             .post(body.toRequestBody(JSON))
+            .build()
+        return io.newCall(req).execute().use { response ->
+            if (response.code == 401) throw HxmvUnauthorizedException()
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            response.body?.string().orEmpty()
+        }
+    }
+
+    /** DELETE 不带体（参数走 query），令牌只能走头或 query——两种都带上更稳。 */
+    private fun del(config: HxmvConfig, path: String): String {
+        val req = Request.Builder()
+            .url(withToken(config.baseUrl + path, config.token))
+            .header("X-Hxmv-Token", config.token)
+            .delete()
             .build()
         return io.newCall(req).execute().use { response ->
             if (response.code == 401) throw HxmvUnauthorizedException()

@@ -423,6 +423,16 @@ class ChatAttachmentStore(
         return dest
     }
 
+    /**
+     * 给 HxMV 上传参考图用：选中的图 → JPEG 字节（走同一套解码/缩放/HEIC 兜底）。
+     * 服务端只认 JPEG/PNG 且 ≤12MB——HEIC/WebP 在这里就转掉了。
+     */
+    fun readJpeg(uri: Uri): ByteArray? {
+        val tmp = File(root, "hxmv_ref_${System.currentTimeMillis()}.jpg")
+        val file = compressToJpeg(uri, tmp) ?: return null
+        return runCatching { file.readBytes() }.getOrNull().also { file.delete() }
+    }
+
     /** 统一解码：常规图走 BitmapFactory（bounds→采样）；HEIF/HEIC 等走 ImageDecoder。 */
     private fun decodeBitmap(uri: Uri): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

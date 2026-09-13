@@ -2,24 +2,33 @@ package com.eraherm.hermchat.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.eraherm.hermchat.HermChatApp
+import com.eraherm.hermchat.data.local.ChatAttachmentStore
 import com.eraherm.hermchat.data.local.HxmvConfig
 import com.eraherm.hermchat.data.local.HxmvPrefsStore
 import com.eraherm.hermchat.data.local.HxmvProvider
 import com.eraherm.hermchat.data.network.HxmvApiClient
 import com.eraherm.hermchat.data.network.HxmvArtifact
-import com.eraherm.hermchat.data.network.HxmvUnauthorizedException
+import com.eraherm.hermchat.data.network.HxmvConfigState
+import com.eraherm.hermchat.data.network.HxmvRef
 import com.eraherm.hermchat.util.UserFacingError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -42,6 +51,12 @@ data class HxmvUiState(
     /** 实例要令牌但没填/填错 —— 页面要给一个「填令牌」的按钮，不能只说连不上。 */
     val needsToken: Boolean = false,
     val message: String? = null,
+    /** 当前项目的参考图（图生视频的首帧）。 */
+    val refs: List<HxmvRef> = emptyList(),
+    val refBusy: Boolean = false,
+    /** 实例的接口配置（Key 状态 + 档位）；null = 还没拉到。 */
+    val remoteConfig: HxmvConfigState? = null,
+    val configBusy: Boolean = false,
 )
 
 /**
@@ -55,6 +70,9 @@ class HxmvViewModel(
     private val api: HxmvApiClient = HxmvApiClient(),
 ) : AndroidViewModel(app) {
 
+    /** 选图上传参考图时复用聊天附件那套解码（HEIC/WebP 也转成 JPEG）。 */
+    private val images = ChatAttachmentStore(app)
+
     private val _ui = MutableStateFlow(HxmvUiState())
     val ui: StateFlow<HxmvUiState> = _ui.asStateFlow()
 
@@ -66,6 +84,13 @@ class HxmvViewModel(
     init {
         _ui.value = _ui.value.copy(termuxInstalled = isTermuxInstalled())
         checkConnection()
+        // 项目名变了就重拉参考图（打字时去抖，别每敲一个字发一次请求）
+        viewModelScope.launch {
+            prefs.config.map { it.project }.distinctUntilChanged().collectLatest {
+                delay(700)
+                loadRefs()
+            }
+        }
     }
 
     fun updateConfig(transform: (HxmvConfig) -> HxmvConfig) = prefs.update(transform)
@@ -239,6 +264,99 @@ class HxmvViewModel(
 
     fun clearMessage() {
         _ui.value = _ui.value.copy(message = null)
+    }
+
+    /** 拉当前项目的参考图清单（项目名变了会自动重拉）。 */
+    fun loadRefs() {
+        val cfg = prefs.config.value
+        val project = cfg.project.trim()
+        if (project.isEmpty()) {
+            _ui.value = _ui.value.copy(refs = emptyList())
+            return
+        }
+        viewModelScope.launch {
+            val refs = runCatching { api.refs(cfg, project) }.getOrDefault(emptyList())
+            _ui.value = _ui.value.copy(refs = refs)
+        }
+    }
+
+    /** 上传一张参考图：选中图 → JPEG → `/api/ref`（设定表会自动裁上部主视觉）。 */
+    fun uploadRef(uri: Uri, kind: String, key: String) {
+        val cfg = prefs.config.value
+        val project = cfg.project.trim()
+        if (project.isEmpty() || key.isBlank() || _ui.value.refBusy) return
+        _ui.value = _ui.value.copy(refBusy = true, message = "正在上传参考图…")
+        viewModelScope.launch {
+            val bytes = withContext(Dispatchers.IO) { images.readJpeg(uri) }
+            if (bytes == null || bytes.isEmpty()) {
+                _ui.value = _ui.value.copy(refBusy = false, message = "这张图读不出来")
+                return@launch
+            }
+            val result = runCatching {
+                api.uploadRef(cfg, project, kind, key.trim(), bytes, "image/jpeg")
+            }
+            _ui.value = _ui.value.copy(
+                refBusy = false,
+                message = result.getOrElse { UserFacingError.of(it, "上传失败") },
+            )
+            if (result.isSuccess) loadRefs()
+        }
+    }
+
+    /** 注销一张参考图（档案里摘掉）。 */
+    fun deleteRef(ref: HxmvRef) {
+        val cfg = prefs.config.value
+        val project = cfg.project.trim()
+        if (project.isEmpty() || _ui.value.refBusy) return
+        _ui.value = _ui.value.copy(refBusy = true)
+        viewModelScope.launch {
+            val result = runCatching { api.deleteRef(cfg, project, ref) }
+            val message = result.fold(
+                onSuccess = { removed -> if (removed) "已删除 ${ref.name}" else "档案里没有这张" },
+                onFailure = { UserFacingError.of(it, "删除失败") },
+            )
+            _ui.value = _ui.value.copy(refBusy = false, message = message)
+            loadRefs()
+        }
+    }
+
+    /** 参考图缩略图（清单里一眼看出用的是哪张图）。 */
+    suspend fun refImage(ref: HxmvRef): Bitmap? = withContext(Dispatchers.IO) {
+        if (ref.url.isBlank()) return@withContext null
+        runCatching {
+            val bytes = api.fetchBytes(prefs.config.value, ref.url)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        }.getOrNull()
+    }
+
+    /** 拉实例的接口配置（Key 是否配好 + 当前档位）。 */
+    fun loadRemoteConfig() {
+        if (_ui.value.configBusy) return
+        _ui.value = _ui.value.copy(configBusy = true)
+        viewModelScope.launch {
+            val result = runCatching { api.configState(prefs.config.value) }
+            _ui.value = _ui.value.copy(
+                configBusy = false,
+                remoteConfig = result.getOrNull() ?: _ui.value.remoteConfig,
+                message = result.exceptionOrNull()?.let { UserFacingError.of(it, "读不到接口配置") },
+            )
+        }
+    }
+
+    /** 保存 Key / 切档位（服务端立即生效，不用重启实例）。 */
+    fun saveRemoteConfig(key: String, videoModel: String, vlmModel: String) {
+        if (_ui.value.configBusy) return
+        _ui.value = _ui.value.copy(configBusy = true)
+        viewModelScope.launch {
+            val result = runCatching {
+                api.saveConfig(prefs.config.value, key, videoModel, vlmModel)
+            }
+            _ui.value = _ui.value.copy(
+                configBusy = false,
+                remoteConfig = result.getOrNull() ?: _ui.value.remoteConfig,
+                message = result.fold({ "已保存" }, { UserFacingError.of(it, "保存失败") }),
+            )
+        }
     }
 
     /** Termux 是否已装（"装到手机"的一步，安装本身要用户点）。 */
