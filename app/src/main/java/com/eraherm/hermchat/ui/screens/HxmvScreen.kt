@@ -476,6 +476,8 @@ private fun ServiceDialog(
                     value = base,
                     onValueChange = { base = it },
                     label = { Text("地址") },
+                    // 不预填任何地址：HxSync 是开源 App，预填作者的实例等于让所有下载的人都用他的服务器
+                    placeholder = { Text("你自己的 HxMV 实例：http://127.0.0.1:8668 或你的域名") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -483,6 +485,7 @@ private fun ServiceDialog(
                     value = token,
                     onValueChange = { token = it },
                     label = { Text("令牌") },
+                    placeholder = { Text("实例的 HXMV_WEB_TOKEN（没设可留空）") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )

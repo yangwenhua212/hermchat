@@ -105,6 +105,13 @@ class HxmvViewModel(
     fun checkConnection() {
         val cfg = prefs.config.value
         viewModelScope.launch {
+            // 开源版不预填任何实例地址 → 没填就别探了，直接告诉他该填什么
+            if (cfg.baseUrl.isBlank()) {
+                _ui.value = _ui.value.copy(
+                    statusLine = "先填你的 HxMV 实例地址（本机 http://127.0.0.1:8668，或你自己部署的域名）"
+                )
+                return@launch
+            }
             val host = cfg.baseUrl.removePrefix("https://").removePrefix("http://")
             _ui.value = _ui.value.copy(statusLine = "正在连接 $host…")
             var result = runCatching { api.health(cfg) }

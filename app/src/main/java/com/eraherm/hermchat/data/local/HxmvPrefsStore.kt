@@ -25,7 +25,14 @@ data class HxmvConfig(
     val project: String = "",
 ) {
     companion object {
-        const val DEFAULT_BASE = "https://hxmv.eraherm.com"
+        /**
+         * **不预填任何实例地址**：HxSync 是开源 App，如果默认指向作者自己的实例，
+         * 那么每个下载安装的人都会把请求打到作者服务器上（老大原话：
+         * 「不要自动配地址我框架的地址啊，要不然别人下载不就用到我的东西了吗」）。
+         * 每个用户填自己的：本机 Termux 见 [LOCAL_BASE]，或自己部署的域名。
+         */
+        const val DEFAULT_BASE = ""
+        /** 手机本机跑的实例（Termux）——这是用户自己的设备，可以直接给建议值。 */
         const val LOCAL_BASE = "http://127.0.0.1:8668"
     }
 }
