@@ -25,12 +25,10 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -74,7 +72,6 @@ private sealed interface PrefsFolder {
     data object Input : PrefsFolder
     data object Appearance : PrefsFolder
     data object Speak : PrefsFolder
-    data object Shortcuts : PrefsFolder
     data object Gateway : PrefsFolder
     data object Search : PrefsFolder
 }
@@ -125,7 +122,6 @@ fun ChatPrefsScreen(
                             onOpenInput = { folder = PrefsFolder.Input },
                             onOpenAppearance = { folder = PrefsFolder.Appearance },
                             onOpenSpeak = { folder = PrefsFolder.Speak },
-                            onOpenShortcuts = { folder = PrefsFolder.Shortcuts },
                             onOpenGateway = { folder = PrefsFolder.Gateway },
                             onOpenSearch = { folder = PrefsFolder.Search },
                             onOpenLibrary = onOpenLibrary,
@@ -154,10 +150,6 @@ fun ChatPrefsScreen(
                                     // 无设置页可开时忽略
                                 }
                             },
-                        )
-                        PrefsFolder.Shortcuts -> PrefsShortcutsDetail(
-                            prefs = chatPrefs,
-                            store = app.chatPrefsStore,
                         )
                         PrefsFolder.Gateway -> PrefsGatewayDetail(
                             prefs = chatPrefs,
@@ -198,7 +190,6 @@ private fun PrefsRoot(
     onOpenInput: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenSpeak: () -> Unit,
-    onOpenShortcuts: () -> Unit,
     onOpenGateway: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenLibrary: () -> Unit,
@@ -263,11 +254,6 @@ private fun PrefsRoot(
             }
         },
         onClick = onOpenAppearance,
-    )
-    PrefsFolderRow(
-        title = "快捷指令",
-        summary = "${prefs.shortcuts.size} 条",
-        onClick = onOpenShortcuts,
     )
     PrefsFolderRow(
         title = "关于",
@@ -703,72 +689,6 @@ private fun WallpaperResultRow(
                         else -> "下载"
                     },
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PrefsShortcutsDetail(
-    prefs: ChatPrefs,
-    store: ChatPrefsStore,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("快捷指令", style = MaterialTheme.typography.titleMedium)
-        TextButton(onClick = { store.resetShortcuts() }) {
-            Text("恢复默认")
-        }
-    }
-    prefs.shortcuts.forEachIndexed { index, shortcut ->
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, Line),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = shortcut.label,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 8.dp),
-                )
-                IconButton(
-                    onClick = { store.moveShortcut(shortcut.id, -1) },
-                    enabled = index > 0,
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                        contentDescription = "前移",
-                        tint = if (index > 0) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            SoftGray
-                        },
-                    )
-                }
-                IconButton(
-                    onClick = { store.moveShortcut(shortcut.id, 1) },
-                    enabled = index < prefs.shortcuts.lastIndex,
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = "后移",
-                        tint = if (index < prefs.shortcuts.lastIndex) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            SoftGray
-                        },
-                    )
-                }
             }
         }
     }
