@@ -4,22 +4,6 @@
 [![Release](https://img.shields.io/github/v/release/yangwenhua212/hermchat)](https://github.com/yangwenhua212/hermchat/releases)
 HxSync 是一个**开放式 Android AI Agent 客户端**。它连接不同来源的 AI 能力——本地模型、云端 API、远程 Agent、手机本地工具——通过**统一调度、长期记忆、工具调用和人工确认**，让 AI 从「聊天机器人」变成真正的**个人智能助手**。
 ---
-## ✨ 核心理念
-**传统 AI：**
-```
-用户 → 聊天窗口 → AI 回答（结束）
-```
-**HxSync：**
-```
-用户 → HxSync → AI Agent 思考/规划 → 调用工具 → 手机执行 → 返回结果
-```
-AI 不只是回答问题。它可以：
-- ✅ 理解复杂任务
-- ✅ 调用工具（闹钟、日历、短信、App……）
-- ✅ 操作你的设备
-- ✅ 记住你的习惯
-- ✅ 在关键操作前**请求你确认**
----
 ## 🚀 核心能力
 ### 1. 四层 AI 调度系统（四档运行层）
 HxSync **不绑定任何 AI 服务**。用户自由选择 AI 能力来源：
