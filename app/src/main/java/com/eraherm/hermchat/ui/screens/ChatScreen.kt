@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -83,8 +85,6 @@ import com.eraherm.hermchat.data.local.AttachmentKind
 import com.eraherm.hermchat.data.local.ChatAttachment
 import com.eraherm.hermchat.data.local.ChatAttachmentStore
 import com.eraherm.hermchat.data.local.InputMode
-import com.eraherm.hermchat.data.local.ShortcutAction
-import com.eraherm.hermchat.data.local.ShortcutDef
 import com.eraherm.hermchat.data.model.AgentProfile
 import com.eraherm.hermchat.data.model.Message
 import com.eraherm.hermchat.data.model.ToolOrigin
@@ -103,7 +103,6 @@ import com.eraherm.hermchat.ui.components.ConfirmCard
 import com.eraherm.hermchat.ui.components.ConnectionStatus
 import com.eraherm.hermchat.ui.components.ConversationHistoryMenu
 import com.eraherm.hermchat.ui.components.MessageBubble
-import com.eraherm.hermchat.ui.components.ShortcutBar
 import com.eraherm.hermchat.ui.components.TypingBubble
 import com.eraherm.hermchat.ui.theme.SoftGray
 import com.eraherm.hermchat.viewmodel.ChatViewModel
@@ -150,7 +149,6 @@ fun ChatScreen(
         agent != null &&
         !uiState.isSending &&
         !uiState.isStreaming
-    val shortcutsEnabled = agent != null && !uiState.isSending
     val attachmentStore = remember { ChatAttachmentStore(context) }
     val sharePending by app.shareInbox.pending.collectAsStateWithLifecycle()
     LaunchedEffect(sharePending) {
@@ -184,6 +182,23 @@ fun ChatScreen(
                     draftAttachment = attachment
                 }
             }.onFailure { voiceStatus = it.message?.take(24) ?: "选文件失败" }
+        }
+    }
+    // 图片入口：走系统相册（Android 13+ 为系统照片选择器，无需存储权限），
+    // 自动压缩成 JPEG 后走 vision 通道；旧系统由系统的文档选择器兜底。
+    val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { attachmentStore.importImage(uri) }
+            result.onSuccess { attachment ->
+                if (!AttachmentSupport.canSend(agent, attachment.kind)) {
+                    voiceStatus = AttachmentSupport.unsupportedStatus(agent, attachment.kind)
+                } else {
+                    draftAttachment = attachment
+                }
+            }.onFailure { voiceStatus = it.message?.take(24) ?: "选图失败" }
         }
     }
     val speechAvailable = remember {
@@ -280,19 +295,6 @@ fun ChatScreen(
             }
         }.toTypedArray()
         pttPermissionLauncher.launch(permissions)
-    }
-
-    fun applyShortcut(shortcut: ShortcutDef) {
-        when (shortcut.action) {
-            ShortcutAction.INSERT -> draft = shortcut.text
-            ShortcutAction.SEND -> {
-                if (!shortcutsEnabled) return
-                draft = ""
-                stickToBottom = true
-                viewModel.sendMessage(shortcut.text)
-                scrollToLatest(animated = true)
-            }
-        }
     }
 
     // ──────────────────────────────────────────────
@@ -651,14 +653,6 @@ fun ChatScreen(
                     .navigationBarsPadding()
                     .padding(bottom = 8.dp),
             ) {
-                ShortcutBar(
-                    shortcuts = chatPrefs.shortcuts,
-                    enabled = shortcutsEnabled,
-                    onClick = ::applyShortcut,
-                    onMoveLeft = { app.chatPrefsStore.moveShortcut(it.id, -1) },
-                    onMoveRight = { app.chatPrefsStore.moveShortcut(it.id, 1) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
                 draftAttachment?.let { attachment ->
                     val preview = remember(attachment.path, attachment.kind) {
                         if (attachment.kind != AttachmentKind.IMAGE) return@remember null
@@ -717,6 +711,11 @@ fun ChatScreen(
                     sendScale = sendScale,
                     showMic = voiceReady && chatPrefs.inputMode != InputMode.TEXT_FIRST,
                     textFocus = textFocus,
+                    onPickImage = {
+                        pickImage.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
                     onAttach = {
                         pickAttachment.launch(ChatAttachmentStore.openDocumentMimeTypes())
                     },
@@ -773,6 +772,7 @@ private fun DoubaoComposer(
     sendScale: Float,
     showMic: Boolean,
     textFocus: FocusRequester,
+    onPickImage: () -> Unit,
     onAttach: () -> Unit,
     onMic: () -> Unit,
     onSend: () -> Unit,
@@ -807,6 +807,16 @@ private fun DoubaoComposer(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
+            }
+            IconButton(
+                onClick = onPickImage,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PhotoLibrary,
+                    contentDescription = "发送图片",
+                    tint = SoftGray,
+                )
             }
             IconButton(
                 onClick = onAttach,
