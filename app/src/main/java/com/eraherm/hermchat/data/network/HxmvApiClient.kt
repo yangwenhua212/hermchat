@@ -97,9 +97,14 @@ data class HxmvConfigState(
 class HxmvApiClient(
     private val client: OkHttpClient = SharedHttpClients.streamingApi(),
     private val io: OkHttpClient = SharedHttpClients.api,
+    /**
+     * 探测专用（连 8s / 读 12s）：健康检查不能拿「连 15s + 读 60s」去晾用户——
+     * 真机实测过「点了检测几分钟没反应」，其实是一直在等超时。失败后调用方会重试一次。
+     */
+    private val probe: OkHttpClient = SharedHttpClients.connectionTest(),
 ) {
     suspend fun health(config: HxmvConfig): HxmvHealth {
-        val json = JSONObject(get(config, "/api/health"))
+        val json = JSONObject(get(config, "/api/health", probe))
         val providers = mutableMapOf<String, Boolean>()
         json.optJSONObject("providers")?.let { obj ->
             obj.keys().forEach { key -> providers[key] = obj.optJSONObject(key)?.optBoolean("ready") == true }
@@ -343,12 +348,12 @@ class HxmvApiClient(
         return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
     }
 
-    private fun get(config: HxmvConfig, path: String): String {
+    private fun get(config: HxmvConfig, path: String, client: OkHttpClient = io): String {
         val req = Request.Builder()
             .url(withToken(config.baseUrl + path, config.token))
             .get()
             .build()
-        return io.newCall(req).execute().use { response ->
+        return client.newCall(req).execute().use { response ->
             if (response.code == 401) throw HxmvUnauthorizedException()
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             response.body?.string().orEmpty()
