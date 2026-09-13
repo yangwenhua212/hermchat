@@ -122,13 +122,4 @@ HxSync 天然支持 **BYO Agent**（自建 Agent）。
 | **Phase 3** | v0.5.0 | **多设备 Gateway**：连接 Windows/Linux/NAS，主动提醒/Daily AI |
 | **Phase 4** | v1.0.0 | **Personal AI OS**：Agent Marketplace，家庭智能设备接入 |
 ---
-## 🤝 Philosophy（理念）
-HxSync **不创造新的 AI**。
-HxSync **连接你的 AI**。
-- 你的模型。
-- 你的数据。
-- 你的设备。
-- 你的 Agent。
-- 你的控制。
----
 **License**: AGPL-3.0 © HxSync Contributors
