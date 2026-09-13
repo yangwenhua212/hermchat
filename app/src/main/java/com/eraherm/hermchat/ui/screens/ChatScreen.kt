@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
@@ -44,6 +45,8 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -805,25 +808,53 @@ private fun DoubaoComposer(
                     )
                 }
             }
-            IconButton(
-                onClick = onPickImage,
-                modifier = Modifier.size(44.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.PhotoLibrary,
-                    contentDescription = "发送图片",
-                    tint = SoftGray,
-                )
-            }
-            IconButton(
-                onClick = onAttach,
-                modifier = Modifier.size(44.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.AttachFile,
-                    contentDescription = "添加附件",
-                    tint = SoftGray,
-                )
+            // 共用一个入口：点「+」弹出「图片 / 文件」两个选项，
+            // 图片走系统相册（图库），文件走文档选择器。
+            Box {
+                var menuOpen by remember { mutableStateOf(false) }
+                IconButton(
+                    onClick = { menuOpen = true },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = "添加图片或文件",
+                        tint = SoftGray,
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("图片") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.PhotoLibrary,
+                                contentDescription = null,
+                                tint = SoftGray,
+                            )
+                        },
+                        onClick = {
+                            menuOpen = false
+                            onPickImage()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("文件") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.AttachFile,
+                                contentDescription = null,
+                                tint = SoftGray,
+                            )
+                        },
+                        onClick = {
+                            menuOpen = false
+                            onAttach()
+                        },
+                    )
+                }
             }
 
             Box(

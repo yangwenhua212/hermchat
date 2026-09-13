@@ -105,7 +105,7 @@
 | 主题只改气泡不改背景 | Atmosphere 未接 theme | 主题渐变 + 可图片壁纸 |
 | 系统返回直接回桌面 | 未接 BackHandler | 与页内「返回」同路径 |
 | 传 PDF 却像发图片 | PDF 渲成 JPEG 后按 IMAGE 展示 | 按「PDF · 文件名」展示 |
-| 图片按钮打不开相册 / 和文档按钮是同一个选择器 | 用 `PickVisualMedia`：没有系统照片选择器的 ROM（国产常见）会退回 `ACTION_OPEN_DOCUMENT`，和「文档」按钮撞同一个界面 | 图片按钮改 `ActivityResultContracts.GetContent()` + `image/*`；解码失败再原样拷贝原图字节兜底（≥0.1.38） |
+| 打不开相册 / 选图只到文档选择器 | 用 `PickVisualMedia`：没有系统照片选择器的 ROM（国产常见）会退回 `ACTION_OPEN_DOCUMENT` | Composer 只留一个「+」按钮，菜单里「图片」走 `ActivityResultContracts.GetContent()` + `image/*`、「文件」走文档选择器；解码失败再原样拷贝原图字节兜底（≥0.1.38） |
 | 通知一直「正在听」却无反应 | 模型还在下 / 引擎未起 | 看进度；停止听；关后台监听 |
 
 详见：[UI.md](UI.md)、[PRODUCT.md](PRODUCT.md)
