@@ -73,6 +73,9 @@ class HxmvViewModel(
     /** 选图上传参考图时复用聊天附件那套解码（HEIC/WebP 也转成 JPEG）。 */
     private val images = ChatAttachmentStore(app)
 
+    /** 参考图字节按 url 缓存：网格里先加载一次，点开看大图不用再下一次。 */
+    private val refCache = mutableMapOf<String, Bitmap>()
+
     private val _ui = MutableStateFlow(HxmvUiState())
     val ui: StateFlow<HxmvUiState> = _ui.asStateFlow()
 
@@ -299,7 +302,11 @@ class HxmvViewModel(
                 refBusy = false,
                 message = result.getOrElse { UserFacingError.of(it, "上传失败") },
             )
-            if (result.isSuccess) loadRefs()
+            if (result.isSuccess) {
+                // 同一个 key 重新上传时 url 不变 → 必须清缓存，否则网格还显示旧图
+                refCache.clear()
+                loadRefs()
+            }
         }
     }
 
@@ -316,17 +323,19 @@ class HxmvViewModel(
                 onFailure = { UserFacingError.of(it, "删除失败") },
             )
             _ui.value = _ui.value.copy(refBusy = false, message = message)
+            if (result.getOrDefault(false)) refCache.clear()
             loadRefs()
         }
     }
 
-    /** 参考图缩略图（清单里一眼看出用的是哪张图）。 */
+    /** 参考图缩略图（清单里一眼看出用的是哪张图）；同一张只下一次，点开大图直接复用。 */
     suspend fun refImage(ref: HxmvRef): Bitmap? = withContext(Dispatchers.IO) {
         if (ref.url.isBlank()) return@withContext null
+        refCache[ref.url]?.let { return@withContext it }
         runCatching {
             val bytes = api.fetchBytes(prefs.config.value, ref.url)
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        }.getOrNull()
+        }.getOrNull()?.also { refCache[ref.url] = it }
     }
 
     /** 拉实例的接口配置（Key 是否配好 + 当前档位）。 */

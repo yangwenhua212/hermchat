@@ -11,6 +11,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,9 +48,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -68,6 +73,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val TERMUX_URL = "https://github.com/termux/termux-app/releases"
+
+/** 参考图网格：一行三张，点开看大图。 */
+private const val REF_COLUMNS = 3
+
+/** 缩略图高度 / 大图最大高度。 */
+private val REF_TILE_HEIGHT = 88.dp
+private val REF_PREVIEW_MAX_HEIGHT = 420.dp
 
 /** 参考图的两类（值 = 服务端 kind）。 */
 private val REF_KINDS = listOf(
@@ -111,6 +123,7 @@ fun HxmvScreen(
     var showConfig by remember { mutableStateOf(false) }
     var refKind by remember { mutableStateOf("character") }
     var refKey by remember { mutableStateOf("") }
+    var preview by remember { mutableStateOf<HxmvRef?>(null) }
 
     // 选图走系统相册（GetContent image 类型），与聊天附件同一个走法
     val pickRef = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -277,12 +290,23 @@ fun HxmvScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                 ) { Text(if (ui.refBusy) "处理中" else "选图上传") }
-                ui.refs.forEach { ref ->
-                    RefRow(
-                        ref = ref,
-                        load = viewModel::refImage,
-                        onDelete = { viewModel.deleteRef(ref) },
-                    )
+                ui.refs.chunked(REF_COLUMNS).forEach { line ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        line.forEach { ref ->
+                            RefTile(
+                                ref = ref,
+                                load = viewModel::refImage,
+                                onClick = { preview = ref },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        repeat(REF_COLUMNS - line.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -371,6 +395,15 @@ fun HxmvScreen(
             },
         )
     }
+
+    preview?.let { ref ->
+        RefPreviewDialog(
+            ref = ref,
+            load = viewModel::refImage,
+            onDelete = { viewModel.deleteRef(ref) },
+            onDismiss = { preview = null },
+        )
+    }
 }
 
 @Composable
@@ -431,38 +464,84 @@ private fun ServiceDialog(
     )
 }
 
-/** 一行参考图：缩略图 + 「类型 · 名字」 + 删除。 */
+/** 一张参考图：缩略图 + 名字；点开是大图（删除放那儿，省得网格里误触）。 */
 @Composable
-private fun RefRow(
+private fun RefTile(
     ref: HxmvRef,
     load: suspend (HxmvRef) -> Bitmap?,
-    onDelete: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var thumb by remember(ref.key, ref.url) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(ref.key, ref.url) { thumb = load(ref) }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         val bitmap = thumb
         if (bitmap != null) {
             Image(
                 bitmap = bitmap.asImageBitmap(),
                 contentDescription = null,
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(REF_TILE_HEIGHT)
+                    .clip(RoundedCornerShape(10.dp)),
                 contentScale = ContentScale.Crop,
             )
         } else {
-            Spacer(modifier = Modifier.size(44.dp))
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(REF_TILE_HEIGHT)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
         }
-        Spacer(modifier = Modifier.width(10.dp))
         Text(
             "${ref.kindLabel} · ${ref.name}",
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-        TextButton(onClick = onDelete) { Text("删除") }
     }
+}
+
+/** 参考图大图：看清用的是哪张；删除放这里（网格里点一下只预览，不会误删）。 */
+@Composable
+private fun RefPreviewDialog(
+    ref: HxmvRef,
+    load: suspend (HxmvRef) -> Bitmap?,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var image by remember(ref.key, ref.url) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(ref.key, ref.url) { image = load(ref) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${ref.kindLabel} · ${ref.name}") },
+        text = {
+            val bitmap = image
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = REF_PREVIEW_MAX_HEIGHT)
+                        .clip(RoundedCornerShape(12.dp)),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Text("读取中…", style = MaterialTheme.typography.bodyMedium)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onDelete(); onDismiss() }) { Text("删除") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+    )
 }
 
 /** 接口配置：Key 状态 + 视频/视觉档位（保存即生效，不用重启实例）。 */
