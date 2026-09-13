@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -184,10 +183,12 @@ fun ChatScreen(
             }.onFailure { voiceStatus = it.message?.take(24) ?: "选文件失败" }
         }
     }
-    // 图片入口：走系统相册（Android 13+ 为系统照片选择器，无需存储权限），
-    // 自动压缩成 JPEG 后走 vision 通道；旧系统由系统的文档选择器兜底。
+    // 图片入口：ACTION_GET_CONTENT + image 类型 —— 各 ROM（含 MIUI/HyperOS）都解析得到
+    // 图库或文件管理，一定看得到本地照片。**别用 PickVisualMedia**：没有系统照片
+    // 选择器的 ROM（国产常见）会退回 ACTION_OPEN_DOCUMENT，与「文档」按钮同一个
+    // 选择器且找不到相册（真机反馈「无法获取图片」）。选完压 JPEG 走 vision。
     val pickImage = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia(),
+        ActivityResultContracts.GetContent(),
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
@@ -711,11 +712,7 @@ fun ChatScreen(
                     sendScale = sendScale,
                     showMic = voiceReady && chatPrefs.inputMode != InputMode.TEXT_FIRST,
                     textFocus = textFocus,
-                    onPickImage = {
-                        pickImage.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
-                    },
+                    onPickImage = { pickImage.launch("image/*") },
                     onAttach = {
                         pickAttachment.launch(ChatAttachmentStore.openDocumentMimeTypes())
                     },

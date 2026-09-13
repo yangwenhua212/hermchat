@@ -97,18 +97,58 @@ class ChatAttachmentStore(
 
     private fun importImage(uri: Uri, displayName: String): ChatAttachment {
         val dest = File(root, "img_${UUID.randomUUID()}.jpg")
-        val compressed = compressToJpeg(uri, dest) ?: error("无法读取图片")
-        if (compressed.length() < MIN_IMAGE_BYTES) {
-            compressed.delete()
-            error("图片无效")
+        val compressed = compressToJpeg(uri, dest)
+        if (compressed != null) {
+            if (compressed.length() < MIN_IMAGE_BYTES) {
+                compressed.delete()
+                error("图片无效")
+            }
+            if (compressed.length() > MAX_IMAGE_BYTES) {
+                compressed.delete()
+                error("图片过大")
+            }
+            return ChatAttachment(
+                path = compressed.absolutePath,
+                mime = "image/jpeg",
+                name = displayName,
+                kind = AttachmentKind.IMAGE,
+            )
         }
-        if (compressed.length() > MAX_IMAGE_BYTES) {
-            compressed.delete()
-            error("图片过大")
+        // 解码兜底：本机解不开（少见格式 / 个别 ROM 的 provider）就原样拷贝字节，
+        // 让服务端去解——总比甩「无法读取图片」强。
+        dest.delete()
+        return copyRawImage(uri, displayName)
+    }
+
+    /** 解码失败时的兜底：原样拷贝原图（保留真实 mime，超限报「图片过大」）。 */
+    private fun copyRawImage(uri: Uri, displayName: String): ChatAttachment {
+        val mime = appContext.contentResolver.getType(uri).orEmpty().ifBlank { "image/jpeg" }
+        val ext = mime.substringAfter('/', "jpeg").substringBefore('+').take(8)
+        val dest = File(root, "img_${UUID.randomUUID()}.$ext")
+        var size = 0L
+        val stream = appContext.contentResolver.openInputStream(uri) ?: error("无法读取图片")
+        stream.use { input ->
+            dest.outputStream().use { output ->
+                val buf = ByteArray(8_192)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    size += n
+                    if (size > MAX_IMAGE_BYTES) {
+                        dest.delete()
+                        error("图片过大")
+                    }
+                    output.write(buf, 0, n)
+                }
+            }
+        }
+        if (dest.length() < 1L) {
+            dest.delete()
+            error("无法读取图片")
         }
         return ChatAttachment(
-            path = compressed.absolutePath,
-            mime = "image/jpeg",
+            path = dest.absolutePath,
+            mime = mime,
             name = displayName,
             kind = AttachmentKind.IMAGE,
         )
