@@ -1,0 +1,35 @@
+name: 清理 Release
+
+# 用途：撤下（删除）指定的历史 Release + 对应 tag。
+# 为什么做成工作流：本地/构建机都不放 GitHub token，只有 Actions 自带 GITHUB_TOKEN 有 contents:write。
+#
+# 用法：推一个 cleanup- 开头的 tag，后面的名字就是要撤的版本（多个用 _ 分隔）：
+#   git tag cleanup-v0.1.39 && git push origin cleanup-v0.1.39
+#   git tag cleanup-v0.1.39_v0.1.38 && git push origin cleanup-v0.1.39_v0.1.38
+on:
+  push:
+    tags:
+      - 'cleanup-*'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 撤下指定 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RAW="${GITHUB_REF_NAME#cleanup-}"
+          TAGS=$(echo "$RAW" | tr '_' ' ')
+          echo "要撤下的版本：$TAGS"
+          for t in $TAGS; do
+            if gh release delete "$t" --yes --cleanup-tag --repo "${{ github.repository }}"; then
+              echo "✅ 已撤下 $t（含 tag）"
+            else
+              echo "⚠️ 撤下 $t 失败（可能不存在，或没有权限）"
+            fi
+          done
+          echo "清理结束"
