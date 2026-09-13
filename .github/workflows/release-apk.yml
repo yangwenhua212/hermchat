@@ -62,7 +62,7 @@ jobs:
           gh release create "$TAG" "$ASSET" \
             --repo "${{ github.repository }}" \
             --title "HxSync ${VER}" \
-            --notes "HxMV 内容生产页（设置 → HxMV 内容生产）：远端实例与手机本机两种模式，实时看分片/镜头进度与实测指标，成品可播放或存相册。详见 docs/HXMV.md。" \
+            --notes "版本说明见仓库 docs/RELEASE_NOTES.md。安装包为 release 签名，可直接覆盖安装。" \
             >> "$REPORT" 2>&1
           RC=$?
           echo "GH_EXIT=$RC" >> "$REPORT"
