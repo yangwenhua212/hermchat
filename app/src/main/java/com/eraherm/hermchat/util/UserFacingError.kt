@@ -59,7 +59,12 @@ object UserFacingError {
             lower.contains("certificate") || lower.contains("ssl") || lower.contains("handshake") ->
                 "安全连接失败，请检查证书或改用 https"
 
-            lower.contains("unexpected end of stream") || lower.contains("connection reset") ->
+            lower.contains("unexpected end of stream") ||
+                lower.contains("connection reset") ||
+                lower.contains("stream reset") ||
+                lower.contains("connection shutdown") ||
+                lower.contains("unexpected status line") ||
+                lower.contains("goaway") ->
                 "连接被中断，请再试一次"
 
             lower.contains("software caused connection abort") ->

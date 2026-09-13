@@ -164,7 +164,17 @@ fun HxmvScreen(
                 TextButton(onClick = { showService = true }) { Text("服务") }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Text(ui.statusLine, style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    ui.statusLine,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                // 没连上时给一次手动机会：不用进「服务」对话框也能重探
+                if (!ui.connected && !ui.needsToken) {
+                    TextButton(onClick = { viewModel.checkConnection() }) { Text("重试") }
+                }
+            }
             if (ui.needsToken) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(

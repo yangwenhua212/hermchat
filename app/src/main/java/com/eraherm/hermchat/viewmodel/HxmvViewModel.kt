@@ -59,6 +59,9 @@ data class HxmvUiState(
     val configBusy: Boolean = false,
 )
 
+/** 连接失败的兜底文案（映射表也兜到这里时，后面补真实原因）。 */
+private const val CONNECT_FAILED = "连不上 HxMV"
+
 /**
  * HxMV 内容生产的页面状态机：发现实例 → 提交 → 跟事件 → 收成品（含主动推送/拉取两条路）。
  *
@@ -103,10 +106,23 @@ class HxmvViewModel(
         val cfg = prefs.config.value
         viewModelScope.launch {
             val host = cfg.baseUrl.removePrefix("https://").removePrefix("http://")
-            val result = runCatching { api.health(cfg) }
+            _ui.value = _ui.value.copy(statusLine = "正在连接 $host…")
+            var result = runCatching { api.health(cfg) }
+            if (result.isFailure) {
+                // 移动网络到 CDN 的连接常被中途重置（实测：手机第一次没到服务器、隔一会儿那次就 200）
+                // 自动再来一次，别让用户自己发现「再点一下就好了」
+                delay(1200)
+                result = runCatching { api.health(cfg) }
+            }
             val health = result.getOrNull()
             val line = if (health == null) {
-                UserFacingError.of(result.exceptionOrNull() ?: IllegalStateException(), "连不上 HxMV")
+                val err = result.exceptionOrNull()
+                val mapped = UserFacingError.of(err ?: IllegalStateException(), CONNECT_FAILED)
+                // 映射表兜底时说明不了原因（网络中断/响应异常都糊成一句）→ 把真实原因带上
+                if (mapped == CONNECT_FAILED && err != null) {
+                    val why = err.message?.trim().orEmpty().ifBlank { err.javaClass.simpleName }
+                    "$CONNECT_FAILED · ${why.take(40)}"
+                } else mapped
             } else when {
                 health.needsToken && cfg.token.isBlank() -> "已连接 $host · 需要令牌"
                 health.needsToken && !health.authed -> "已连接 $host · 令牌不对"
