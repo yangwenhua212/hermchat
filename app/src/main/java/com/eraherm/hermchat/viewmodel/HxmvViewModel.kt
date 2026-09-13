@@ -299,26 +299,37 @@ class HxmvViewModel(
         }
     }
 
-    /** 上传一张参考图：选中图 → JPEG → `/api/ref`（设定表会自动裁上部主视觉）。 */
-    fun uploadRef(uri: Uri, kind: String, key: String) {
+    /** 上传参考图：items = (图, 键名) 列表——单张和多张走同一条路（多张逐张传，带进度与汇总）。 */
+    fun uploadRefs(items: List<Pair<Uri, String>>, kind: String) {
         val cfg = prefs.config.value
         val project = cfg.project.trim()
-        if (project.isEmpty() || key.isBlank() || _ui.value.refBusy) return
-        _ui.value = _ui.value.copy(refBusy = true, message = "正在上传参考图…")
+        if (project.isEmpty() || items.isEmpty() || _ui.value.refBusy) return
+        val todo = items.map { (uri, key) -> uri to key.trim() }.filter { it.second.isNotEmpty() }
+        if (todo.isEmpty()) return
+        _ui.value = _ui.value.copy(refBusy = true, message = "正在上传 1/${todo.size}…")
         viewModelScope.launch {
-            val bytes = withContext(Dispatchers.IO) { images.readJpeg(uri) }
-            if (bytes == null || bytes.isEmpty()) {
-                _ui.value = _ui.value.copy(refBusy = false, message = "这张图读不出来")
-                return@launch
+            var ok = 0
+            var firstError = ""
+            todo.forEach { (uri, key) ->
+                val bytes = withContext(Dispatchers.IO) { images.readJpeg(uri) }
+                if (bytes == null || bytes.isEmpty()) {
+                    if (firstError.isEmpty()) firstError = "有张图读不出来"
+                    return@forEach
+                }
+                val result = runCatching { api.uploadRef(cfg, project, kind, key, bytes, "image/jpeg") }
+                if (result.isSuccess) {
+                    ok++
+                    _ui.value = _ui.value.copy(message = "已上传 $ok/${todo.size}：$key")
+                } else if (firstError.isEmpty()) {
+                    firstError = "$key：" + UserFacingError.of(result.exceptionOrNull(), "上传失败")
+                }
             }
-            val result = runCatching {
-                api.uploadRef(cfg, project, kind, key.trim(), bytes, "image/jpeg")
-            }
+            val failed = todo.size - ok
             _ui.value = _ui.value.copy(
                 refBusy = false,
-                message = result.getOrElse { UserFacingError.of(it, "上传失败") },
+                message = "已上传 $ok 张" + if (failed > 0) "，失败 $failed 张 —— $firstError" else "",
             )
-            if (result.isSuccess) {
+            if (ok > 0) {
                 // 同一个 key 重新上传时 url 不变 → 必须清缓存，否则网格还显示旧图
                 refCache.clear()
                 loadRefs()

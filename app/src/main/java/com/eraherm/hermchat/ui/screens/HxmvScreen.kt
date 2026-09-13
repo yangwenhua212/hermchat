@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -124,10 +125,15 @@ fun HxmvScreen(
     var refKind by remember { mutableStateOf("character") }
     var refKey by remember { mutableStateOf("") }
     var preview by remember { mutableStateOf<HxmvRef?>(null) }
+    var batchUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
-    // 选图走系统相册（GetContent image 类型），与聊天附件同一个走法
-    val pickRef = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) viewModel.uploadRef(uri, refKind, refKey)
+    // 选图走系统相册（GetContent 系列 image 类型），与聊天附件同一个走法；支持一次多选
+    val pickRef = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        when {
+            uris.isEmpty() -> Unit
+            uris.size == 1 -> viewModel.uploadRefs(listOf(uris.first() to refKey), refKind)
+            else -> batchUris = uris
+        }
     }
 
     BackHandler(onBack = onBack)
@@ -299,7 +305,7 @@ fun HxmvScreen(
                     enabled = config.project.isNotBlank() && refKey.isNotBlank() && !ui.refBusy,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                ) { Text(if (ui.refBusy) "处理中" else "选图上传") }
+                ) { Text(if (ui.refBusy) "处理中" else "选图上传（可多选）") }
                 ui.refs.chunked(REF_COLUMNS).forEach { line ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -412,6 +418,21 @@ fun HxmvScreen(
             load = viewModel::refImage,
             onDelete = { viewModel.deleteRef(ref) },
             onDismiss = { preview = null },
+        )
+    }
+
+    if (batchUris.isNotEmpty()) {
+        BatchRefDialog(
+            count = batchUris.size,
+            base = refKey,
+            onDismiss = { batchUris = emptyList() },
+            onConfirm = { names ->
+                viewModel.uploadRefs(
+                    batchUris.mapIndexed { index, uri -> uri to names.getOrElse(index) { "$refKey${index + 1}" } },
+                    refKind,
+                )
+                batchUris = emptyList()
+            },
         )
     }
 }
@@ -551,6 +572,45 @@ private fun RefPreviewDialog(
             TextButton(onClick = { onDelete(); onDismiss() }) { Text("删除") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+    )
+}
+
+/** 多图上传：一次选了好几张口，逐张起名（默认「名字1/名字2…」），确认后批量上传。 */
+@Composable
+private fun BatchRefDialog(
+    count: Int,
+    base: String,
+    onDismiss: () -> Unit,
+    onConfirm: (List<String>) -> Unit,
+) {
+    val names = remember(count, base) {
+        mutableStateListOf<String>().apply { repeat(count) { add("$base${it + 1}") } }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("给这 $count 张起名") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 380.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                names.forEachIndexed { index, name ->
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { names[index] = it },
+                        label = { Text("第 ${index + 1} 张") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(names.toList()) }) { Text("上传 $count 张") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
