@@ -24,6 +24,21 @@ Release **必须**使用长期有效的 `hermchat-release.jks`（约 10000 天�
 
 也可发布到 GitHub Releases，供协作者下载同签名预览包。
 
+## 撤下历史 Release（清理工作流）
+
+本地与构建机都不放 GitHub token，删除 Release 只能借 Actions 自带的 `GITHUB_TOKEN`：
+
+```bash
+git tag cleanup-v0.1.39 && git push origin cleanup-v0.1.39          # 撤一个
+git tag cleanup-v0.1.38_v0.1.37_v0.1.6 && git push origin "cleanup-..." # 撤多个（_ 分隔）
+```
+
+工作流 `.github/workflows/release-cleanup.yml` 会 `gh release delete <tag> --yes --cleanup-tag`
+（Release 和 git tag 一起删）。用完把 cleanup tag 推掉：`git push origin :cleanup-v0.1.39`。
+
+> 为什么要撤：开源包不能带作者自己的实例地址等默认值——旧包（≤0.1.39）预填过作者的 HxMV 实例地址，
+> 已于 2026-09 全部撤下，仓库只保留当前版本。
+
 > **Windows 注意**：`gh release create/edit` 的 `--notes` 在 PowerShell 下容易把中文弄成乱码。请用 UTF-8 文件：
 > `gh release edit vX.Y.Z --notes-file path/to/notes.md`。
 > 已用 `--notes-file` 重写乱码版本：v0.1.10 / v0.1.11 / v0.1.12；0.1.13+ 与 0.1.20+ 短备注经 API 核对正常。
