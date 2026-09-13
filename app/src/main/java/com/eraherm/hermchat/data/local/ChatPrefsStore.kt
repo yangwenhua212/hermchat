@@ -4,8 +4,6 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import org.json.JSONArray
-import org.json.JSONObject
 
 enum class InputMode(
     val label: String,
@@ -15,18 +13,6 @@ enum class InputMode(
     TEXT_FIRST("文字优先", "进入聊天自动聚焦输入框"),
     MIXED("混合", "麦克风与键盘并重（默认）"),
 }
-
-enum class ShortcutAction {
-    INSERT,
-    SEND,
-}
-
-data class ShortcutDef(
-    val id: String,
-    val label: String,
-    val text: String,
-    val action: ShortcutAction,
-)
 
 enum class ChatThemeStyle(val label: String) {
     FOREST("系统默认绿"),
@@ -106,7 +92,6 @@ data class ChatPrefs(
     val bochaApiKey: String = "",
     /** 可选：Tavily API Key；有则次于博查 */
     val tavilyApiKey: String = "",
-    val shortcuts: List<ShortcutDef> = DEFAULT_SHORTCUTS,
 ) {
     fun resolvedImagePath(): String? =
         if (backgroundMode == ChatBackgroundMode.IMAGE) {
@@ -114,16 +99,6 @@ data class ChatPrefs(
         } else {
             null
         }
-
-    companion object {
-        val DEFAULT_SHORTCUTS = listOf(
-            ShortcutDef("today", "今天日程", "今天有什么日程？", ShortcutAction.SEND),
-            ShortcutDef("remind", "提醒我…", "提醒我", ShortcutAction.INSERT),
-            ShortcutDef("timer", "半小时后", "半小时后提醒我", ShortcutAction.INSERT),
-            ShortcutDef("meeting", "明天开会", "明天下午3点提醒我开会", ShortcutAction.INSERT),
-            ShortcutDef("book", "预约…", "帮我预约", ShortcutAction.INSERT),
-        )
-    }
 }
 
 class ChatPrefsStore(
@@ -229,34 +204,7 @@ class ChatPrefsStore(
         update { it.copy(tavilyApiKey = value.trim()) }
     }
 
-    fun moveShortcut(id: String, offset: Int) {
-        update { current ->
-            val list = current.shortcuts.toMutableList()
-            val index = list.indexOfFirst { it.id == id }
-            if (index < 0) return@update current
-            val target = (index + offset).coerceIn(0, list.lastIndex)
-            if (target == index) return@update current
-            val item = list.removeAt(index)
-            list.add(target, item)
-            current.copy(shortcuts = list)
-        }
-    }
-
-    fun resetShortcuts() {
-        update { it.copy(shortcuts = ChatPrefs.DEFAULT_SHORTCUTS) }
-    }
-
     private fun persist(value: ChatPrefs) {
-        val array = JSONArray()
-        value.shortcuts.forEach { shortcut ->
-            array.put(
-                JSONObject()
-                    .put("id", shortcut.id)
-                    .put("label", shortcut.label)
-                    .put("text", shortcut.text)
-                    .put("action", shortcut.action.name),
-            )
-        }
         prefs.edit()
             .putString(KEY_INPUT_MODE, value.inputMode.name)
             .putString(KEY_THEME, value.themeStyle.name)
@@ -275,7 +223,6 @@ class ChatPrefsStore(
             .putBoolean(KEY_MEMORY_ENABLED, value.memoryEnabled)
             .putString(KEY_BOCHA_API_KEY, value.bochaApiKey)
             .putString(KEY_TAVILY_API_KEY, value.tavilyApiKey)
-            .putString(KEY_SHORTCUTS, array.toString())
             .apply()
     }
 
@@ -331,7 +278,6 @@ class ChatPrefsStore(
         }
         val bochaApiKey = prefs.getString(KEY_BOCHA_API_KEY, "") ?: ""
         val tavilyApiKey = prefs.getString(KEY_TAVILY_API_KEY, "") ?: ""
-        val shortcuts = loadShortcuts()
         return ChatPrefs(
             inputMode = mode,
             themeStyle = theme,
@@ -350,31 +296,7 @@ class ChatPrefsStore(
             memoryEnabled = memoryEnabled,
             bochaApiKey = bochaApiKey,
             tavilyApiKey = tavilyApiKey,
-            shortcuts = shortcuts,
         )
-    }
-
-    private fun loadShortcuts(): List<ShortcutDef> {
-        val raw = prefs.getString(KEY_SHORTCUTS, null) ?: return ChatPrefs.DEFAULT_SHORTCUTS
-        return runCatching {
-            val array = JSONArray(raw)
-            buildList {
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    val action = runCatching {
-                        ShortcutAction.valueOf(obj.getString("action"))
-                    }.getOrDefault(ShortcutAction.INSERT)
-                    add(
-                        ShortcutDef(
-                            id = obj.getString("id"),
-                            label = obj.getString("label"),
-                            text = obj.getString("text"),
-                            action = action,
-                        ),
-                    )
-                }
-            }.ifEmpty { ChatPrefs.DEFAULT_SHORTCUTS }
-        }.getOrDefault(ChatPrefs.DEFAULT_SHORTCUTS)
     }
 
     companion object {
@@ -396,6 +318,5 @@ class ChatPrefsStore(
         private const val KEY_MEMORY_ENABLED = "memory_enabled"
         private const val KEY_BOCHA_API_KEY = "bocha_api_key"
         private const val KEY_TAVILY_API_KEY = "tavily_api_key"
-        private const val KEY_SHORTCUTS = "shortcuts"
     }
 }
