@@ -87,6 +87,15 @@ data class HxmvConfigState(
  */
 data class HxmvChatTurn(val role: String, val text: String)
 
+/** 作品库里的一条（/api/runs）。poster = 封面文件名（可能为空）。 */
+data class HxmvRun(
+    val runId: String,
+    val goal: String,
+    val ts: Long,
+    val status: String,
+    val poster: String,
+)
+
 data class HxmvChatReply(
     val reply: String,
     val goal: String?,
@@ -293,6 +302,26 @@ class HxmvApiClient(
     suspend fun deleteRef(config: HxmvConfig, project: String, ref: HxmvRef): Boolean {
         val path = "/api/ref?project=${enc(project)}&kind=${ref.kind}&key=${enc(ref.key)}"
         return JSONObject(del(config, path)).optBoolean("removed")
+    }
+
+    /** 作品列表（/api/runs）：一条 = 一次生产。status = done / running / aborted（aborted=被服务重启打断）。 */
+    suspend fun runs(config: HxmvConfig): List<HxmvRun> {
+        val json = JSONObject(get(config, "/api/runs?limit=30"))
+        val arr = json.optJSONArray("runs") ?: return emptyList()
+        val out = ArrayList<HxmvRun>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            out.add(
+                HxmvRun(
+                    runId = o.optString("run_id"),
+                    goal = o.optString("goal"),
+                    ts = o.optLong("ts"),
+                    status = o.optString("status"),
+                    poster = o.optString("poster"),
+                )
+            )
+        }
+        return out
     }
 
     /** 接口配置状态：Key 是否配好（脱敏串）+ 当前档位 + 视觉评审是否就绪。 */

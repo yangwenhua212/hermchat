@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -73,11 +74,15 @@ import com.eraherm.hermchat.data.local.HxmvProvider
 import com.eraherm.hermchat.data.network.HxmvArtifact
 import com.eraherm.hermchat.data.network.HxmvConfigState
 import com.eraherm.hermchat.data.network.HxmvRef
+import com.eraherm.hermchat.data.network.HxmvRun
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
 import com.eraherm.hermchat.ui.theme.SoftGray
 import com.eraherm.hermchat.viewmodel.HxmvViewModel
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 private const val TERMUX_URL = "https://github.com/termux/termux-app/releases"
@@ -135,6 +140,9 @@ fun HxmvScreen(
     var chatDraft by remember { mutableStateOf("") }
     var project by remember { mutableStateOf(config.project) }
     var showService by remember { mutableStateOf(false) }
+    var tab by remember { mutableStateOf(0) }            // 0=创作 1=作品（老大：「灵感和剧场不要」）
+    var inSession by remember { mutableStateOf(false) }  // 发出去/点开工后才进会话流
+    var homeDraft by remember { mutableStateOf("") }      // 创作页的大输入框（胶囊会往里预填）
     var showTermuxDialog by remember { mutableStateOf(false) }
     var showConfig by remember { mutableStateOf(false) }
     var refKind by remember { mutableStateOf("character") }
@@ -219,6 +227,27 @@ fun HxmvScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
 
+            if (!inSession) {
+                if (tab == 0) {
+                    CreateHome(
+                        draft = homeDraft,
+                        onDraft = { homeDraft = it },
+                        busy = ui.chatBusy,
+                        onSend = { text ->
+                            viewModel.sendChat(text)
+                            inSession = true
+                        },
+                        onRefs = { inSession = true },
+                    )
+                } else {
+                    WorksHome(
+                        runs = ui.runs,
+                        busy = ui.runsBusy,
+                        onRefresh = { viewModel.loadRuns() },
+                        onDelete = { viewModel.discard(it) },
+                    )
+                }
+            } else {
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -459,10 +488,24 @@ fun HxmvScreen(
                     shape = RoundedCornerShape(12.dp),
                 ) { Text(if (ui.localInstanceFound) "③ 已连上本机 HxMV" else "③ 检测本机 HxMV") }
             }
+            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            // 底部导航：只留 创作 / 作品
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                NavTab("✦", "创作", tab == 0 && !inSession) { tab = 0; inSession = false }
+                NavTab("▦", "作品", tab == 1 && !inSession) {
+                    tab = 1; inSession = false; viewModel.loadRuns()
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = onBack) { Text("返回") }
+                TextButton(onClick = { if (inSession) inSession = false else onBack() }) {
+                    Text(if (inSession) "← 创作" else "返回")
+                }
             }
         }
     }
@@ -561,6 +604,179 @@ private fun Section(title: String? = null, content: @Composable ColumnScope.() -
                 )
             }
             content()
+        }
+    }
+}
+
+/** 创作首页的功能胶囊（对齐市面 App 的入口页）。第三个字段 = 点一下往输入框里预填的灵感。 */
+private val HOME_PILLS = listOf(
+    Triple("⚡", "沉浸式短片 · 智谱真视频", "一只柯基在雪地里打滚，8 秒，电影感"),
+    Triple("▶", "输入灵感，智能生视频", ""),
+    Triple("🖼", "照片跟我动（图生视频）", ""),
+    Triple("🎞", "一镜到底 · 多镜头成片", "一个小猴子在花果山翻跟头，多镜头一镜到底，5 秒"),
+    Triple("👤", "角色一致性（参考图）", ""),
+    Triple("📁", "续做同一部（项目）", "接着上一部继续拍，同样的角色和场景"),
+)
+
+/** 创作首页：hero + 功能胶囊 + 底部大输入框（App 式入口页）。 */
+@Composable
+private fun ColumnScope.CreateHome(
+    draft: String,
+    onDraft: (String) -> Unit,
+    busy: Boolean,
+    onSend: (String) -> Unit,
+    onRefs: () -> Unit,
+) {
+    Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(18.dp)) {
+                    Text("HxMV · 自主内容生产", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("说一句想做什么，它自己去拍、去剪、去修", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            HOME_PILLS.forEach { (icon, label, prefill) ->
+                OutlinedButton(
+                    onClick = {
+                        when {
+                            label.contains("参考图") || label.contains("照片") -> onRefs()
+                            prefill.isNotBlank() -> onDraft(prefill)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(999.dp),
+                ) {
+                    Text(icon)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(label, modifier = Modifier.weight(1f), maxLines = 1)
+                }
+            }
+            Text(
+                "上划发现更多功能",
+                style = MaterialTheme.typography.bodySmall,
+                color = SoftGray,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedTextField(
+            value = draft,
+            onValueChange = onDraft,
+            placeholder = { Text("输入灵感，一键成片") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(onClick = onRefs, shape = RoundedCornerShape(999.dp)) { Text("＋") }
+            Button(
+                onClick = {
+                    if (draft.isNotBlank() && !busy) {
+                        onSend(draft)
+                        onDraft("")
+                    }
+                },
+                enabled = draft.isNotBlank() && !busy,
+                shape = RoundedCornerShape(999.dp),
+                modifier = Modifier.weight(1f).height(46.dp),
+            ) { Text(if (busy) "它正在想…" else "一键成片") }
+        }
+    }
+}
+
+/** 作品页：一次生产一条（/api/runs）。没有就提示去创作。 */
+@Composable
+private fun ColumnScope.WorksHome(
+    runs: List<HxmvRun>,
+    busy: Boolean,
+    onRefresh: () -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    val fmt = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("作品", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(onClick = onRefresh, enabled = !busy) { Text(if (busy) "刷新中…" else "刷新") }
+        }
+        if (runs.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(18.dp)) {
+                    Text("还没有作品", style = MaterialTheme.typography.titleSmall)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("去「创作」说一句，它就去拍", style = MaterialTheme.typography.bodyMedium, color = SoftGray)
+                }
+            }
+            return
+        }
+        runs.forEach { run ->
+            val state = when (run.status) {
+                "done" -> "完成"
+                "running" -> "进行中"
+                "aborted" -> "被中断"
+                else -> run.status
+            }
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(run.goal, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("$state · " + fmt.format(Date(run.ts * 1000)), style = MaterialTheme.typography.bodySmall, color = SoftGray)
+                    if (run.status != "running") {
+                        OutlinedButton(
+                            onClick = { onDelete(run.runId) },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error,
+                            ),
+                        ) { Text("删掉") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 底部导航的一项。 */
+@Composable
+private fun NavTab(icon: String, label: String, on: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(icon, color = if (on) MaterialTheme.colorScheme.primary else SoftGray)
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (on) MaterialTheme.colorScheme.primary else SoftGray,
+            )
         }
     }
 }

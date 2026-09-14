@@ -20,6 +20,7 @@ import com.eraherm.hermchat.data.network.HxmvArtifact
 import com.eraherm.hermchat.data.network.HxmvChatTurn
 import com.eraherm.hermchat.data.network.HxmvConfigState
 import com.eraherm.hermchat.data.network.HxmvRef
+import com.eraherm.hermchat.data.network.HxmvRun
 import com.eraherm.hermchat.util.UserFacingError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -66,6 +67,9 @@ data class HxmvUiState(
     /** 当前项目的参考图（图生视频的首帧）。 */
     val refs: List<HxmvRef> = emptyList(),
     val refBusy: Boolean = false,
+    /** 作品库（/api/runs）：一次生产一条。 */
+    val runs: List<HxmvRun> = emptyList(),
+    val runsBusy: Boolean = false,
     /** 实例的接口配置（Key 状态 + 档位）；null = 还没拉到。 */
     val remoteConfig: HxmvConfigState? = null,
     val configBusy: Boolean = false,
@@ -112,6 +116,20 @@ class HxmvViewModel(
     }
 
     fun updateConfig(transform: (HxmvConfig) -> HxmvConfig) = prefs.update(transform)
+
+    /** 拉作品库（进「作品」页时调）。 */
+    fun loadRuns() {
+        val cfg = prefs.config.value
+        _ui.value = _ui.value.copy(runsBusy = true)
+        viewModelScope.launch {
+            try {
+                val list = api.runs(cfg)
+                _ui.value = _ui.value.copy(runs = list, runsBusy = false)
+            } catch (e: Exception) {
+                _ui.value = _ui.value.copy(runsBusy = false)
+            }
+        }
+    }
 
     /** 探测当前配置的实例。health 是公开接口，所以能分清「连不上」和「缺令牌」。 */
     fun checkConnection() {
@@ -309,6 +327,7 @@ class HxmvViewModel(
                     artifacts = emptyList(),
                     message = line,
                 )
+                loadRuns()   // 删完顺手刷新作品库，别让被删的还挂在那
             } catch (e: Exception) {
                 _ui.value = _ui.value.copy(message = UserFacingError.of(e, "删除失败"))
             }
