@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -87,6 +88,13 @@ private const val REF_COLUMNS = 3
 /** 缩略图高度 / 大图最大高度。 */
 private val REF_TILE_HEIGHT = 88.dp
 private val REF_PREVIEW_MAX_HEIGHT = 420.dp
+
+/** 起手示例：空会话时给三句，点一下直接发（和网页面板一致）。 */
+private val START_ASKS = listOf(
+    "一只柯基在雪地里打滚，8 秒",
+    "小石猴在花果山翻跟头，5 秒，电影感",
+    "雨夜霓虹街道，慢镜头，3 秒",
+)
 
 /** 参考图的两类（值 = 服务端 kind）。 */
 private val REF_KINDS = listOf(
@@ -218,6 +226,22 @@ fun HxmvScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Section("对话") {
+                    // 起手：空会话直接给三句，点一下就跑（不让人对着空框发呆）
+                    if (ui.chat.isEmpty()) {
+                        Text("说一句，它就去拍", style = MaterialTheme.typography.titleMedium)
+                        START_ASKS.forEach { ask ->
+                            OutlinedButton(
+                                onClick = {
+                                    chatDraft = ask
+                                    viewModel.sendChat(ask)
+                                    chatDraft = ""
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(999.dp),
+                            ) { Text(ask, maxLines = 1) }
+                        }
+                    }
+
                     ui.chat.forEach { line ->
                         val mine = line.role == "user"
                         Row(
@@ -238,7 +262,11 @@ fun HxmvScreen(
                                 line.goal?.let { g ->
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Button(
-                                        onClick = { goal = g },
+                                        onClick = {
+                                            // 一次点击 = 直接开工（不再「先填目标、再点开始」两步）
+                                            goal = g
+                                            viewModel.start(g)
+                                        },
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(12.dp),
                                     ) { Text("开工", maxLines = 1) }
@@ -249,65 +277,25 @@ fun HxmvScreen(
                     if (ui.chatBusy) {
                         Text("正在想…", style = MaterialTheme.typography.bodySmall, color = SoftGray)
                     }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedTextField(
-                            value = chatDraft,
-                            onValueChange = { chatDraft = it },
-                            placeholder = { Text("想做什么片，或改哪里") },
-                            modifier = Modifier.weight(1f),
-                        )
-                        Button(
-                            onClick = {
-                                viewModel.sendChat(chatDraft)
-                                chatDraft = ""
-                            },
-                            enabled = chatDraft.isNotBlank() && !ui.chatBusy,
-                            shape = RoundedCornerShape(14.dp),
-                        ) { Text("发送") }
-                    }
-                }
 
-                Section("开始生产") {
-                    OutlinedTextField(
-                        value = goal,
-                        onValueChange = { goal = it },
-                        placeholder = { Text("想做什么内容") },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        HxmvProvider.entries.forEach { provider ->
-                            FilterChip(
-                                selected = config.provider == provider,
-                                onClick = { viewModel.updateConfig { it.copy(provider = provider) } },
-                                label = { Text(provider.label) },
+                    // 任务气泡：进度 / 成品 / 删片都长在这条对话下面（不再各占一张卡）
+                    if (ui.tasks.isNotEmpty() || ui.artifacts.isNotEmpty() || ui.currentRunId != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .width(3.dp)
+                                    .height(18.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(MaterialTheme.colorScheme.primary),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                if (ui.running) "正在生产" else "本次生产",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
                             )
                         }
-                    }
-                    OutlinedTextField(
-                        value = project,
-                        onValueChange = {
-                            project = it
-                            viewModel.updateConfig { old -> old.copy(project = it) }
-                        },
-                        label = { Text("项目") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Button(
-                        onClick = { viewModel.start(goal) },
-                        enabled = goal.isNotBlank() && !ui.running,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        shape = RoundedCornerShape(14.dp),
-                    ) { Text(if (ui.running) "生产中" else "开始生产") }
-                }
-
-                if (ui.tasks.isNotEmpty()) {
-                    Section("生产进度") {
                         ui.tasks.forEach { line ->
                             Row(modifier = Modifier.fillMaxWidth()) {
                                 Text(line.action, style = MaterialTheme.typography.bodyLarge)
@@ -319,11 +307,6 @@ fun HxmvScreen(
                                 }
                             }
                         }
-                    }
-                }
-
-                if (ui.artifacts.isNotEmpty() || ui.currentRunId != null) {
-                    Section("成品") {
                         ui.artifacts.forEach { artifact ->
                             ArtifactRow(
                                 artifact = artifact,
@@ -348,6 +331,49 @@ fun HxmvScreen(
                             ) { Text("不满意，删掉这条") }
                         }
                     }
+
+                    // 输入行 + 工具条（档位 / 项目）—— 聊天窗就是唯一创作入口
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = chatDraft,
+                            onValueChange = { chatDraft = it },
+                            placeholder = { Text("想做什么片，或改哪里") },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.sendChat(chatDraft)
+                                chatDraft = ""
+                            },
+                            enabled = chatDraft.isNotBlank() && !ui.chatBusy,
+                            shape = RoundedCornerShape(14.dp),
+                        ) { Text("发送") }
+                    }
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        HxmvProvider.entries.forEach { provider ->
+                            FilterChip(
+                                selected = config.provider == provider,
+                                onClick = { viewModel.updateConfig { it.copy(provider = provider) } },
+                                label = { Text(provider.label) },
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = project,
+                        onValueChange = {
+                            project = it
+                            viewModel.updateConfig { old -> old.copy(project = it) }
+                        },
+                        label = { Text("项目（可留空）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
 
                 Section("参考图") {
