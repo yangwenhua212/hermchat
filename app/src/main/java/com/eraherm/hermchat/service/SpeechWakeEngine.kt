@@ -36,6 +36,7 @@ class SpeechWakeEngine(
             pushToTalk = false
             mode = if (inAppDirect) Mode.COMMAND else Mode.WAKE
             ensureRecognizer()
+            VoiceGate.addListener(gateListener)
             restartListening(statusForCurrentMode())
         }
     }
@@ -44,6 +45,7 @@ class SpeechWakeEngine(
         mainHandler.post {
             running = false
             pushToTalk = false
+            VoiceGate.removeListener(gateListener)
             recognizer?.setRecognitionListener(null)
             runCatching { recognizer?.cancel() }
             runCatching { recognizer?.destroy() }
@@ -61,6 +63,7 @@ class SpeechWakeEngine(
             pushToTalk = true
             mode = Mode.COMMAND
             ensureRecognizer()
+            VoiceGate.addListener(gateListener)
             runCatching { recognizer?.cancel() }
             restartListening("请说指令…")
         }
@@ -83,8 +86,36 @@ class SpeechWakeEngine(
         }
     }
 
+    /**
+     * 朗读门控：TTS 一开口就停麦，读完冷却后再听。
+     * 不这么做的话，监听循环会把刚念出去的回复当指令收回来 —— 自己回答自己（老大实测踩过）。
+     */
+    private val gateListener = object : VoiceGate.Listener {
+        override fun onSpeakStart() {
+            // 立刻 cancel：等这一轮识别自然结束的话，自己的声音已经录进去了
+            runCatching { recognizer?.cancel() }
+        }
+
+        override fun onSpeakEnd() {
+            val delay = VoiceGate.cooldownRemainingMs() + 150
+            mainHandler.postDelayed({
+                when {
+                    running -> restartListening(statusForCurrentMode())
+                    pushToTalk -> restartListening("请说指令…")
+                }
+            }, delay)
+        }
+    }
+
     private fun restartListening(status: String) {
         if (!running && !pushToTalk) return
+        if (!VoiceGate.canListen()) {
+            // 正在朗读 / 刚读完：先别开麦，等冷却过去再试（别把喇叭的声音当指令）
+            mainHandler.postDelayed({
+                if (running || pushToTalk) restartListening(status)
+            }, VoiceGate.cooldownRemainingMs().coerceAtLeast(200L))
+            return
+        }
         bus.emit(VoiceEvent.Status(status))
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -202,6 +233,8 @@ class SpeechWakeEngine(
     private fun handleHypotheses(texts: List<String>, isFinal: Boolean) {
         if (texts.isEmpty()) return
         val best = texts.first()
+        // 麦克风听到的是我们自己念出去的内容 → 不是指令，丢掉（自我回环的出口）
+        if (VoiceGate.speaking || VoiceGate.isEcho(best)) return
 
         when (mode) {
             Mode.WAKE -> {

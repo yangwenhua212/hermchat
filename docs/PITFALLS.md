@@ -121,6 +121,12 @@
 | Bridge `close` 后仍可能有重连 Job | 只 cancel `reconnectJob` | ✅ **0.1.32 已闭环**：`HermesBridgeClient.close()` 取消根 `SupervisorJob`（实例勿复用）；`ReplySpeaker` / `VoiceCloudBridge` turn 亦可取消 |
 | VoiceCloudBridge 与前台会话双连接 | 后台独立 `AIClientFactory.create` | **未合并（刻意留白）**；本轮只加了 collect/turn 可取消作安全绳。改连接逻辑时两边都要测；合并后须验「关后台不影响前台会话」 |
 
+### 语音监听自我回环（0.1.40 修）
+
+| 现象 / 风险 | 原因 | 处理 |
+|------|------|------|
+| 开了语音后，它**自己回答自己**：念完一段又"听到"自己念的内容，当成新指令接着答 | 监听循环（`SpeechWakeEngine` 每 300~500ms 重开识别；`SherpaWakeEngine` 持续喂 16k 采样）**完全不知道 TTS 在朗读**，而系统 `SpeechRecognizer` 不做回声消除（AEC） | ✅ **已闭环**：新增 `service/VoiceGate.kt`（进程级）。三道闸：① `TtsSpeaker` 一开口 `markSpeaking()` → 引擎立即 `cancel()`/丢采样；② 朗读中 `canListen()=false` 不开新识别，读完再等 800ms 冷却（喇叭余音）；③ 识别结果与"刚念过的文字"比对（归一化互含 / 二元组重合 ≥0.6，短于 4 字不判回声）→ 判为回声直接丢。另加**长度估算的兜底放行**（TTS 回调不来也不许把麦克风永久关死） |
+
 ### 本轮收口备注（0.1.32 / 0.1.33）
 
 - **0.1.32**：共享 OkHttp、Bridge close 根 Job、模型下载离页继续。  

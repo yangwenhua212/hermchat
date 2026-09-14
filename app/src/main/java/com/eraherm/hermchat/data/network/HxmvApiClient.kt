@@ -11,6 +11,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -81,6 +82,18 @@ data class HxmvConfigState(
 )
 
 /**
+ * 对话一轮（App → HxMV）：`goal` 非空表示这一轮它给了可执行目标，界面出「开工」按钮。
+ * `usedModel=false` = 实例没配模型 Key，这时候 goal 就是用户原话（可跑性是底线）。
+ */
+data class HxmvChatTurn(val role: String, val text: String)
+
+data class HxmvChatReply(
+    val reply: String,
+    val goal: String?,
+    val usedModel: Boolean,
+)
+
+/**
  * HxMV 客户端。远端与本机（Termux）走同一套接口，只有 baseUrl 不同。
  *
  * 接口（见 HxMV 仓库 docs/CLIENT.md）：
@@ -88,6 +101,8 @@ data class HxmvConfigState(
  *   POST /api/run {goal,provider,project}  提交生产 → run_id
  *   GET  /api/stream?run_id=&token=        SSE 实时事件
  *   GET  /api/artifact?run_id=&name=       取产物
+ *   POST /api/chat {message,project,history}  对话：回话 + 可执行目标（不落盘、不开工）
+ *   POST /api/discard {run_id}             不满意就删：删产物 + 撤销档案登记
  *   GET  /api/ref?project=                 项目参考图清单（角色/场景）
  *   POST /api/ref {project,kind,key,image} 上传参考图（图生视频的首帧）
  *   DELETE /api/ref?project=&kind=&key=    注销参考图
@@ -172,6 +187,41 @@ class HxmvApiClient(
             call.cancel()
             reader.cancel()
         }
+    }
+
+    /**
+     * 对话：一句话 → 回话 + 可执行目标（`goal` 非空时界面给「开工」）。
+     * 服务端**不落盘、不开工**，所以这一步可以随便聊，不烧钱。
+     */
+    suspend fun chat(
+        config: HxmvConfig,
+        message: String,
+        project: String?,
+        history: List<HxmvChatTurn>,
+    ): HxmvChatReply {
+        val arr = JSONArray()
+        history.forEach { turn ->
+            arr.put(JSONObject().put("role", turn.role).put("content", turn.text))
+        }
+        val body = JSONObject()
+            .put("message", message)
+            .put("project", project.orEmpty())
+            .put("history", arr)
+        val json = JSONObject(post(config, "/api/chat", body.toString()))
+        val goal = json.optString("goal").takeIf { it.isNotBlank() && it != "null" }
+        return HxmvChatReply(
+            reply = json.optString("reply").ifBlank { "（没听清，再说一次？）" },
+            goal = goal,
+            usedModel = json.optBoolean("llm", false),
+        )
+    }
+
+    /** 不满意就删：删产物 + 撤销它在项目档案里的登记。回一句给人看的结果。 */
+    suspend fun discard(config: HxmvConfig, runId: String): String {
+        val body = JSONObject().put("run_id", runId)
+        val json = JSONObject(post(config, "/api/discard", body.toString()))
+        return "已删 ${json.optInt("removed_files")} 个文件，" +
+            "撤销 ${json.optInt("removed_records")} 条登记"
     }
 
     suspend fun download(config: HxmvConfig, artifact: HxmvArtifact, dest: File) {

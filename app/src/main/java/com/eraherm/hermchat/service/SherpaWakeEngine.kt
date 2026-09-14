@@ -286,6 +286,9 @@ class SherpaWakeEngine(
             val record = audioRecord ?: break
             val read = record.read(buffer, 0, buffer.size)
             if (read <= 0) continue
+            // 朗读中/刚读完：这一段麦克风数据直接丢。
+            // 不丢的话，喇叭念出来的回复会被当成新指令送进识别 —— 自己回答自己。
+            if (!VoiceGate.canListen()) continue
             val samples = FloatArray(read) { buffer[it] / 32768.0f }
             when (mode.get()) {
                 Mode.WAKE -> processWake(samples)

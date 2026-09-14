@@ -17,6 +17,7 @@ import com.eraherm.hermchat.data.local.HxmvPrefsStore
 import com.eraherm.hermchat.data.local.HxmvProvider
 import com.eraherm.hermchat.data.network.HxmvApiClient
 import com.eraherm.hermchat.data.network.HxmvArtifact
+import com.eraherm.hermchat.data.network.HxmvChatTurn
 import com.eraherm.hermchat.data.network.HxmvConfigState
 import com.eraherm.hermchat.data.network.HxmvRef
 import com.eraherm.hermchat.util.UserFacingError
@@ -40,6 +41,12 @@ data class HxmvTaskLine(
     val detail: String,
 )
 
+data class HxmvChatLine(
+    val role: String,          // "user" / "assistant"
+    val text: String,
+    val goal: String? = null,  // 非空 = 这一轮给出了可执行目标，界面出「开工」
+)
+
 data class HxmvUiState(
     val connected: Boolean = false,
     val statusLine: String = "未连接",
@@ -48,6 +55,11 @@ data class HxmvUiState(
     val artifacts: List<HxmvArtifact> = emptyList(),
     val localInstanceFound: Boolean = false,
     val termuxInstalled: Boolean = false,
+    /** 对话（只在本页内存里，退出即清——对话不需要长期留档） */
+    val chat: List<HxmvChatLine> = emptyList(),
+    val chatBusy: Boolean = false,
+    /** 正在跑 / 刚跑完的任务号：不满意时拿它去删 */
+    val currentRunId: String? = null,
     /** 实例要令牌但没填/填错 —— 页面要给一个「填令牌」的按钮，不能只说连不上。 */
     val needsToken: Boolean = false,
     val message: String? = null,
@@ -192,6 +204,7 @@ class HxmvViewModel(
         streamJob?.cancel()
         _ui.value = _ui.value.copy(
             running = true, tasks = emptyList(), artifacts = emptyList(), message = null,
+            currentRunId = null,
         )
         val cfg = prefs.config.value
         viewModelScope.launch {
@@ -202,6 +215,7 @@ class HxmvViewModel(
                 return@launch
             }
             currentRunId = runId
+            _ui.value = _ui.value.copy(currentRunId = runId)
             streamJob = launch {
                 runCatching {
                     api.stream(cfg, runId).collect { event ->
@@ -245,6 +259,60 @@ class HxmvViewModel(
         "RETRY" -> "修正中"
         "FAIL" -> "失败"
         else -> "进行中"
+    }
+
+    /**
+     * 对话：一句话 → HxMV 回话（可能带可执行目标）。
+     * 这一步**不落盘、不开工、不烧钱**（老大要求：像聊天一样提需求，满意了再开工）。
+     */
+    fun sendChat(text: String) {
+        val msg = text.trim()
+        if (msg.isEmpty() || _ui.value.chatBusy) return
+        val history = _ui.value.chat.map { HxmvChatTurn(it.role, it.text) }
+        _ui.value = _ui.value.copy(
+            chat = _ui.value.chat + HxmvChatLine("user", msg),
+            chatBusy = true,
+            message = null,
+        )
+        val cfg = prefs.config.value
+        viewModelScope.launch {
+            try {
+                val reply = api.chat(cfg, msg, cfg.project.takeIf { it.isNotBlank() }, history)
+                _ui.value = _ui.value.copy(
+                    chat = _ui.value.chat + HxmvChatLine("assistant", reply.reply, reply.goal),
+                    chatBusy = false,
+                    message = if (reply.usedModel) null else "实例没配模型 Key：先按你的原话开工",
+                )
+            } catch (e: Exception) {
+                _ui.value = _ui.value.copy(
+                    chatBusy = false,
+                    message = UserFacingError.of(e, "对话失败"),
+                )
+            }
+        }
+    }
+
+    /**
+     * 不满意就删：删掉这次的产物，并撤销它在项目档案里的登记。
+     * 不这么做的话，被否掉的片子还会继续当"设定"影响后面（老大要的就是别留）。
+     */
+    fun discard(runId: String) {
+        if (runId.isBlank()) return
+        val cfg = prefs.config.value
+        viewModelScope.launch {
+            try {
+                val line = api.discard(cfg, runId)
+                _ui.value = _ui.value.copy(
+                    running = false,
+                    currentRunId = null,
+                    tasks = emptyList(),
+                    artifacts = emptyList(),
+                    message = line,
+                )
+            } catch (e: Exception) {
+                _ui.value = _ui.value.copy(message = UserFacingError.of(e, "删除失败"))
+            }
+        }
     }
 
     private fun upsertTask(action: String, state: String, detail: String) {

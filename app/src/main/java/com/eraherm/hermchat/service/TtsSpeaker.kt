@@ -226,9 +226,12 @@ class TtsSpeaker(
             if (liveUtterances.isEmpty()) {
                 _speakingMessageId.value = null
                 abandonAudioFocus()
+                VoiceGate.markIdle()   // 失败了也要放行，别把麦克风永久关死
             }
         } else {
             _speaking.value = true
+            // 让麦克风闭嘴：否则监听循环会把刚念出去的回复当成新指令收回去（自我回环）
+            VoiceGate.markSpeaking(cleaned)
         }
     }
 
@@ -247,6 +250,7 @@ class TtsSpeaker(
         _speakingMessageId.value = null
         pending.value = null
         abandonAudioFocus()
+        VoiceGate.markIdle()          // 手动停读 = 麦克风可以恢复（冷却后）
     }
 
     fun shutdown() {
@@ -285,6 +289,7 @@ class TtsSpeaker(
             _speaking.value = false
             _speakingMessageId.value = null
             abandonAudioFocus()
+            VoiceGate.markIdle()      // 播完了 → 麦克风恢复（冷却后）
         }
     }
 

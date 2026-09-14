@@ -27,11 +27,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -118,6 +120,7 @@ fun HxmvScreen(
     val scope = rememberCoroutineScope()
 
     var goal by remember { mutableStateOf("") }
+    var chatDraft by remember { mutableStateOf("") }
     var project by remember { mutableStateOf(config.project) }
     var showService by remember { mutableStateOf(false) }
     var showTermuxDialog by remember { mutableStateOf(false) }
@@ -210,6 +213,66 @@ fun HxmvScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // ── 对话：像聊天一样说需求（老大要求「hxmv 也需要可以聊天」）──
+                Text("对话", style = MaterialTheme.typography.titleMedium)
+                if (ui.chat.isEmpty()) {
+                    Text(
+                        "说一句想做什么（如「一只柯基在雪地里打滚，8 秒」）：它会回你话并给出可执行的目标，点「开工」才真的开始跑（不点不花钱、不落档）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                ui.chat.forEach { line ->
+                    val mine = line.role == "user"
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .widthIn(max = 300.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (mine) MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.surfaceVariant,
+                                )
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                        ) {
+                            Text(line.text, style = MaterialTheme.typography.bodyMedium)
+                            line.goal?.let { g ->
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Button(
+                                    onClick = { goal = g },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                ) { Text("开工", maxLines = 1) }
+                            }
+                        }
+                    }
+                }
+                if (ui.chatBusy) {
+                    Text("它正在想…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = chatDraft,
+                        onValueChange = { chatDraft = it },
+                        label = { Text("跟 HxMV 说") },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(
+                        onClick = {
+                            viewModel.sendChat(chatDraft)
+                            chatDraft = ""
+                        },
+                        enabled = chatDraft.isNotBlank() && !ui.chatBusy,
+                        shape = RoundedCornerShape(12.dp),
+                    ) { Text("发送") }
+                }
+
                 OutlinedTextField(
                     value = goal,
                     onValueChange = { goal = it },
@@ -273,6 +336,18 @@ fun HxmvScreen(
                             onSave = { viewModel.saveToGallery(artifact) },
                         )
                     }
+                }
+
+                // 不满意就删：删掉这次的产物，并撤销它在项目档案里的登记（别让它继续当"设定"）
+                ui.currentRunId?.takeIf { !ui.running }?.let { runId ->
+                    OutlinedButton(
+                        onClick = { viewModel.discard(runId) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                    ) { Text("不满意，删掉这条") }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
