@@ -11,11 +11,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +40,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,6 +74,7 @@ import com.eraherm.hermchat.data.network.HxmvConfigState
 import com.eraherm.hermchat.data.network.HxmvRef
 import com.eraherm.hermchat.ui.components.AtmosphereBackground
 import com.eraherm.hermchat.ui.components.BrandMark
+import com.eraherm.hermchat.ui.theme.SoftGray
 import com.eraherm.hermchat.viewmodel.HxmvViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -213,189 +217,186 @@ fun HxmvScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // ── 对话：像聊天一样说需求（老大要求「hxmv 也需要可以聊天」）──
-                Text("对话", style = MaterialTheme.typography.titleMedium)
-                if (ui.chat.isEmpty()) {
-                    Text(
-                        "说一句想做什么（如「一只柯基在雪地里打滚，8 秒」）：它会回你话并给出可执行的目标，点「开工」才真的开始跑（不点不花钱、不落档）。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                ui.chat.forEach { line ->
-                    val mine = line.role == "user"
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .widthIn(max = 300.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (mine) MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surfaceVariant,
-                                )
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                Section("对话") {
+                    ui.chat.forEach { line ->
+                        val mine = line.role == "user"
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
                         ) {
-                            Text(line.text, style = MaterialTheme.typography.bodyMedium)
-                            line.goal?.let { g ->
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Button(
-                                    onClick = { goal = g },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(10.dp),
-                                ) { Text("开工", maxLines = 1) }
-                            }
-                        }
-                    }
-                }
-                if (ui.chatBusy) {
-                    Text("它正在想…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = chatDraft,
-                        onValueChange = { chatDraft = it },
-                        label = { Text("跟 HxMV 说") },
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(
-                        onClick = {
-                            viewModel.sendChat(chatDraft)
-                            chatDraft = ""
-                        },
-                        enabled = chatDraft.isNotBlank() && !ui.chatBusy,
-                        shape = RoundedCornerShape(12.dp),
-                    ) { Text("发送") }
-                }
-
-                OutlinedTextField(
-                    value = goal,
-                    onValueChange = { goal = it },
-                    label = { Text("想做什么内容") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HxmvProvider.entries.forEach { provider ->
-                        FilterChip(
-                            selected = config.provider == provider,
-                            onClick = { viewModel.updateConfig { it.copy(provider = provider) } },
-                            label = { Text(provider.label) },
-                        )
-                    }
-                }
-                OutlinedTextField(
-                    value = project,
-                    onValueChange = {
-                        project = it
-                        viewModel.updateConfig { old -> old.copy(project = it) }
-                    },
-                    label = { Text("项目") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(
-                    onClick = { viewModel.start(goal) },
-                    enabled = goal.isNotBlank() && !ui.running,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                ) { Text(if (ui.running) "生产中" else "开始生产") }
-
-                if (ui.tasks.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("生产进度", style = MaterialTheme.typography.titleMedium)
-                    ui.tasks.forEach { line ->
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text(line.action, style = MaterialTheme.typography.bodyLarge)
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(line.state, style = MaterialTheme.typography.bodyLarge)
-                            Spacer(modifier = Modifier.weight(1f))
-                            if (line.detail.isNotBlank()) {
-                                Text(line.detail, style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-                    }
-                }
-
-                if (ui.artifacts.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("成品", style = MaterialTheme.typography.titleMedium)
-                    ui.artifacts.forEach { artifact ->
-                        ArtifactRow(
-                            artifact = artifact,
-                            onPlay = {
-                                scope.launch {
-                                    val file = viewModel.downloadForPlay(artifact) ?: return@launch
-                                    openLocal(context, file)
+                            Column(
+                                modifier = Modifier
+                                    .widthIn(max = 300.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(
+                                        if (mine) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surfaceVariant,
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                            ) {
+                                Text(line.text, style = MaterialTheme.typography.bodyMedium)
+                                line.goal?.let { g ->
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = { goal = g },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                    ) { Text("开工", maxLines = 1) }
                                 }
-                            },
-                            onSave = { viewModel.saveToGallery(artifact) },
-                        )
+                            }
+                        }
                     }
-                }
-
-                // 不满意就删：删掉这次的产物，并撤销它在项目档案里的登记（别让它继续当"设定"）
-                ui.currentRunId?.takeIf { !ui.running }?.let { runId ->
-                    OutlinedButton(
-                        onClick = { viewModel.discard(runId) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error,
-                        ),
-                    ) { Text("不满意，删掉这条") }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Text("参考图", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (config.project.isBlank()) "先填上面的项目名" else "当前项目：${config.project}",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    REF_KINDS.forEach { (value, label) ->
-                        FilterChip(
-                            selected = refKind == value,
-                            onClick = { refKind = value },
-                            label = { Text(label) },
-                        )
+                    if (ui.chatBusy) {
+                        Text("正在想…", style = MaterialTheme.typography.bodySmall, color = SoftGray)
                     }
-                }
-                OutlinedTextField(
-                    value = refKey,
-                    onValueChange = { refKey = it },
-                    label = { Text("名字（镜头里用的角色名/场景名）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedButton(
-                    onClick = { pickRef.launch("image/*") },
-                    enabled = config.project.isNotBlank() && refKey.isNotBlank() && !ui.refBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                ) { Text(if (ui.refBusy) "处理中" else "选图上传（可多选）") }
-                ui.refs.chunked(REF_COLUMNS).forEach { line ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        line.forEach { ref ->
-                            RefTile(
-                                ref = ref,
-                                load = viewModel::refImage,
-                                onClick = { preview = ref },
-                                modifier = Modifier.weight(1f),
+                        OutlinedTextField(
+                            value = chatDraft,
+                            onValueChange = { chatDraft = it },
+                            placeholder = { Text("想做什么片，或改哪里") },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.sendChat(chatDraft)
+                                chatDraft = ""
+                            },
+                            enabled = chatDraft.isNotBlank() && !ui.chatBusy,
+                            shape = RoundedCornerShape(14.dp),
+                        ) { Text("发送") }
+                    }
+                }
+
+                Section("开始生产") {
+                    OutlinedTextField(
+                        value = goal,
+                        onValueChange = { goal = it },
+                        placeholder = { Text("想做什么内容") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HxmvProvider.entries.forEach { provider ->
+                            FilterChip(
+                                selected = config.provider == provider,
+                                onClick = { viewModel.updateConfig { it.copy(provider = provider) } },
+                                label = { Text(provider.label) },
                             )
                         }
-                        repeat(REF_COLUMNS - line.size) {
-                            Spacer(modifier = Modifier.weight(1f))
+                    }
+                    OutlinedTextField(
+                        value = project,
+                        onValueChange = {
+                            project = it
+                            viewModel.updateConfig { old -> old.copy(project = it) }
+                        },
+                        label = { Text("项目") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { viewModel.start(goal) },
+                        enabled = goal.isNotBlank() && !ui.running,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                    ) { Text(if (ui.running) "生产中" else "开始生产") }
+                }
+
+                if (ui.tasks.isNotEmpty()) {
+                    Section("生产进度") {
+                        ui.tasks.forEach { line ->
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Text(line.action, style = MaterialTheme.typography.bodyLarge)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(line.state, style = MaterialTheme.typography.bodyLarge)
+                                Spacer(modifier = Modifier.weight(1f))
+                                if (line.detail.isNotBlank()) {
+                                    Text(line.detail, style = MaterialTheme.typography.bodyMedium, color = SoftGray)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (ui.artifacts.isNotEmpty() || ui.currentRunId != null) {
+                    Section("成品") {
+                        ui.artifacts.forEach { artifact ->
+                            ArtifactRow(
+                                artifact = artifact,
+                                onPlay = {
+                                    scope.launch {
+                                        val file = viewModel.downloadForPlay(artifact) ?: return@launch
+                                        openLocal(context, file)
+                                    }
+                                },
+                                onSave = { viewModel.saveToGallery(artifact) },
+                            )
+                        }
+                        // 不满意就删：删掉这次的产物，并撤销它在项目档案里的登记（别让它继续当"设定"）
+                        ui.currentRunId?.takeIf { !ui.running }?.let { runId ->
+                            OutlinedButton(
+                                onClick = { viewModel.discard(runId) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error,
+                                ),
+                            ) { Text("不满意，删掉这条") }
+                        }
+                    }
+                }
+
+                Section("参考图") {
+                    Text(
+                        if (config.project.isBlank()) "先填上面的项目名" else "当前项目：${config.project}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SoftGray,
+                    )
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        REF_KINDS.forEach { (value, label) ->
+                            FilterChip(
+                                selected = refKind == value,
+                                onClick = { refKind = value },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = refKey,
+                        onValueChange = { refKey = it },
+                        label = { Text("名字（镜头里用的角色名/场景名）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedButton(
+                        onClick = { pickRef.launch("image/*") },
+                        enabled = config.project.isNotBlank() && refKey.isNotBlank() && !ui.refBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    ) { Text(if (ui.refBusy) "处理中" else "选图上传（可多选）") }
+                    ui.refs.chunked(REF_COLUMNS).forEach { line ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            line.forEach { ref ->
+                                RefTile(
+                                    ref = ref,
+                                    load = viewModel::refImage,
+                                    onClick = { preview = ref },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            repeat(REF_COLUMNS - line.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
                     }
                 }
@@ -405,6 +406,7 @@ fun HxmvScreen(
                 Text(
                     if (ui.localInstanceFound) "当前：手机本机跑" else "当前：服务器出片（不装也能用）",
                     style = MaterialTheme.typography.bodyMedium,
+                    color = SoftGray,
                 )
                 OutlinedButton(
                     onClick = {
@@ -509,6 +511,31 @@ fun HxmvScreen(
                 batchUris = emptyList()
             },
         )
+    }
+}
+
+/** 区块卡片：统一圆角/描边/留白，和网页面板同一套视觉语言。 */
+@Composable
+private fun Section(title: String? = null, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (title != null) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            content()
+        }
     }
 }
 
